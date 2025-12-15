@@ -106,7 +106,7 @@ export function FundInfoCard({ fundInfo, metadata }: FundInfoProps) {
             <div className="flex flex-wrap gap-1">
               {fundInfo.keyPartners.slice(0, 5).map((partner, i) => (
                 <Badge key={i} variant="outline" className="text-xs py-0">
-                  {partner}
+                  {typeof partner === "object" && partner !== null ? (partner as { name?: string }).name || JSON.stringify(partner) : partner}
                 </Badge>
               ))}
             </div>
@@ -120,7 +120,7 @@ export function FundInfoCard({ fundInfo, metadata }: FundInfoProps) {
             <div className="flex flex-wrap gap-1">
               {fundInfo.notablePortfolio.slice(0, 6).map((company, i) => (
                 <Badge key={i} variant="secondary" className="text-xs py-0 bg-secondary/60">
-                  {company}
+                  {typeof company === "object" && company !== null ? (company as { name?: string }).name || JSON.stringify(company) : company}
                 </Badge>
               ))}
             </div>
@@ -132,11 +132,16 @@ export function FundInfoCard({ fundInfo, metadata }: FundInfoProps) {
           <div className="pt-2 border-t border-border">
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5">Recent Activity</p>
             <ul className="space-y-1">
-              {fundInfo.recentNews.slice(0, 3).map((news, i) => (
-                <li key={i} className="text-xs text-secondary-foreground leading-relaxed">
-                  • {news}
-                </li>
-              ))}
+              {fundInfo.recentNews.slice(0, 3).map((news, i) => {
+                const newsText = typeof news === "object" && news !== null 
+                  ? (news as { title?: string; description?: string }).title || (news as { description?: string }).description || JSON.stringify(news)
+                  : news;
+                return (
+                  <li key={i} className="text-xs text-secondary-foreground leading-relaxed">
+                    • {newsText}
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}
