@@ -8,6 +8,8 @@ interface InvestmentThesis {
   geography: string;
   ticketSize: string;
   description: string;
+  differentiators?: string;
+  valueAdd?: string;
 }
 
 interface InvestmentCriteriaProps {
@@ -74,6 +76,20 @@ export function InvestmentCriteria({ fundName, thesis }: InvestmentCriteriaProps
           <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Thesis Summary</p>
           <p className="text-sm text-secondary-foreground leading-relaxed">{thesis.description}</p>
         </div>
+
+        {thesis.differentiators && (
+          <div className="pt-3 border-t border-border">
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Differentiators</p>
+            <p className="text-sm text-secondary-foreground leading-relaxed">{thesis.differentiators}</p>
+          </div>
+        )}
+
+        {thesis.valueAdd && (
+          <div className="pt-3 border-t border-border">
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Value Add</p>
+            <p className="text-sm text-secondary-foreground leading-relaxed">{thesis.valueAdd}</p>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

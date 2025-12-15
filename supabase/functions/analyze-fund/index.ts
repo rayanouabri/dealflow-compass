@@ -20,55 +20,124 @@ serve(async (req) => {
 
     console.log(`Analyzing fund: ${fundName}`);
 
-    const systemPrompt = `You are an expert venture capital analyst with deep knowledge of the global VC ecosystem. 
-Your task is to analyze a VC fund and generate a complete investment analysis.
+    const systemPrompt = `Tu es un analyste VC senior avec une connaissance approfondie de l'écosystème mondial du capital-risque.
+Tu dois rechercher et analyser un fonds VC de manière RIGOUREUSE et FACTUELLE.
 
-You must respond with a valid JSON object containing:
-1. "investmentThesis": Object with the fund's investment criteria:
-   - "sectors": Array of focus sectors (e.g., ["AI/ML", "Enterprise SaaS", "Fintech"])
-   - "stage": Investment stage (e.g., "Series A-B")
-   - "geography": Target regions (e.g., "North America, Europe")
-   - "ticketSize": Average investment size (e.g., "$5M - $25M")
-   - "description": Brief description of their thesis
+INSTRUCTIONS CRITIQUES:
+1. Recherche les informations RÉELLES et VÉRIFIABLES sur le fonds
+2. Inclus des SOURCES et RÉFÉRENCES pour chaque information clé
+3. Si tu ne trouves pas d'information vérifiable, indique "Non vérifié" ou "Estimation basée sur..."
+4. Utilise ta connaissance des fonds VC réels (Sequoia, a16z, Accel, Index, Balderton, etc.)
 
-2. "startup": Object with a matched startup opportunity:
-   - "name": Startup name
-   - "tagline": One-line description
-   - "sector": Primary sector
-   - "stage": Current funding stage
-   - "location": Headquarters
-   - "founded": Year founded
-   - "teamSize": Number of employees
+Tu dois répondre avec un objet JSON valide contenant:
 
-3. "pitchDeck": Array of 8 slide objects, each with:
-   - "title": Slide title
-   - "content": Detailed content (2-4 paragraphs)
-   - "keyPoints": Array of 3-4 bullet points
-   - "metrics": Optional object with relevant KPIs
+1. "fundInfo": Informations vérifiées sur le fonds:
+   - "officialName": Nom officiel complet
+   - "website": Site web officiel (si connu)
+   - "headquarters": Siège social
+   - "foundedYear": Année de création
+   - "aum": Assets Under Management (si connu)
+   - "teamSize": Taille de l'équipe d'investissement
+   - "keyPartners": Array des partners principaux avec leurs noms
+   - "notablePortfolio": Array de 5-10 investissements notables RÉELS
+   - "recentNews": Array de 2-3 actualités récentes ou deals
+   - "sources": Array des sources utilisées pour ces informations
 
-The slides should be:
-1. Title & The Ask (investment amount, valuation)
-2. The Problem (market pain point)
-3. The Solution (product/technology)
-4. Market Size (TAM/SAM/SOM with figures)
-5. Traction & Metrics (ARR, growth, users)
-6. Why This Fund? (strategic fit with their thesis)
-7. The Team (founders and key hires)
-8. Investment Recommendation (conclusion)
+2. "investmentThesis": Critères d'investissement:
+   - "sectors": Array des secteurs focus (basé sur leur portfolio réel)
+   - "stage": Stade d'investissement préféré
+   - "geography": Régions cibles
+   - "ticketSize": Taille de ticket moyenne
+   - "description": Description détaillée de leur thèse
+   - "differentiators": Ce qui distingue ce fonds des autres
+   - "valueAdd": Valeur ajoutée pour les startups (réseau, expertise, etc.)
 
-Make the content professional, data-driven, and compelling for a GP review.
-Use realistic metrics and market data. Be specific and quantitative.`;
+3. "startup": Startup fictive mais RÉALISTE qui correspond parfaitement:
+   - "name": Nom de la startup
+   - "tagline": Description en une ligne
+   - "sector": Secteur principal
+   - "stage": Stade actuel
+   - "location": Siège
+   - "founded": Année de création
+   - "teamSize": Nombre d'employés
+   - "problem": Problème adressé (détaillé)
+   - "solution": Solution proposée (détaillée)
+   - "businessModel": Modèle économique
+   - "competitors": Concurrents principaux
+   - "moat": Avantage compétitif
 
-    const userPrompt = `Analyze the venture capital fund "${fundName}" and generate a complete investment memo for a matching startup opportunity.
+4. "pitchDeck": Array de 8 slides détaillés:
+   Slide 1: Title & The Ask
+   - "title": "Executive Summary"
+   - "content": Résumé exécutif complet
+   - "keyPoints": Points clés
+   - "metrics": { "askAmount": montant, "valuation": valorisation, "useOfFunds": allocation }
+   
+   Slide 2: The Problem
+   - "title": "Market Problem"
+   - "content": Description détaillée du problème
+   - "keyPoints": Points de douleur
+   - "metrics": { "marketPainSize": taille du problème, "currentSolutions": solutions actuelles }
+   
+   Slide 3: The Solution
+   - "title": "Our Solution"
+   - "content": Description de la solution
+   - "keyPoints": Fonctionnalités clés
+   - "metrics": { "techStack": technologies, "patents": brevets si applicable }
+   
+   Slide 4: Market Size
+   - "title": "Market Opportunity"
+   - "content": Analyse de marché
+   - "keyPoints": Tendances
+   - "metrics": { "tam": TAM en $, "sam": SAM en $, "som": SOM en $, "cagr": croissance % }
+   
+   Slide 5: Traction & Metrics
+   - "title": "Traction"
+   - "content": Métriques de performance
+   - "keyPoints": Jalons atteints
+   - "metrics": { "arr": ARR, "mrrGrowth": croissance MRR %, "customers": nb clients, "nrr": Net Revenue Retention % }
+   
+   Slide 6: Why This Fund
+   - "title": "Strategic Fit with ${fundName}"
+   - "content": Pourquoi ce fonds spécifiquement (basé sur leur thèse RÉELLE)
+   - "keyPoints": Synergies avec leur portfolio
+   - "metrics": { "portfolioSynergies": entreprises portfolio similaires }
+   
+   Slide 7: Team
+   - "title": "The Team"
+   - "content": Présentation de l'équipe fondatrice
+   - "keyPoints": Background et expertise
+   - "metrics": { "founders": nb fondateurs, "advisors": advisors notables }
+   
+   Slide 8: Investment Recommendation
+   - "title": "Investment Thesis"
+   - "content": Recommandation d'investissement
+   - "keyPoints": Raisons d'investir
+   - "metrics": { "targetReturn": multiple cible, "exitStrategy": stratégie de sortie }
 
-The fund is: ${fundName}
+5. "analysisMetadata": Métadonnées de l'analyse:
+   - "confidence": Niveau de confiance dans les données (high/medium/low)
+   - "dataQuality": Qualité des données trouvées
+   - "limitations": Limitations de l'analyse
+   - "lastUpdated": Date de dernière mise à jour des infos`;
 
-Generate a detailed analysis with:
-1. Their investment thesis and criteria
-2. A startup that perfectly matches their thesis
-3. An 8-slide investment memo/pitch deck
+    const userPrompt = `Analyse le fonds de capital-risque "${fundName}" de manière APPROFONDIE et FACTUELLE.
 
-Respond ONLY with valid JSON, no markdown formatting.`;
+ÉTAPES D'ANALYSE:
+1. Identifie le fonds exact (vérifie l'orthographe, trouve le nom officiel)
+2. Recherche leurs investissements récents et historiques
+3. Analyse leur thèse d'investissement basée sur leur portfolio RÉEL
+4. Identifie leurs partners et leur expertise
+5. Génère une startup qui correspondrait PARFAITEMENT à leur thèse
+6. Crée un pitch deck professionnel et convaincant
+
+IMPORTANT:
+- Sois FACTUEL - n'invente pas de données sur le fonds
+- Cite tes sources quand possible
+- Indique ton niveau de confiance pour chaque information
+- La startup peut être fictive mais doit être RÉALISTE et correspondre exactement à leur thèse
+
+Réponds UNIQUEMENT avec du JSON valide, sans formatage markdown.`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -77,7 +146,7 @@ Respond ONLY with valid JSON, no markdown formatting.`;
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "google/gemini-2.5-pro",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt }
@@ -113,12 +182,11 @@ Respond ONLY with valid JSON, no markdown formatting.`;
       throw new Error("No content in AI response");
     }
 
-    console.log("Raw AI response:", content.substring(0, 500));
+    console.log("Raw AI response length:", content.length);
 
     // Parse the JSON response
     let analysisResult;
     try {
-      // Clean up the response - remove markdown code blocks if present
       let cleanContent = content.trim();
       if (cleanContent.startsWith("```json")) {
         cleanContent = cleanContent.slice(7);
@@ -132,11 +200,13 @@ Respond ONLY with valid JSON, no markdown formatting.`;
       analysisResult = JSON.parse(cleanContent.trim());
     } catch (parseError) {
       console.error("Failed to parse AI response:", parseError);
-      console.error("Content was:", content);
+      console.error("Content was:", content.substring(0, 1000));
       throw new Error("Failed to parse AI analysis response");
     }
 
     console.log("Analysis complete for:", fundName);
+    console.log("Fund info found:", analysisResult.fundInfo?.officialName || "N/A");
+    console.log("Confidence level:", analysisResult.analysisMetadata?.confidence || "N/A");
 
     return new Response(JSON.stringify(analysisResult), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
