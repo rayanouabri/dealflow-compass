@@ -7,7 +7,21 @@ import { StartupCard } from "@/components/StartupCard";
 import { SlideCarousel } from "@/components/SlideCarousel";
 import { AnalysisHistory } from "@/components/AnalysisHistory";
 import { LoadingState } from "@/components/LoadingState";
+import { FundInfoCard } from "@/components/FundInfo";
 import { BarChart3 } from "lucide-react";
+
+interface FundInfo {
+  officialName: string;
+  website?: string;
+  headquarters?: string;
+  foundedYear?: number | string;
+  aum?: string;
+  teamSize?: number | string;
+  keyPartners?: string[];
+  notablePortfolio?: string[];
+  recentNews?: string[];
+  sources?: string[];
+}
 
 interface InvestmentThesis {
   sectors: string[];
@@ -15,6 +29,8 @@ interface InvestmentThesis {
   geography: string;
   ticketSize: string;
   description: string;
+  differentiators?: string;
+  valueAdd?: string;
 }
 
 interface Startup {
@@ -25,6 +41,11 @@ interface Startup {
   location: string;
   founded: string | number;
   teamSize: string | number;
+  problem?: string;
+  solution?: string;
+  businessModel?: string;
+  competitors?: string;
+  moat?: string;
 }
 
 interface Slide {
@@ -34,10 +55,19 @@ interface Slide {
   metrics?: Record<string, string | number>;
 }
 
+interface AnalysisMetadata {
+  confidence: "high" | "medium" | "low";
+  dataQuality?: string;
+  limitations?: string;
+  lastUpdated?: string;
+}
+
 interface AnalysisResult {
+  fundInfo?: FundInfo;
   investmentThesis: InvestmentThesis;
   startup: Startup;
   pitchDeck: Slide[];
+  analysisMetadata?: AnalysisMetadata;
 }
 
 interface HistoryItem {
@@ -215,6 +245,9 @@ export default function Index() {
                 ← New Analysis
               </button>
               
+              {result.fundInfo && (
+                <FundInfoCard fundInfo={result.fundInfo} metadata={result.analysisMetadata} />
+              )}
               <InvestmentCriteria fundName={fundName} thesis={result.investmentThesis} />
               <StartupCard startup={result.startup} />
               

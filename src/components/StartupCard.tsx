@@ -1,4 +1,4 @@
-import { Rocket, MapPin, Users, Calendar, Tag } from "lucide-react";
+import { Rocket, MapPin, Users, Calendar, Tag, Lightbulb, Target, Shield } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -10,6 +10,11 @@ interface Startup {
   location: string;
   founded: string | number;
   teamSize: string | number;
+  problem?: string;
+  solution?: string;
+  businessModel?: string;
+  competitors?: string;
+  moat?: string;
 }
 
 interface StartupCardProps {
@@ -20,7 +25,7 @@ export function StartupCard({ startup }: StartupCardProps) {
   return (
     <Card className="bg-card border-border overflow-hidden animate-slide-in-right">
       <div className="h-1 bg-gradient-to-r from-primary via-accent to-primary" />
-      <CardContent className="pt-5">
+      <CardContent className="pt-5 space-y-4">
         <div className="flex items-start gap-4">
           <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center flex-shrink-0">
             <Rocket className="w-7 h-7 text-primary" />
@@ -54,6 +59,51 @@ export function StartupCard({ startup }: StartupCardProps) {
             </div>
           </div>
         </div>
+
+        {/* Problem & Solution */}
+        {(startup.problem || startup.solution) && (
+          <div className="space-y-3 pt-3 border-t border-border">
+            {startup.problem && (
+              <div className="flex gap-2">
+                <Target className="w-4 h-4 text-chart-red mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Problem</p>
+                  <p className="text-xs text-secondary-foreground leading-relaxed">{startup.problem}</p>
+                </div>
+              </div>
+            )}
+            {startup.solution && (
+              <div className="flex gap-2">
+                <Lightbulb className="w-4 h-4 text-chart-green mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Solution</p>
+                  <p className="text-xs text-secondary-foreground leading-relaxed">{startup.solution}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Business Model & Moat */}
+        {(startup.businessModel || startup.moat) && (
+          <div className="space-y-3 pt-3 border-t border-border">
+            {startup.businessModel && (
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Business Model</p>
+                <p className="text-xs text-secondary-foreground leading-relaxed">{startup.businessModel}</p>
+              </div>
+            )}
+            {startup.moat && (
+              <div className="flex gap-2">
+                <Shield className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Competitive Moat</p>
+                  <p className="text-xs text-secondary-foreground leading-relaxed">{startup.moat}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
