@@ -8,7 +8,13 @@ import { SlideCarousel } from "@/components/SlideCarousel";
 import { AnalysisHistory } from "@/components/AnalysisHistory";
 import { LoadingState } from "@/components/LoadingState";
 import { FundInfoCard } from "@/components/FundInfo";
-import { BarChart3 } from "lucide-react";
+import { LandingPage } from "@/components/LandingPage";
+import { AnalysisParameters, AnalysisParams, defaultParams } from "@/components/AnalysisParameters";
+import { PaywallModal } from "@/components/PaywallModal";
+import { useTrial } from "@/hooks/useTrial";
+import { BarChart3, ArrowLeft, Crown, Sparkles } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 interface FundInfo {
   officialName: string;
@@ -79,12 +85,19 @@ interface HistoryItem {
   created_at: string;
 }
 
+type AppView = "landing" | "analyzer" | "results";
+
 export default function Index() {
   const { toast } = useToast();
+  const { trialRemaining, hasTrialRemaining, useTrialCredit } = useTrial();
+  
+  const [view, setView] = useState<AppView>("landing");
   const [isLoading, setIsLoading] = useState(false);
   const [fundName, setFundName] = useState("");
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [params, setParams] = useState<AnalysisParams>(defaultParams);
+  const [showPaywall, setShowPaywall] = useState(false);
 
   // Fetch history on mount
   useEffect(() => {
@@ -103,14 +116,35 @@ export default function Index() {
     }
   };
 
+  const handleStartTrial = () => {
+    setView("analyzer");
+  };
+
+  const handleLogin = () => {
+    // TODO: Implement login
+    toast({
+      title: "Coming Soon",
+      description: "Sign in functionality will be available soon.",
+    });
+  };
+
   const handleSearch = async (searchFundName: string) => {
+    // Check trial credits
+    if (!hasTrialRemaining) {
+      setShowPaywall(true);
+      return;
+    }
+
     setIsLoading(true);
     setFundName(searchFundName);
     setResult(null);
 
     try {
       const { data, error } = await supabase.functions.invoke("analyze-fund", {
-        body: { fundName: searchFundName },
+        body: { 
+          fundName: searchFundName,
+          params: params,
+        },
       });
 
       if (error) {
@@ -121,7 +155,11 @@ export default function Index() {
         throw new Error(data.error);
       }
 
+      // Use trial credit
+      useTrialCredit();
+
       setResult(data as AnalysisResult);
+      setView("results");
 
       // Save to history
       const { error: insertError } = await supabase.from("analysis_history").insert({
@@ -166,6 +204,7 @@ export default function Index() {
       },
       pitchDeck: item.pitch_deck,
     });
+    setView("results");
   };
 
   const handleExport = () => {
@@ -196,36 +235,97 @@ export default function Index() {
     });
   };
 
+  const handleBackToAnalyzer = () => {
+    setResult(null);
+    setView("analyzer");
+  };
+
+  const handleBackToLanding = () => {
+    setResult(null);
+    setView("landing");
+  };
+
+  // Landing Page
+  if (view === "landing") {
+    return (
+      <LandingPage 
+        onStartTrial={handleStartTrial}
+        onLogin={handleLogin}
+        trialRemaining={trialRemaining}
+      />
+    );
+  }
+
+  // Analyzer & Results View
   return (
     <div className="min-h-screen bg-background terminal-grid">
       {/* Header */}
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="container max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-              <BarChart3 className="w-5 h-5 text-primary" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button onClick={handleBackToLanding} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <BarChart3 className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <h1 className="text-lg font-semibold text-foreground">DealFlow AI</h1>
+                  <p className="text-xs text-muted-foreground">VC Intelligence Platform</p>
+                </div>
+              </button>
             </div>
-            <div>
-              <h1 className="text-lg font-semibold text-foreground">VC Dealflow Analyst</h1>
-              <p className="text-xs text-muted-foreground">AI-Powered Investment Analysis</p>
-            </div>
-            <div className="ml-auto flex items-center gap-2">
-              <span className="status-dot" />
-              <span className="text-xs text-muted-foreground">System Online</span>
+            <div className="flex items-center gap-3">
+              {hasTrialRemaining ? (
+                <Badge variant="outline" className="gap-1.5 px-3 py-1">
+                  <Sparkles className="w-3 h-3 text-primary" />
+                  {trialRemaining} free analyses left
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="gap-1.5 px-3 py-1 border-destructive/50 text-destructive">
+                  Trial ended
+                </Badge>
+              )}
+              <Button size="sm" className="gap-2" onClick={() => setShowPaywall(true)}>
+                <Crown className="w-4 h-4" />
+                Upgrade
+              </Button>
             </div>
           </div>
         </div>
       </header>
 
       <main className="container max-w-7xl mx-auto px-4 py-8">
-        {!result && !isLoading && (
-          <div className="max-w-4xl mx-auto">
-            <div className="mb-12 pt-8">
-              <SearchInput onSearch={handleSearch} isLoading={isLoading} />
+        {view === "analyzer" && !isLoading && (
+          <div className="max-w-3xl mx-auto">
+            <div className="mb-8 pt-4">
+              <button 
+                onClick={handleBackToLanding}
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors mb-6 flex items-center gap-1"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back to home
+              </button>
+              
+              <div className="text-center mb-8">
+                <h2 className="text-2xl font-bold mb-2">Analyze a VC Fund</h2>
+                <p className="text-muted-foreground">
+                  Enter a fund name to get AI-powered investment thesis analysis and a custom pitch deck
+                </p>
+              </div>
+
+              <div className="space-y-6">
+                <SearchInput onSearch={handleSearch} isLoading={isLoading} />
+                
+                <AnalysisParameters 
+                  params={params} 
+                  onChange={setParams}
+                  isPro={false}
+                />
+              </div>
             </div>
 
             {history.length > 0 && (
-              <div className="max-w-md mx-auto">
+              <div className="max-w-md mx-auto mt-8">
                 <AnalysisHistory history={history} onSelect={handleHistorySelect} />
               </div>
             )}
@@ -234,15 +334,16 @@ export default function Index() {
 
         {isLoading && <LoadingState />}
 
-        {result && !isLoading && (
+        {view === "results" && result && !isLoading && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Sidebar */}
             <aside className="lg:col-span-4 xl:col-span-3 space-y-4">
               <button
-                onClick={() => setResult(null)}
+                onClick={handleBackToAnalyzer}
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors mb-2 flex items-center gap-1"
               >
-                ← New Analysis
+                <ArrowLeft className="w-4 h-4" />
+                New Analysis
               </button>
               
               {result.fundInfo && (
@@ -272,10 +373,17 @@ export default function Index() {
       <footer className="border-t border-border bg-card/30 mt-auto">
         <div className="container max-w-7xl mx-auto px-4 py-4">
           <p className="text-xs text-muted-foreground text-center">
-            VC Dealflow Analyst • AI-Generated Analysis for Investment Decision Support
+            DealFlow AI • AI-Generated Analysis for Investment Decision Support
           </p>
         </div>
       </footer>
+
+      {/* Paywall Modal */}
+      <PaywallModal 
+        isOpen={showPaywall} 
+        onClose={() => setShowPaywall(false)}
+        trialRemaining={trialRemaining}
+      />
     </div>
   );
 }
