@@ -186,26 +186,43 @@ export default function Index() {
         requestBody.fundName = searchFundName;
       }
 
-      const { data, error } = await supabase.functions.invoke("analyze-fund", {
-        body: requestBody,
+      // Use direct fetch to get better error messages
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      
+      if (!supabaseUrl || !supabaseKey) {
+        throw new Error("Supabase configuration missing. Please check your .env file.");
+      }
+
+      const functionUrl = `${supabaseUrl}/functions/v1/analyze-fund`;
+      
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseKey}`,
+          'apikey': supabaseKey,
+        },
+        body: JSON.stringify(requestBody),
       });
 
-      console.log("Edge Function response:", { data, error });
+      let data: any;
+      const responseText = await response.text();
+      
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error("Failed to parse response:", responseText);
+        throw new Error(`Edge Function returned invalid JSON. Status: ${response.status}. Response: ${responseText.substring(0, 200)}`);
+      }
 
-      if (error) {
-        // Try to extract error message from error object
-        let errorMessage = "Edge Function returned a non-2xx status code";
+      if (!response.ok) {
+        // Extract error message from response
+        const errorMessage = data?.error 
+          ? (typeof data.error === 'string' ? data.error : data.error.message || JSON.stringify(data.error))
+          : `Edge Function error (${response.status}): ${responseText.substring(0, 200)}`;
         
-        if (error.message) {
-          errorMessage = error.message;
-        } else if (typeof error === 'string') {
-          errorMessage = error;
-        } else if (error && typeof error === 'object') {
-          // Try to extract from error object
-          errorMessage = (error as any).message || (error as any).error || JSON.stringify(error);
-        }
-        
-        console.error("Supabase function error:", error);
+        console.error("Edge Function error:", { status: response.status, data, responseText });
         throw new Error(errorMessage);
       }
 
