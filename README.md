@@ -1,5 +1,17 @@
 # DealFlow Compass
 
+> **📝 Note** : Pour comprendre l'état actuel du projet et reprendre le travail, consultez [`SESSION_NOTES.md`](./SESSION_NOTES.md)
+
+## 🚀 État Actuel
+
+✅ **Frontend** : Fonctionnel sur `localhost:8080`  
+✅ **Backend** : Edge Function v7 déployée  
+⚠️ **Action requise** : Ajouter `GEMINI_API_KEY` dans Supabase Dashboard (voir [`SESSION_NOTES.md`](./SESSION_NOTES.md))
+
+---
+
+# DealFlow Compass
+
 **AI-Powered Startup Sourcing & Due Diligence Platform for VC Funds**
 
 DealFlow Compass est une plateforme SaaS qui aide les fonds VC à automatiser leur sourcing de startups et à effectuer des due diligences approfondies grâce à l'IA.
