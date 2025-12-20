@@ -32,7 +32,29 @@ serve(async (req) => {
   }
 
   try {
-    const requestData: AnalysisRequest = await req.json();
+    // Parse request body with error handling
+    let requestData: AnalysisRequest;
+    try {
+      const bodyText = await req.text();
+      if (!bodyText) {
+        return new Response(JSON.stringify({ 
+          error: "Request body is empty. Please provide fundName or customThesis." 
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      requestData = JSON.parse(bodyText);
+    } catch (parseError) {
+      console.error("Failed to parse request body:", parseError);
+      return new Response(JSON.stringify({ 
+        error: `Invalid JSON in request body: ${parseError instanceof Error ? parseError.message : "Unknown parsing error"}` 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { fundName, customThesis, params = {} } = requestData;
     
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
@@ -332,7 +354,20 @@ Réponds UNIQUEMENT avec du JSON valide, sans formatage markdown.`;
 
   } catch (error) {
     console.error("Error in analyze-fund function:", error);
-    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }), {
+    const errorMessage = error instanceof Error 
+      ? error.message 
+      : typeof error === 'string' 
+        ? error 
+        : JSON.stringify(error);
+    
+    const errorDetails = error instanceof Error && error.stack 
+      ? { message: errorMessage, stack: error.stack }
+      : { message: errorMessage };
+    
+    return new Response(JSON.stringify({ 
+      error: errorMessage,
+      details: process.env.DENO_ENV === 'development' ? errorDetails : undefined
+    }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

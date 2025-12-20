@@ -190,18 +190,36 @@ export default function Index() {
         body: requestBody,
       });
 
+      console.log("Edge Function response:", { data, error });
+
       if (error) {
         // Try to extract error message from error object
-        const errorMessage = error.message || error.toString() || "Edge Function returned a non-2xx status code";
+        let errorMessage = "Edge Function returned a non-2xx status code";
+        
+        if (error.message) {
+          errorMessage = error.message;
+        } else if (typeof error === 'string') {
+          errorMessage = error;
+        } else if (error && typeof error === 'object') {
+          // Try to extract from error object
+          errorMessage = (error as any).message || (error as any).error || JSON.stringify(error);
+        }
+        
         console.error("Supabase function error:", error);
         throw new Error(errorMessage);
       }
 
       if (data?.error) {
         // Extract detailed error message from Edge Function response
-        const errorMessage = typeof data.error === 'string' ? data.error : (data.error.message || JSON.stringify(data.error));
+        const errorMessage = typeof data.error === 'string' 
+          ? data.error 
+          : (data.error?.message || JSON.stringify(data.error));
         console.error("Edge Function error response:", data);
         throw new Error(errorMessage);
+      }
+
+      if (!data) {
+        throw new Error("No data returned from Edge Function. Please check the function logs.");
       }
 
       // Use trial credit
