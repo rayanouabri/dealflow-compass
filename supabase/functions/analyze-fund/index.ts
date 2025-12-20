@@ -247,7 +247,8 @@ Tu dois répondre avec un objet JSON valide contenant:
 Réponds UNIQUEMENT avec du JSON valide, sans formatage markdown.`;
 
     // Use Google Gemini API directly (free tier: 15 requests/minute)
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`, {
+    // Using gemini-1.5-flash instead of gemini-1.5-pro for free tier compatibility
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
