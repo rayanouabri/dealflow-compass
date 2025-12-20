@@ -300,6 +300,24 @@ Réponds UNIQUEMENT avec du JSON valide, sans formatage markdown.`;
         });
       }
       
+      if (response.status === 402) {
+        let errorMessage = "Payment required. Your Azure OpenAI account needs billing enabled or has exhausted credits.";
+        try {
+          const errorData = JSON.parse(errorText);
+          if (errorData.error?.message) {
+            errorMessage = `Azure OpenAI: ${errorData.error.message}`;
+          }
+        } catch (e) {
+          // Keep default message
+        }
+        return new Response(JSON.stringify({ 
+          error: errorMessage + " Please check your Azure billing and ensure your subscription has credits available. Go to Azure Portal > Your OpenAI resource > Usage and estimated costs."
+        }), {
+          status: 402,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      
       if (response.status === 400) {
         let errorMessage = "Invalid request to Azure OpenAI.";
         try {
