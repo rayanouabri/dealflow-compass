@@ -191,11 +191,17 @@ export default function Index() {
       });
 
       if (error) {
-        throw error;
+        // Try to extract error message from error object
+        const errorMessage = error.message || error.toString() || "Edge Function returned a non-2xx status code";
+        console.error("Supabase function error:", error);
+        throw new Error(errorMessage);
       }
 
-      if (data.error) {
-        throw new Error(data.error);
+      if (data?.error) {
+        // Extract detailed error message from Edge Function response
+        const errorMessage = typeof data.error === 'string' ? data.error : (data.error.message || JSON.stringify(data.error));
+        console.error("Edge Function error response:", data);
+        throw new Error(errorMessage);
       }
 
       // Use trial credit
