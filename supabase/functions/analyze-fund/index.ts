@@ -57,15 +57,14 @@ serve(async (req) => {
 
     const { fundName, customThesis, params = {} } = requestData;
     
-    // Azure OpenAI Configuration
-    const AZURE_OPENAI_ENDPOINT = Deno.env.get("AZURE_OPENAI_ENDPOINT");
-    const AZURE_OPENAI_API_KEY = Deno.env.get("AZURE_OPENAI_API_KEY");
-    const AZURE_OPENAI_DEPLOYMENT_NAME = Deno.env.get("AZURE_OPENAI_DEPLOYMENT_NAME") || "gpt-4o-mini";
+    // Groq API Configuration (FREE for students!)
+    const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
+    const GROQ_MODEL = Deno.env.get("GROQ_MODEL") || "llama-3.1-70b-versatile";
     
-    if (!AZURE_OPENAI_ENDPOINT || !AZURE_OPENAI_API_KEY) {
-      console.error("Azure OpenAI credentials not configured");
+    if (!GROQ_API_KEY) {
+      console.error("GROQ_API_KEY not configured");
       return new Response(JSON.stringify({ 
-        error: "Azure OpenAI credentials not configured. Please add AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY in Supabase Dashboard > Functions > analyze-fund > Settings > Secrets" 
+        error: "GROQ_API_KEY not configured. Please add it in Supabase Dashboard > Functions > analyze-fund > Settings > Secrets. Get your free API key at https://console.groq.com" 
       }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -284,46 +283,28 @@ Réponds UNIQUEMENT avec du JSON valide, sans formatage markdown.`;
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("Azure OpenAI API error:", response.status, errorText);
+      console.error("Groq API error:", response.status, errorText);
       
       if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again later." }), {
+        return new Response(JSON.stringify({ error: "Rate limit exceeded. Groq free tier allows ~30 requests/minute. Please try again later." }), {
           status: 429,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       
       if (response.status === 401) {
-        return new Response(JSON.stringify({ error: "Invalid Azure OpenAI API key. Please check your AZURE_OPENAI_API_KEY." }), {
+        return new Response(JSON.stringify({ error: "Invalid Groq API key. Please check your GROQ_API_KEY. Get your free key at https://console.groq.com" }), {
           status: 401,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       
-      if (response.status === 402) {
-        let errorMessage = "Payment required. Your Azure OpenAI account needs billing enabled or has exhausted credits.";
-        try {
-          const errorData = JSON.parse(errorText);
-          if (errorData.error?.message) {
-            errorMessage = `Azure OpenAI: ${errorData.error.message}`;
-          }
-        } catch (e) {
-          // Keep default message
-        }
-        return new Response(JSON.stringify({ 
-          error: errorMessage + " Please check your Azure billing and ensure your subscription has credits available. Go to Azure Portal > Your OpenAI resource > Usage and estimated costs."
-        }), {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      
       if (response.status === 400) {
-        let errorMessage = "Invalid request to Azure OpenAI.";
+        let errorMessage = "Invalid request to Groq API.";
         try {
           const errorData = JSON.parse(errorText);
           if (errorData.error?.message) {
-            errorMessage = `Azure OpenAI: ${errorData.error.message}`;
+            errorMessage = `Groq API: ${errorData.error.message}`;
           }
         } catch (e) {
           // Keep default message
@@ -334,7 +315,7 @@ Réponds UNIQUEMENT avec du JSON valide, sans formatage markdown.`;
         });
       }
       
-      return new Response(JSON.stringify({ error: `Azure OpenAI API error (${response.status}): ${errorText}` }), {
+      return new Response(JSON.stringify({ error: `Groq API error (${response.status}): ${errorText}` }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -343,9 +324,9 @@ Réponds UNIQUEMENT avec du JSON valide, sans formatage markdown.`;
     const data = await response.json();
     
     if (data.error) {
-      console.error("Azure OpenAI API error response:", data.error);
+      console.error("Groq API error response:", data.error);
       return new Response(JSON.stringify({ 
-        error: `Azure OpenAI API error: ${data.error.message || JSON.stringify(data.error)}` 
+        error: `Groq API error: ${data.error.message || JSON.stringify(data.error)}` 
       }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
