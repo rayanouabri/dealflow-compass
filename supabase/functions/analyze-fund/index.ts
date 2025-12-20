@@ -252,8 +252,12 @@ Réponds UNIQUEMENT avec du JSON valide, sans formatage markdown.`;
     console.log("Prompt length:", fullPrompt.length);
 
     // Use Azure OpenAI API
+    // Ensure endpoint ends with / and remove any trailing slashes
+    const cleanEndpoint = AZURE_OPENAI_ENDPOINT.trim().replace(/\/+$/, '');
     const apiVersion = "2024-02-15-preview";
-    const azureUrl = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${AZURE_OPENAI_DEPLOYMENT_NAME}/chat/completions?api-version=${apiVersion}`;
+    const azureUrl = `${cleanEndpoint}/openai/deployments/${AZURE_OPENAI_DEPLOYMENT_NAME}/chat/completions?api-version=${apiVersion}`;
+    
+    console.log("Calling Azure OpenAI:", azureUrl.substring(0, 100) + "...");
     
     const response = await fetch(azureUrl, {
       method: "POST",
