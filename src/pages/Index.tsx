@@ -196,6 +196,9 @@ export default function Index() {
 
       const functionUrl = `${supabaseUrl}/functions/v1/analyze-fund`;
       
+      console.log("Calling Edge Function:", functionUrl);
+      console.log("Request body:", JSON.stringify(requestBody, null, 2));
+      
       const response = await fetch(functionUrl, {
         method: 'POST',
         headers: {
