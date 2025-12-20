@@ -249,80 +249,101 @@ Tu dois répondre avec un objet JSON valide contenant:
 
 Réponds UNIQUEMENT avec du JSON valide, sans formatage markdown.`;
 
-    // Use Google Gemini API directly (free tier: 15 requests/minute)
-    // Using gemini-1.5-flash instead of gemini-1.5-pro for free tier compatibility
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+    console.log("Prompt length:", fullPrompt.length);
+
+    // Use Azure OpenAI API
+    const apiVersion = "2024-02-15-preview";
+    const azureUrl = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${AZURE_OPENAI_DEPLOYMENT_NAME}/chat/completions?api-version=${apiVersion}`;
+    
+    const response = await fetch(azureUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "api-key": AZURE_OPENAI_API_KEY,
       },
       body: JSON.stringify({
-        contents: [{
-          parts: [{
-            text: fullPrompt
-          }]
-        }],
-        generationConfig: {
-          temperature: 0.3, // Réduit pour plus de précision
-          topK: 20,
-          topP: 0.9,
-          maxOutputTokens: 16384, // Augmenté pour plusieurs startups
-        }
+        messages: [
+          {
+            role: "system",
+            content: systemPrompt
+          },
+          {
+            role: "user",
+            content: userPrompt
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 16384,
+        response_format: { type: "json_object" } // Force JSON output
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("Gemini API error:", response.status, errorText);
+      console.error("Azure OpenAI API error:", response.status, errorText);
       
       if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit exceeded. Gemini free tier allows 15 requests/minute. Please try again later." }), {
+        return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again later." }), {
           status: 429,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       
-      if (response.status === 402) {
-        let errorMessage = "Payment required. Your Gemini API key needs billing enabled or has exhausted free credits.";
-        try {
-          const errorData = JSON.parse(errorText);
-          if (errorData.error?.message) {
-            errorMessage = `Gemini API: ${errorData.error.message}`;
-          }
-        } catch (e) {
-          // Keep default message
-        }
-        return new Response(JSON.stringify({ 
-          error: errorMessage + " Please check your Google Cloud billing or generate a new API key at https://makersuite.google.com/app/apikey"
-        }), {
-          status: 402,
+      if (response.status === 401) {
+        return new Response(JSON.stringify({ error: "Invalid Azure OpenAI API key. Please check your AZURE_OPENAI_API_KEY." }), {
+          status: 401,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       
       if (response.status === 400) {
-        return new Response(JSON.stringify({ error: "Invalid API key or request. Please check your GEMINI_API_KEY." }), {
+        let errorMessage = "Invalid request to Azure OpenAI.";
+        try {
+          const errorData = JSON.parse(errorText);
+          if (errorData.error?.message) {
+            errorMessage = `Azure OpenAI: ${errorData.error.message}`;
+          }
+        } catch (e) {
+          // Keep default message
+        }
+        return new Response(JSON.stringify({ error: errorMessage }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       
-      return new Response(JSON.stringify({ error: `Gemini API error (${response.status}): ${errorText}` }), {
+      return new Response(JSON.stringify({ error: `Azure OpenAI API error (${response.status}): ${errorText}` }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const data = await response.json();
-    const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    
+    if (data.error) {
+      console.error("Azure OpenAI API error response:", data.error);
+      return new Response(JSON.stringify({ 
+        error: `Azure OpenAI API error: ${data.error.message || JSON.stringify(data.error)}` 
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    
+    const content = data.choices?.[0]?.message?.content;
 
     if (!content) {
-      throw new Error("No content in AI response");
+      console.error("No content in AI response. Full response:", JSON.stringify(data));
+      return new Response(JSON.stringify({ 
+        error: "No content in AI response. The model may have been blocked or returned an empty response." 
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     console.log("Raw AI response length:", content.length);
 
-    // Parse the JSON response
     let analysisResult;
     try {
       let cleanContent = content.trim();
@@ -338,8 +359,13 @@ Réponds UNIQUEMENT avec du JSON valide, sans formatage markdown.`;
       analysisResult = JSON.parse(cleanContent.trim());
     } catch (parseError) {
       console.error("Failed to parse AI response:", parseError);
-      console.error("Content was:", content.substring(0, 1000));
-      throw new Error("Failed to parse AI analysis response");
+      console.error("Content preview:", content.substring(0, 1000));
+      return new Response(JSON.stringify({ 
+        error: `Failed to parse AI response: ${parseError instanceof Error ? parseError.message : "Unknown error"}. Response may be too long or invalid JSON.` 
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // Validation: Vérifier que les startups sont bien dans un array
