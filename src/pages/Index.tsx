@@ -268,10 +268,20 @@ export default function Index() {
       });
     } catch (error) {
       console.error("Analysis error:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to analyze";
+      
+      // Log full error details for debugging
+      console.error("Full error details:", {
+        error,
+        message: errorMessage,
+        stack: error instanceof Error ? error.stack : undefined
+      });
+      
       toast({
         title: "Analysis Failed",
-        description: error instanceof Error ? error.message : "Failed to analyze",
+        description: errorMessage,
         variant: "destructive",
+        duration: 10000, // Show for 10 seconds
       });
     } finally {
       setIsLoading(false);
