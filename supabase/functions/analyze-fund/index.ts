@@ -57,12 +57,15 @@ serve(async (req) => {
 
     const { fundName, customThesis, params = {} } = requestData;
     
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    // Azure OpenAI Configuration
+    const AZURE_OPENAI_ENDPOINT = Deno.env.get("AZURE_OPENAI_ENDPOINT");
+    const AZURE_OPENAI_API_KEY = Deno.env.get("AZURE_OPENAI_API_KEY");
+    const AZURE_OPENAI_DEPLOYMENT_NAME = Deno.env.get("AZURE_OPENAI_DEPLOYMENT_NAME") || "gpt-4o-mini";
     
-    if (!GEMINI_API_KEY) {
-      console.error("GEMINI_API_KEY is not configured");
+    if (!AZURE_OPENAI_ENDPOINT || !AZURE_OPENAI_API_KEY) {
+      console.error("Azure OpenAI credentials not configured");
       return new Response(JSON.stringify({ 
-        error: "GEMINI_API_KEY is not configured. Please add it in Supabase Dashboard > Functions > analyze-fund > Settings > Secrets" 
+        error: "Azure OpenAI credentials not configured. Please add AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY in Supabase Dashboard > Functions > analyze-fund > Settings > Secrets" 
       }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
