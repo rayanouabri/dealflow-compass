@@ -4,38 +4,38 @@ import { Star, Quote } from "lucide-react";
 
 const testimonials = [
   {
-    quote: "On a bouclé notre Seed en 6 semaines grâce aux pitch decks générés. Le matching était ultra précis.",
+    quote: "On a identifié 3 startups exceptionnelles en 2 semaines. La due diligence automatisée nous fait gagner un temps précieux.",
     author: "Marie Dubois",
-    role: "CEO & Co-founder",
-    company: "DataFlow",
-    funding: "€2.4M Seed",
+    role: "Investment Partner",
+    company: "Horizon Ventures",
+    funding: "€50M AUM",
     avatar: "MD",
     rating: 5
   },
   {
-    quote: "J'ai économisé 3 mois de recherche. L'IA a identifié des fonds que je n'aurais jamais trouvés seul.",
+    quote: "Le sourcing IA a transformé notre process. On analyse 10x plus de startups avec la même équipe.",
     author: "Thomas Martin",
-    role: "Founder",
-    company: "GreenTech Solutions",
-    funding: "€1.8M Pre-seed",
+    role: "Principal",
+    company: "GreenTech Capital",
+    funding: "€25M Fund",
     avatar: "TM",
     rating: 5
   },
   {
-    quote: "Le dashboard de suivi a transformé notre process. On sait exactement où on en est avec chaque VC.",
+    quote: "Les rapports de due diligence sont d'une qualité professionnelle. On prend des décisions plus rapidement.",
     author: "Sophie Chen",
-    role: "COO",
-    company: "FinanceAI",
-    funding: "€5.2M Series A",
+    role: "Managing Partner",
+    company: "FinanceAI Ventures",
+    funding: "€100M AUM",
     avatar: "SC",
     rating: 5
   },
   {
-    quote: "En tant qu'investisseur, je recommande VC Match à toutes les startups de notre portfolio pour leur prochaine levée.",
+    quote: "DealFlow Compass a automatisé 80% de notre sourcing. C'est un game-changer pour notre fonds.",
     author: "Jean-Pierre Rousseau",
-    role: "Partner",
-    company: "Horizon Ventures",
-    funding: "",
+    role: "Founding Partner",
+    company: "Index Capital",
+    funding: "€200M Fund",
     avatar: "JR",
     rating: 5
   },
@@ -55,11 +55,11 @@ export function TestimonialsSection() {
               Témoignages
             </Badge>
             <h2 className="text-3xl md:text-5xl font-bold mb-4">
-              Ils ont levé grâce à
-              <span className="text-gradient-success"> VC Match</span>
+              Ils investissent mieux avec
+              <span className="text-gradient-success"> DealFlow Compass</span>
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
-              Plus de €50M levés par nos utilisateurs en 2024.
+              Plus de 200 fonds VC utilisent notre plateforme pour leur sourcing et due diligence.
             </p>
           </motion.div>
         </div>

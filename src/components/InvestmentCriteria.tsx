@@ -72,22 +72,22 @@ export function InvestmentCriteria({ fundName, thesis }: InvestmentCriteriaProps
           </div>
         </div>
 
-        <div className="pt-3 border-t border-border">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Thesis Summary</p>
-          <p className="text-sm text-secondary-foreground leading-relaxed">{thesis.description}</p>
+        <div className="pt-4 border-t border-border">
+          <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3 font-medium">Thesis Summary</p>
+          <p className="text-sm text-secondary-foreground leading-relaxed whitespace-pre-line">{thesis.description}</p>
         </div>
 
         {thesis.differentiators && (
-          <div className="pt-3 border-t border-border">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Differentiators</p>
-            <p className="text-sm text-secondary-foreground leading-relaxed">{thesis.differentiators}</p>
+          <div className="pt-4 border-t border-border">
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3 font-medium">Differentiators</p>
+            <p className="text-sm text-secondary-foreground leading-relaxed whitespace-pre-line">{thesis.differentiators}</p>
           </div>
         )}
 
         {thesis.valueAdd && (
-          <div className="pt-3 border-t border-border">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Value Add</p>
-            <p className="text-sm text-secondary-foreground leading-relaxed">{thesis.valueAdd}</p>
+          <div className="pt-4 border-t border-border">
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3 font-medium">Value Add</p>
+            <p className="text-sm text-secondary-foreground leading-relaxed whitespace-pre-line">{thesis.valueAdd}</p>
           </div>
         )}
       </CardContent>

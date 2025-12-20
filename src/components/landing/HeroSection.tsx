@@ -29,7 +29,7 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
               className="mb-6 px-4 py-2 text-sm border-primary/30 bg-primary/5 backdrop-blur-sm"
             >
               <Sparkles className="w-3.5 h-3.5 mr-2 text-primary animate-pulse" />
-              +2,400 startups connectées avec leur VC idéal
+              +1,200 startups analysées • Due diligence automatisée
             </Badge>
           </motion.div>
           
@@ -40,10 +40,10 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.1 }}
           >
-            Trouvez votre
-            <span className="block text-gradient-success mt-2">investisseur idéal</span>
+            Sourcez les meilleures
+            <span className="block text-gradient-success mt-2">opportunités d'investissement</span>
             <span className="block text-2xl md:text-3xl lg:text-4xl font-medium text-muted-foreground mt-4">
-              en 30 secondes
+              en quelques minutes
             </span>
           </motion.h1>
           
@@ -54,9 +54,9 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
           >
-            Notre IA analyse <span className="text-foreground font-medium">500+ fonds VC</span> et génère 
-            des pitch decks personnalisés selon leur thèse d'investissement.
-            <span className="block mt-2 text-primary font-medium">Fini les emails à froid. Ciblez juste.</span>
+            Notre IA analyse votre <span className="text-foreground font-medium">thèse d'investissement</span> et identifie 
+            des startups réelles qui correspondent parfaitement. Due diligence complète incluse.
+            <span className="block mt-2 text-primary font-medium">Automatisez votre sourcing. Investissez mieux.</span>
           </motion.p>
 
           {/* CTAs */}
@@ -72,7 +72,7 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
               className="gap-2 px-8 h-14 text-base glow-success group"
             >
               <Zap className="w-5 h-5" />
-              Analyser un fond gratuitement
+              Démarrer le sourcing IA
               <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
             </Button>
             <Button 
@@ -96,11 +96,11 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
             {trialRemaining > 0 ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="status-dot" />
-                {trialRemaining} analyses gratuites • Sans création de compte
+                {trialRemaining} analyses de startups gratuites • Due diligence incluse
               </span>
             ) : (
               <span className="flex items-center justify-center gap-2">
-                ✓ Sans carte bancaire • ✓ Résultats instantanés • ✓ Export inclus
+                ✓ Sourcing automatisé • ✓ Due diligence complète • ✓ Rapports exportables
               </span>
             )}
           </motion.p>

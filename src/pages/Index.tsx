@@ -10,9 +10,10 @@ import { LoadingState } from "@/components/LoadingState";
 import { FundInfoCard } from "@/components/FundInfo";
 import { LandingPage } from "@/components/LandingPage";
 import { AnalysisParameters, AnalysisParams, defaultParams } from "@/components/AnalysisParameters";
+import { CustomThesisInput, CustomThesis } from "@/components/CustomThesisInput";
 import { PaywallModal } from "@/components/PaywallModal";
 import { useTrial } from "@/hooks/useTrial";
-import { BarChart3, ArrowLeft, Crown, Sparkles } from "lucide-react";
+import { BarChart3, ArrowLeft, Crown, Sparkles, ToggleLeft, ToggleRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -71,8 +72,11 @@ interface AnalysisMetadata {
 interface AnalysisResult {
   fundInfo?: FundInfo;
   investmentThesis: InvestmentThesis;
-  startup: Startup;
-  pitchDeck: Slide[];
+  startup?: Startup; // Keep for backward compatibility
+  startups?: Startup[]; // New: array of startups
+  dueDiligenceReport?: Slide[]; // Keep for backward compatibility
+  dueDiligenceReports?: Slide[]; // New: array of reports
+  pitchDeck?: Slide[]; // Keep for backward compatibility
   analysisMetadata?: AnalysisMetadata;
 }
 
@@ -98,6 +102,9 @@ export default function Index() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [params, setParams] = useState<AnalysisParams>(defaultParams);
   const [showPaywall, setShowPaywall] = useState(false);
+  const [useCustomThesis, setUseCustomThesis] = useState(false);
+  const [customThesis, setCustomThesis] = useState<CustomThesis>({});
+  const [selectedStartupIndex, setSelectedStartupIndex] = useState(0);
 
   // Fetch history on mount
   useEffect(() => {
@@ -128,23 +135,59 @@ export default function Index() {
     });
   };
 
-  const handleSearch = async (searchFundName: string) => {
+  const handleSearch = async (searchFundName?: string) => {
     // Check trial credits
     if (!hasTrialRemaining) {
       setShowPaywall(true);
       return;
     }
 
+    // Validation
+    if (!useCustomThesis && !searchFundName?.trim()) {
+      toast({
+        title: "Fund name required",
+        description: "Please enter a fund name or use custom thesis",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (useCustomThesis && !customThesis.sectors?.length && !customThesis.description) {
+      toast({
+        title: "Thesis required",
+        description: "Please provide at least sectors or description for your custom thesis",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
-    setFundName(searchFundName);
+    if (searchFundName) setFundName(searchFundName);
     setResult(null);
+    setSelectedStartupIndex(0);
 
     try {
-      const { data, error } = await supabase.functions.invoke("analyze-fund", {
-        body: { 
-          fundName: searchFundName,
-          params: params,
+      const requestBody: any = {
+        params: {
+          ...params,
+          numberOfStartups: params.numberOfStartups || 1,
+          includeCompetitors: params.includeCompetitors,
+          includeMarketSize: params.includeMarketSize,
+          detailedFinancials: params.detailedFinancials,
+          includeMoat: params.includeMoat,
+          detailLevel: params.detailLevel,
+          slideCount: params.slideCount || 8,
         },
+      };
+
+      if (useCustomThesis) {
+        requestBody.customThesis = customThesis;
+      } else {
+        requestBody.fundName = searchFundName;
+      }
+
+      const { data, error } = await supabase.functions.invoke("analyze-fund", {
+        body: requestBody,
       });
 
       if (error) {
@@ -161,27 +204,32 @@ export default function Index() {
       setResult(data as AnalysisResult);
       setView("results");
 
-      // Save to history
-      const { error: insertError } = await supabase.from("analysis_history").insert({
-        fund_name: searchFundName,
-        startup_name: data.startup.name,
-        investment_thesis: data.investmentThesis,
-        pitch_deck: data.pitchDeck,
-      });
+      // Save to history (save first startup if multiple)
+      const startups = data.startups || (data.startup ? [data.startup] : []);
+      const reports = data.dueDiligenceReports || (data.dueDiligenceReport ? [data.dueDiligenceReport] : []);
+      
+      if (startups.length > 0) {
+        const { error: insertError } = await supabase.from("analysis_history").insert({
+          fund_name: useCustomThesis ? "Custom Thesis" : searchFundName,
+          startup_name: startups[0].name,
+          investment_thesis: data.investmentThesis,
+          pitch_deck: reports[0] || data.pitchDeck,
+        });
 
-      if (!insertError) {
-        fetchHistory();
+        if (!insertError) {
+          fetchHistory();
+        }
       }
 
       toast({
-        title: "Analysis Complete",
-        description: `Found matching opportunity: ${data.startup.name}`,
+        title: "Sourcing Complete",
+        description: `Found ${startups.length} matching startup(s). Due diligence reports ready.`,
       });
     } catch (error) {
       console.error("Analysis error:", error);
       toast({
         title: "Analysis Failed",
-        description: error instanceof Error ? error.message : "Failed to analyze fund",
+        description: error instanceof Error ? error.message : "Failed to analyze",
         variant: "destructive",
       });
     } finally {
@@ -202,7 +250,8 @@ export default function Index() {
         founded: "",
         teamSize: "",
       },
-      pitchDeck: item.pitch_deck,
+      dueDiligenceReport: item.pitch_deck, // Store as due diligence report
+      pitchDeck: item.pitch_deck, // Keep for compatibility
     });
     setView("results");
   };
@@ -210,20 +259,27 @@ export default function Index() {
   const handleExport = () => {
     if (!result) return;
 
-    const content = result.pitchDeck
+    const startups = result.startups || (result.startup ? [result.startup] : []);
+    const reports = result.dueDiligenceReports || (result.dueDiligenceReport ? [result.dueDiligenceReport] : []) || (result.pitchDeck ? [result.pitchDeck] : []);
+    const currentStartup = startups[selectedStartupIndex] || startups[0];
+    const currentReport = reports[selectedStartupIndex] || reports[0] || [];
+    
+    if (!currentStartup) return;
+
+    const content = currentReport
       .map(
         (slide, i) =>
-          `## Slide ${i + 1}: ${slide.title}\n\n${slide.content}\n\n**Key Points:**\n${slide.keyPoints.map((p) => `- ${p}`).join("\n")}\n\n`
+          `## ${slide.title}\n\n${slide.content}\n\n**Key Points:**\n${slide.keyPoints.map((p) => `- ${p}`).join("\n")}\n\n`
       )
       .join("---\n\n");
 
-    const blob = new Blob([`# Investment Memo: ${result.startup.name}\n\n${content}`], {
+    const blob = new Blob([`# Due Diligence Report: ${currentStartup.name}\n\n## Investment Opportunity Analysis\n\n${content}`], {
       type: "text/markdown",
     });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${result.startup.name.replace(/\s+/g, "_")}_memo.md`;
+    a.download = `${currentStartup.name.replace(/\s+/g, "_")}_due_diligence.md`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -231,7 +287,7 @@ export default function Index() {
 
     toast({
       title: "Export Complete",
-      description: "Investment memo downloaded as Markdown",
+      description: `Due diligence report for ${currentStartup.name} downloaded`,
     });
   };
 
@@ -269,8 +325,8 @@ export default function Index() {
                   <BarChart3 className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <h1 className="text-lg font-semibold text-foreground">DealFlow AI</h1>
-                  <p className="text-xs text-muted-foreground">VC Intelligence Platform</p>
+                  <h1 className="text-lg font-semibold text-foreground">DealFlow Compass</h1>
+                  <p className="text-xs text-muted-foreground">Startup Sourcing & Due Diligence Platform</p>
                 </div>
               </button>
             </div>
@@ -278,7 +334,7 @@ export default function Index() {
               {hasTrialRemaining ? (
                 <Badge variant="outline" className="gap-1.5 px-3 py-1">
                   <Sparkles className="w-3 h-3 text-primary" />
-                  {trialRemaining} free analyses left
+                  {trialRemaining} startup analyses left
                 </Badge>
               ) : (
                 <Badge variant="outline" className="gap-1.5 px-3 py-1 border-destructive/50 text-destructive">
@@ -307,20 +363,64 @@ export default function Index() {
               </button>
               
               <div className="text-center mb-8">
-                <h2 className="text-2xl font-bold mb-2">Analyze a VC Fund</h2>
+                <h2 className="text-2xl font-bold mb-2">Source Startups Matching Your Thesis</h2>
                 <p className="text-muted-foreground">
-                  Enter a fund name to get AI-powered investment thesis analysis and a custom pitch deck
+                  Analysez un fond VC existant ou définissez votre propre thèse d'investissement pour trouver des startups correspondantes.
                 </p>
               </div>
 
               <div className="space-y-6">
-                <SearchInput onSearch={handleSearch} isLoading={isLoading} />
+                {/* Toggle entre fond VC et thèse personnalisée */}
+                <div className="flex items-center justify-center gap-4 p-4 bg-card rounded-lg border border-border">
+                  <Button
+                    variant={!useCustomThesis ? "default" : "outline"}
+                    onClick={() => setUseCustomThesis(false)}
+                    className="flex-1"
+                  >
+                    Analyser un fond VC
+                  </Button>
+                  <Button
+                    variant={useCustomThesis ? "default" : "outline"}
+                    onClick={() => setUseCustomThesis(true)}
+                    className="flex-1"
+                  >
+                    Ma thèse personnalisée
+                  </Button>
+                </div>
+
+                {!useCustomThesis ? (
+                  <SearchInput 
+                    onSearch={(name) => {
+                      setFundName(name);
+                      handleSearch(name);
+                    }}
+                    value={fundName}
+                    onChange={setFundName}
+                    isLoading={isLoading} 
+                  />
+                ) : (
+                  <CustomThesisInput
+                    thesis={customThesis}
+                    onChange={setCustomThesis}
+                    onClear={() => setCustomThesis({})}
+                  />
+                )}
                 
                 <AnalysisParameters 
                   params={params} 
                   onChange={setParams}
                   isPro={false}
                 />
+
+                {/* Bouton de recherche */}
+                <Button
+                  onClick={() => handleSearch(fundName)}
+                  disabled={isLoading || (!useCustomThesis && !fundName.trim())}
+                  size="lg"
+                  className="w-full"
+                >
+                  {isLoading ? "Analyse en cours..." : `Générer ${params.numberOfStartups || 1} startup(s)`}
+                </Button>
               </div>
             </div>
 
@@ -349,8 +449,45 @@ export default function Index() {
               {result.fundInfo && (
                 <FundInfoCard fundInfo={result.fundInfo} metadata={result.analysisMetadata} />
               )}
-              <InvestmentCriteria fundName={fundName} thesis={result.investmentThesis} />
-              <StartupCard startup={result.startup} />
+              <InvestmentCriteria fundName={fundName || "Custom Thesis"} thesis={result.investmentThesis} />
+              
+              {/* Affichage des startups multiples */}
+              {(() => {
+                const startups = result.startups || (result.startup ? [result.startup] : []);
+                const reports = result.dueDiligenceReports || (result.dueDiligenceReport ? [result.dueDiligenceReport] : []) || (result.pitchDeck ? [result.pitchDeck] : []);
+                
+                if (startups.length > 1) {
+                  return (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold">Startups trouvées ({startups.length})</h3>
+                      </div>
+                      <div className="space-y-2">
+                        {startups.map((startup, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => setSelectedStartupIndex(idx)}
+                            className={`w-full text-left p-3 rounded-lg border transition-all ${
+                              selectedStartupIndex === idx
+                                ? 'border-primary bg-primary/5'
+                                : 'border-border hover:border-primary/30'
+                            }`}
+                          >
+                            <div className="font-medium text-sm">{startup.name}</div>
+                            <div className="text-xs text-muted-foreground mt-1">{startup.tagline}</div>
+                            <div className="flex gap-2 mt-2">
+                              <Badge variant="secondary" className="text-xs">{startup.sector}</Badge>
+                              <Badge variant="secondary" className="text-xs">{startup.stage}</Badge>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                }
+                
+                return startups.length > 0 ? <StartupCard startup={startups[0]} /> : null;
+              })()}
               
               {history.length > 0 && (
                 <AnalysisHistory history={history} onSelect={handleHistorySelect} />
@@ -359,11 +496,22 @@ export default function Index() {
 
             {/* Main Content */}
             <div className="lg:col-span-8 xl:col-span-9">
-              <SlideCarousel
-                slides={result.pitchDeck}
-                startupName={result.startup.name}
-                onExport={handleExport}
-              />
+              {(() => {
+                const startups = result.startups || (result.startup ? [result.startup] : []);
+                const reports = result.dueDiligenceReports || (result.dueDiligenceReport ? [result.dueDiligenceReport] : []) || (result.pitchDeck ? [result.pitchDeck] : []);
+                const currentStartup = startups[selectedStartupIndex];
+                const currentReport = reports[selectedStartupIndex] || reports[0] || [];
+                
+                if (!currentStartup) return null;
+                
+                return (
+                  <SlideCarousel
+                    slides={currentReport}
+                    startupName={currentStartup.name}
+                    onExport={handleExport}
+                  />
+                );
+              })()}
             </div>
           </div>
         )}
@@ -373,7 +521,7 @@ export default function Index() {
       <footer className="border-t border-border bg-card/30 mt-auto">
         <div className="container max-w-7xl mx-auto px-4 py-4">
           <p className="text-xs text-muted-foreground text-center">
-            DealFlow AI • AI-Generated Analysis for Investment Decision Support
+            DealFlow Compass • AI-Powered Startup Sourcing & Due Diligence for VC Funds
           </p>
         </div>
       </footer>

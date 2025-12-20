@@ -58,6 +58,7 @@ export interface AnalysisParams {
   deckStyle: string;
   detailLevel: number;
   slideCount: number;
+  numberOfStartups: number;
 }
 
 interface AnalysisParametersProps {
@@ -83,7 +84,8 @@ export const defaultParams: AnalysisParams = {
   includeMoat: true,
   deckStyle: "modern",
   detailLevel: 70,
-  slideCount: 10,
+  slideCount: 8,
+  numberOfStartups: 1,
 };
 
 export function AnalysisParameters({ params, onChange, isPro = false }: AnalysisParametersProps) {
@@ -448,7 +450,25 @@ export function AnalysisParameters({ params, onChange, isPro = false }: Analysis
 
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label className="text-xs">Number of Slides</Label>
+                <Label className="text-xs">Number of Startups</Label>
+                <span className="text-xs text-muted-foreground">{params.numberOfStartups} startup(s)</span>
+              </div>
+              <Slider
+                value={[params.numberOfStartups]}
+                onValueChange={([v]) => updateParam("numberOfStartups", v)}
+                min={1}
+                max={5}
+                step={1}
+                className="w-full"
+              />
+              <p className="text-xs text-muted-foreground">
+                Génère plusieurs startups correspondant à votre thèse
+              </p>
+            </div>
+            
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Slides per Report</Label>
                 <span className="text-xs text-muted-foreground">{params.slideCount} slides</span>
               </div>
               <Slider

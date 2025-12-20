@@ -33,11 +33,11 @@ export function DashboardPreview({ onStartTrial }: DashboardPreviewProps) {
               Aperçu du Dashboard
             </Badge>
             <h2 className="text-3xl md:text-5xl font-bold mb-4">
-              Tout votre fundraising
+              Tout votre sourcing
               <span className="block text-gradient-accent">dans un seul endroit</span>
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
-              Suivez vos matchings, gérez vos pitch decks et mesurez votre progression.
+              Suivez vos analyses de startups, gérez vos rapports de due diligence et mesurez votre pipeline de deals.
             </p>
           </motion.div>
         </div>

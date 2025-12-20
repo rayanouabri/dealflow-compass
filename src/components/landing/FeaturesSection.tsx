@@ -15,34 +15,34 @@ import {
 const features = [
   {
     icon: Target,
-    title: "Matching IA avancé",
-    description: "Algorithme entraîné sur 10,000+ deals pour identifier les VCs les plus pertinents pour votre startup.",
+    title: "Sourcing IA avancé",
+    description: "Algorithme entraîné sur 10,000+ deals pour identifier les startups les plus pertinentes selon votre thèse d'investissement.",
     highlight: true
   },
   {
     icon: Sparkles,
-    title: "Pitch decks personnalisés",
-    description: "Génération automatique de decks adaptés à la thèse d'investissement de chaque fonds."
+    title: "Due diligence automatisée",
+    description: "Rapports d'analyse complets : marché, produit, traction, équipe, concurrents et recommandation d'investissement."
   },
   {
     icon: TrendingUp,
     title: "Intelligence marché",
-    description: "Données en temps réel sur l'activité des fonds, portfolios et tendances d'investissement."
+    description: "Données en temps réel sur les startups, leurs métriques, levées de fonds et positionnement concurrentiel."
   },
   {
     icon: BarChart3,
     title: "Dashboard de suivi",
-    description: "Centralisez vos interactions avec les VCs et mesurez votre progression."
+    description: "Centralisez vos analyses de startups, suivez vos opportunités et mesurez votre pipeline de deals."
   },
   {
     icon: Globe,
     title: "Couverture mondiale",
-    description: "Accès à des fonds en Europe, Amérique du Nord, Asie et marchés émergents."
+    description: "Accès à des startups en Europe, Amérique du Nord, Asie et marchés émergents."
   },
   {
     icon: Zap,
-    title: "Résultats instantanés",
-    description: "Analyse complète en moins de 30 secondes grâce à notre pipeline IA optimisé."
+    title: "Résultats rapides",
+    description: "Sourcing et due diligence complète en quelques minutes grâce à notre pipeline IA optimisé."
   },
 ];
 
@@ -61,10 +61,10 @@ export function FeaturesSection() {
             </Badge>
             <h2 className="text-3xl md:text-5xl font-bold mb-4">
               Tout ce qu'il vous faut
-              <span className="block text-gradient-success">pour lever</span>
+              <span className="block text-gradient-success">pour investir</span>
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
-              De la découverte de fonds à la préparation du pitch, nous couvrons tout le process.
+              Du sourcing de startups à la due diligence complète, nous automatisons tout votre processus d'investissement.
             </p>
           </motion.div>
         </div>

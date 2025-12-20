@@ -148,11 +148,37 @@ export function FundInfoCard({ fundInfo, metadata }: FundInfoProps) {
 
         {/* Sources */}
         {fundInfo.sources && fundInfo.sources.length > 0 && (
-          <div className="pt-2 border-t border-border">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Sources</p>
-            <p className="text-xs text-muted-foreground/70 italic">
-              {fundInfo.sources.slice(0, 3).join(", ")}
-            </p>
+          <div className="pt-3 border-t border-border">
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2 font-medium">Sources & Références</p>
+            <div className="space-y-1.5">
+              {fundInfo.sources.slice(0, 5).map((source, i) => {
+                const sourceUrl = typeof source === "string" && source.startsWith("http") 
+                  ? source 
+                  : typeof source === "string"
+                  ? `https://${source}`
+                  : null;
+                
+                if (sourceUrl) {
+                  return (
+                    <a
+                      key={i}
+                      href={sourceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-primary hover:underline flex items-center gap-1.5 block"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      {sourceUrl.length > 60 ? `${sourceUrl.substring(0, 60)}...` : sourceUrl}
+                    </a>
+                  );
+                }
+                return (
+                  <p key={i} className="text-xs text-muted-foreground/70">
+                    • {typeof source === "string" ? source : JSON.stringify(source)}
+                  </p>
+                );
+              })}
+            </div>
           </div>
         )}
 

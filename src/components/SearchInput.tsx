@@ -4,8 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 interface SearchInputProps {
-  onSearch: (fundName: string) => void;
+  onSearch?: (fundName: string) => void;
   isLoading: boolean;
+  value?: string;
+  onChange?: (value: string) => void;
 }
 
 const EXAMPLE_FUNDS = [
@@ -17,19 +19,30 @@ const EXAMPLE_FUNDS = [
   "Bessemer Venture Partners",
 ];
 
-export function SearchInput({ onSearch, isLoading }: SearchInputProps) {
-  const [fundName, setFundName] = useState("");
+export function SearchInput({ onSearch, isLoading, value, onChange }: SearchInputProps) {
+  const [internalFundName, setInternalFundName] = useState("");
+  const fundName = value !== undefined ? value : internalFundName;
+
+  const handleChange = (newValue: string) => {
+    if (onChange) {
+      onChange(newValue);
+    } else {
+      setInternalFundName(newValue);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (fundName.trim() && !isLoading) {
+    if (fundName.trim() && !isLoading && onSearch) {
       onSearch(fundName.trim());
     }
   };
 
   const handleExampleClick = (fund: string) => {
-    setFundName(fund);
-    onSearch(fund);
+    handleChange(fund);
+    if (onSearch) {
+      onSearch(fund);
+    }
   };
 
   return (
@@ -37,13 +50,13 @@ export function SearchInput({ onSearch, isLoading }: SearchInputProps) {
       <div className="text-center mb-8">
         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-sm mb-6">
           <Sparkles className="w-4 h-4" />
-          <span>AI-Powered VC Analysis</span>
+          <span>AI-Powered Startup Sourcing & Due Diligence</span>
         </div>
         <h1 className="text-4xl md:text-5xl font-bold text-foreground mb-4 tracking-tight">
-          VC Dealflow<span className="text-gradient-success"> Analyst</span>
+          DealFlow<span className="text-gradient-success"> Compass</span>
         </h1>
         <p className="text-muted-foreground text-lg max-w-xl mx-auto">
-          Enter a VC fund name to analyze their investment thesis and generate a matching startup pitch deck.
+          Enter your fund name to discover startups that match your investment thesis. Get AI-powered sourcing and comprehensive due diligence reports.
         </p>
       </div>
 
@@ -56,8 +69,8 @@ export function SearchInput({ onSearch, isLoading }: SearchInputProps) {
               <Input
                 type="text"
                 value={fundName}
-                onChange={(e) => setFundName(e.target.value)}
-                placeholder="Enter VC fund name (e.g., Andreessen Horowitz)"
+                onChange={(e) => handleChange(e.target.value)}
+                placeholder="Enter your fund name (e.g., Andreessen Horowitz)"
                 className="pl-12 h-12 bg-transparent border-0 text-lg placeholder:text-muted-foreground/60 focus-visible:ring-0 focus-visible:ring-offset-0"
                 disabled={isLoading}
               />

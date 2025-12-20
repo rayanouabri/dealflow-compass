@@ -1,10 +1,76 @@
-# Welcome to your Lovable project
+# DealFlow Compass
 
-## Project info
+**AI-Powered Startup Sourcing & Due Diligence Platform for VC Funds**
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+DealFlow Compass est une plateforme SaaS qui aide les fonds VC à automatiser leur sourcing de startups et à effectuer des due diligences approfondies grâce à l'IA.
 
-## How can I edit this code?
+## 🚀 Configuration Supabase
+
+### 1. Créer un projet Supabase
+
+1. Allez sur [https://app.supabase.com](https://app.supabase.com)
+2. Créez un nouveau projet
+3. Notez votre **Project URL** et votre **anon/public key** dans Settings > API
+
+### 2. Configurer les variables d'environnement
+
+Créez un fichier `.env` à la racine du projet :
+
+```env
+VITE_SUPABASE_URL=https://votre-project-id.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=votre_anon_key_ici
+LOVABLE_API_KEY=votre_lovable_api_key_ici
+```
+
+Vous pouvez copier `env.example` et remplir les valeurs :
+
+```bash
+cp env.example .env
+```
+
+### 3. Appliquer les migrations
+
+Les migrations Supabase sont dans `supabase/migrations/`. Elles créent automatiquement :
+- La table `analysis_history` pour stocker les analyses
+- Les politiques RLS (Row Level Security)
+- Les index pour les performances
+
+### 4. Déployer l'Edge Function
+
+L'Edge Function `analyze-fund` est déjà déployée automatiquement ! ✅
+
+### 5. Configurer les secrets de l'Edge Function
+
+**Option GRATUITE (Recommandée)** : Utiliser Google Gemini API
+
+1. Obtenez une clé API Gemini gratuite : [https://makersuite.google.com/app/apikey](https://makersuite.google.com/app/apikey)
+2. Dans Supabase Dashboard > **Edge Functions** > **analyze-fund** > **Settings** > **Secrets**
+3. Ajoutez le secret `GEMINI_API_KEY` avec votre clé API Gemini
+
+> 💡 **Gratuit** : Gemini offre 15 requêtes/minute et 1,500 requêtes/jour gratuitement !
+
+Voir le guide complet : [GEMINI_SETUP.md](./GEMINI_SETUP.md)
+
+## 📦 Installation
+
+```bash
+# Installer les dépendances
+npm install
+
+# Démarrer le serveur de développement
+npm run dev
+```
+
+L'application sera accessible sur **http://localhost:8080**
+
+## 🛠️ Technologies utilisées
+
+- **Frontend**: React + TypeScript + Vite
+- **UI**: shadcn/ui + Tailwind CSS
+- **Backend**: Supabase (PostgreSQL + Edge Functions)
+- **IA**: Google Gemini API (Gratuit - 15 req/min)
+
+## 📝 Comment éditer ce code ?
 
 There are several ways of editing your application.
 

@@ -10,13 +10,13 @@ interface PricingSectionProps {
 const plans = [
   {
     name: "Starter",
-    price: "29",
+    price: "99",
     period: "/mois",
-    description: "Pour les fondateurs en phase d'exploration",
+    description: "Pour les fonds VC en phase d'exploration",
     features: [
-      "10 analyses de fonds/mois",
-      "5 pitch decks générés",
-      "Export Markdown",
+      "10 analyses de startups/mois",
+      "Rapports de due diligence",
+      "Export Markdown & PDF",
       "Support email",
     ],
     cta: "Commencer gratuit",
@@ -24,12 +24,12 @@ const plans = [
   },
   {
     name: "Pro",
-    price: "99",
+    price: "299",
     period: "/mois",
-    description: "Pour les startups en levée active",
+    description: "Pour les fonds VC actifs",
     features: [
       "Analyses illimitées",
-      "Pitch decks illimités",
+      "Due diligence complète",
       "Export PDF & PowerPoint",
       "Dashboard de suivi complet",
       "Intégrations CRM",
@@ -42,7 +42,7 @@ const plans = [
     name: "Enterprise",
     price: "Sur mesure",
     period: "",
-    description: "Pour les accélérateurs et fonds VC",
+    description: "Pour les fonds VC et family offices",
     features: [
       "Tout Pro inclus",
       "Multi-utilisateurs",

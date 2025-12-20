@@ -6,29 +6,29 @@ const steps = [
   {
     number: "01",
     icon: Search,
-    title: "Décrivez votre startup",
-    description: "Entrez le nom de votre startup et quelques informations clés. Notre IA complète automatiquement votre profil.",
+    title: "Définissez votre thèse",
+    description: "Entrez le nom de votre fonds VC. Notre IA analyse automatiquement votre thèse d'investissement basée sur votre portfolio réel.",
     color: "primary"
   },
   {
     number: "02",
     icon: Sparkles,
-    title: "Matching intelligent",
-    description: "Notre algorithme analyse 500+ fonds VC et identifie ceux dont la thèse d'investissement correspond à votre projet.",
+    title: "Sourcing intelligent",
+    description: "Notre algorithme identifie des startups réelles qui correspondent parfaitement à votre thèse d'investissement (secteur, stade, géographie).",
     color: "accent"
   },
   {
     number: "03",
     icon: FileText,
-    title: "Pitch deck personnalisé",
-    description: "Recevez un pitch deck adapté à chaque investisseur, avec les points clés qui résonneront avec leur stratégie.",
+    title: "Due diligence automatisée",
+    description: "Recevez un rapport de due diligence complet : marché, produit, traction, équipe, analyse concurrentielle et recommandation d'investissement.",
     color: "success"
   },
   {
     number: "04",
     icon: Send,
-    title: "Contactez & suivez",
-    description: "Accédez aux contacts clés et suivez vos démarches dans un dashboard unifié. Mesurez votre progression.",
+    title: "Décision éclairée",
+    description: "Exportez vos rapports, partagez avec votre équipe et prenez des décisions d'investissement basées sur des données approfondies.",
     color: "data-amber"
   },
 ];
@@ -47,11 +47,11 @@ export function HowItWorksSection() {
               Comment ça marche
             </Badge>
             <h2 className="text-3xl md:text-5xl font-bold mb-4">
-              De l'idée au meeting investisseur
-              <span className="block text-gradient-success">en 4 étapes simples</span>
+              Du sourcing à la décision
+              <span className="block text-gradient-success">en 4 étapes automatisées</span>
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
-              Plus besoin de passer des semaines à rechercher des VCs. Automatisez votre prospection.
+              Plus besoin de passer des semaines à rechercher et analyser des startups. Automatisez votre sourcing et due diligence.
             </p>
           </motion.div>
         </div>

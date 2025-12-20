@@ -3,28 +3,28 @@ import { TrendingUp, Users, Target, DollarSign } from "lucide-react";
 
 const stats = [
   { 
-    value: "2,500+", 
-    label: "Fonds analysés",
+    value: "1,200+", 
+    label: "Startups analysées",
     icon: Target,
-    description: "Base de données mise à jour quotidiennement"
+    description: "Base de données de startups réelles"
   },
   { 
     value: "94%", 
-    label: "Taux de matching",
+    label: "Précision de matching",
     icon: TrendingUp,
-    description: "Précision de l'algorithme de recommandation"
+    description: "Correspondance avec la thèse d'investissement"
   },
   { 
-    value: "12,000+", 
-    label: "Startups utilisatrices",
+    value: "200+", 
+    label: "Fonds VC utilisateurs",
     icon: Users,
-    description: "Du seed à la Series B"
+    description: "De Seed à Growth stage"
   },
   { 
-    value: "€2.1B", 
-    label: "Levés par nos utilisateurs",
+    value: "€500M+", 
+    label: "Investis via notre plateforme",
     icon: DollarSign,
-    description: "Financements obtenus en 2024"
+    description: "Deals identifiés et analysés en 2024"
   },
 ];
 

@@ -21,17 +21,17 @@ export function CTASection({ onStartTrial }: CTASectionProps) {
         >
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/30 mb-8">
             <Sparkles className="w-4 h-4 text-primary" />
-            <span className="text-sm font-medium text-primary">Rejoignez 12,000+ startups</span>
+            <span className="text-sm font-medium text-primary">Rejoignez 200+ fonds VC</span>
           </div>
           
           <h2 className="text-3xl md:text-5xl lg:text-6xl font-bold mb-6">
-            Prêt à trouver votre
-            <span className="block text-gradient-success mt-2">investisseur idéal ?</span>
+            Prêt à automatiser votre
+            <span className="block text-gradient-success mt-2">sourcing et due diligence ?</span>
           </h2>
           
           <p className="text-lg text-muted-foreground mb-10 max-w-xl mx-auto">
-            Faites votre première analyse gratuite en moins de 30 secondes. 
-            Sans inscription, sans engagement.
+            Faites votre première analyse de startup gratuite en quelques minutes. 
+            Sourcing IA et due diligence complète inclus.
           </p>
           
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -49,15 +49,15 @@ export function CTASection({ onStartTrial }: CTASectionProps) {
           <div className="flex items-center justify-center gap-6 mt-8 text-sm text-muted-foreground">
             <span className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-success" />
-              3 analyses gratuites
+              3 analyses de startups gratuites
             </span>
             <span className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-success" />
-              Sans carte bancaire
+              Due diligence incluse
             </span>
             <span className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-success" />
-              Résultats en 30s
+              Résultats en quelques minutes
             </span>
           </div>
         </motion.div>
