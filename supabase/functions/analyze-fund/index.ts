@@ -278,6 +278,24 @@ Réponds UNIQUEMENT avec du JSON valide, sans formatage markdown.`;
         });
       }
       
+      if (response.status === 402) {
+        let errorMessage = "Payment required. Your Gemini API key needs billing enabled or has exhausted free credits.";
+        try {
+          const errorData = JSON.parse(errorText);
+          if (errorData.error?.message) {
+            errorMessage = `Gemini API: ${errorData.error.message}`;
+          }
+        } catch (e) {
+          // Keep default message
+        }
+        return new Response(JSON.stringify({ 
+          error: errorMessage + " Please check your Google Cloud billing or generate a new API key at https://makersuite.google.com/app/apikey"
+        }), {
+          status: 402,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      
       if (response.status === 400) {
         return new Response(JSON.stringify({ error: "Invalid API key or request. Please check your GEMINI_API_KEY." }), {
           status: 400,
@@ -285,7 +303,7 @@ Réponds UNIQUEMENT avec du JSON valide, sans formatage markdown.`;
         });
       }
       
-      return new Response(JSON.stringify({ error: `Gemini API error: ${errorText}` }), {
+      return new Response(JSON.stringify({ error: `Gemini API error (${response.status}): ${errorText}` }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
