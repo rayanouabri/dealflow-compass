@@ -250,34 +250,26 @@ Réponds UNIQUEMENT avec du JSON valide, sans formatage markdown.`;
 
     console.log("Prompt length:", fullPrompt.length);
 
-    // Use Azure OpenAI API
-    // Ensure endpoint ends with / and remove any trailing slashes
-    const cleanEndpoint = AZURE_OPENAI_ENDPOINT.trim().replace(/\/+$/, '');
-    const apiVersion = "2024-02-15-preview";
-    const azureUrl = `${cleanEndpoint}/openai/deployments/${AZURE_OPENAI_DEPLOYMENT_NAME}/chat/completions?api-version=${apiVersion}`;
+    // Use Groq API (FREE for students!)
+    const groqUrl = "https://api.groq.com/openai/v1/chat/completions";
     
-    console.log("Calling Azure OpenAI:", azureUrl.substring(0, 100) + "...");
+    console.log("Calling Groq API with model:", GROQ_MODEL);
     
-    const response = await fetch(azureUrl, {
+    const response = await fetch(groqUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "api-key": AZURE_OPENAI_API_KEY,
+        "Authorization": `Bearer ${GROQ_API_KEY}`,
       },
       body: JSON.stringify({
+        model: GROQ_MODEL,
         messages: [
-          {
-            role: "system",
-            content: systemPrompt
-          },
-          {
-            role: "user",
-            content: userPrompt
-          }
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
         ],
         temperature: 0.3,
         max_tokens: 16384,
-        response_format: { type: "json_object" } // Force JSON output
+        response_format: { type: "json_object" }
       }),
     });
 
