@@ -423,11 +423,31 @@ export default function Index() {
   // Landing Page
   if (view === "landing") {
     return (
-      <LandingPage 
-        onStartTrial={handleStartTrial}
-        onLogin={handleLogin}
-        trialRemaining={trialRemaining}
-      />
+      <>
+        <LandingPage 
+          onStartTrial={handleStartTrial}
+          onLogin={handleLogin}
+          trialRemaining={trialRemaining}
+        />
+        <AuthDialog 
+          open={showAuthDialog}
+          onOpenChange={(open) => {
+            console.log("AuthDialog onOpenChange:", open, "user:", user, "view:", view);
+            setShowAuthDialog(open);
+          }}
+          defaultView={authView}
+          onAuthSuccess={() => {
+            console.log("Auth success callback, user:", user, "view:", view);
+            // Wait a bit for auth state to update, then redirect
+            setTimeout(() => {
+              if (view === "landing") {
+                console.log("Redirecting to analyzer after auth success");
+                setView("analyzer");
+              }
+            }, 500);
+          }}
+        />
+      </>
     );
   }
 
