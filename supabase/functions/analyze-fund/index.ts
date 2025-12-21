@@ -360,15 +360,40 @@ Tu dois répondre avec un objet JSON valide contenant:
 
     // Ensure startups is always an array
     if (!Array.isArray(analysisResult.startups)) {
-      if (analysisResult.startup) {
-        analysisResult.startups = [analysisResult.startup];
-        delete analysisResult.startup;
+      if ((analysisResult as any).startup) {
+        analysisResult.startups = [(analysisResult as any).startup];
+        delete (analysisResult as any).startup;
       } else {
         analysisResult.startups = [];
       }
     }
 
-    // Ensure dueDiligenceReports is always an array
+    // Normalize due diligence reports into Slide[][]
+    const normalizeReportToSlides = (report: any): any[] => {
+      if (!report) return [];
+      if (Array.isArray(report)) return report;
+
+      // Common case: {"Slide 1": {...}, "Slide 2": {...}}
+      if (typeof report === "object") {
+        const entries = Object.entries(report)
+          .filter(([k, v]) => /^slide\s*\d+/i.test(k) && v && typeof v === "object")
+          .map(([k, v]) => {
+            const n = parseInt(k.replace(/\D+/g, ""), 10);
+            return { n: Number.isFinite(n) ? n : 0, v };
+          })
+          .sort((a, b) => a.n - b.n)
+          .map(({ v }) => v as any);
+
+        if (entries.length > 0) return entries;
+
+        // Fallback: if it already looks like a slide object
+        if ("title" in report || "content" in report) return [report];
+      }
+
+      return [];
+    };
+
+    // Ensure dueDiligenceReports is always an array of reports
     if (!Array.isArray(analysisResult.dueDiligenceReports)) {
       if (analysisResult.dueDiligenceReport || analysisResult.pitchDeck) {
         analysisResult.dueDiligenceReports = [analysisResult.dueDiligenceReport || analysisResult.pitchDeck];
@@ -378,6 +403,16 @@ Tu dois répondre avec un objet JSON valide contenant:
         analysisResult.dueDiligenceReports = [];
       }
     }
+
+    // Convert each report into a Slide[] array
+    analysisResult.dueDiligenceReports = (analysisResult.dueDiligenceReports as any[]).map((r) =>
+      normalizeReportToSlides(r).map((s) => ({
+        title: String((s as any).title ?? ""),
+        content: String((s as any).content ?? ""),
+        keyPoints: Array.isArray((s as any).keyPoints) ? (s as any).keyPoints : [],
+        metrics: (s as any).metrics && typeof (s as any).metrics === "object" ? (s as any).metrics : undefined,
+      }))
+    );
 
     console.log("Analysis complete:", fundName || 'Custom Thesis');
     console.log("Startups found:", analysisResult.startups?.length || 0);
