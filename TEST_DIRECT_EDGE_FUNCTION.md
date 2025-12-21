@@ -2,7 +2,7 @@
 
 ## 🎯 Test dans la Console du Navigateur
 
-Pour vérifier si le secret `GROQ_API_KEY` est bien configuré, testons directement l'Edge Function :
+Pour vérifier si le secret `GEMINI_API_KEY` est bien configuré, testons directement l'Edge Function :
 
 ### Étape 1 : Ouvrir la Console
 
@@ -57,9 +57,9 @@ testEdgeFunction();
 ### Étape 3 : Analyser le Résultat
 
 **Si vous voyez** :
-- `Status: 500` + `"GROQ_API_KEY not configured"` → Le secret n'est pas configuré
-- `Status: 401` + `"Invalid Groq API key"` → La clé Groq est invalide
-- `Status: 402` + `"Payment required"` → Problème avec Groq (peu probable)
+- `Status: 500` + `"GEMINI_API_KEY not configured"` → Le secret n'est pas configuré
+- `Status: 403` + `"Invalid or expired Gemini API key"` → La clé Gemini est invalide/expirée
+- `Status: 429` + `"Rate limit exceeded"` → Limite Gemini atteinte (attendre 30-60s)
 - `Status: 200` → Ça fonctionne ! ✅
 
 ## 🔍 Vérification Alternative

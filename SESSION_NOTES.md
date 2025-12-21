@@ -47,7 +47,7 @@
    - URL : https://app.supabase.com/project/bdsetpsitqhzpnitxibo/functions/analyze-fund
    - Settings > Secrets > Add Secret
    - Nom : `GEMINI_API_KEY`
-   - Valeur : `AIzaSyDum1TiEMtDv9TgmpkgiOwV_AAO0GOPa4s`
+   - Valeur : `<VOTRE_CLE_GEMINI_ICI>`
    - **Sans ça, l'Edge Function retourne une erreur**
 
 2. **Les anciennes analyses ne changent pas**
@@ -85,8 +85,8 @@ dealflow-compass/
 **Local (.env)** :
 ```
 VITE_SUPABASE_URL=https://bdsetpsitqhzpnitxibo.supabase.co
-VITE_SUPABASE_ANON_KEY=<votre_anon_key>
-GEMINI_API_KEY=AIzaSyDum1TiEMtDv9TgmpkgiOwV_AAO0GOPa4s
+VITE_SUPABASE_PUBLISHABLE_KEY=<votre_anon_key>
+GEMINI_API_KEY=<VOTRE_CLE_GEMINI_ICI>
 ```
 
 **Supabase Secrets** (Dashboard) :

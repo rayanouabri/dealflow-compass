@@ -31,7 +31,6 @@ Créez un fichier `.env` à la racine du projet :
 ```env
 VITE_SUPABASE_URL=https://votre-project-id.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=votre_anon_key_ici
-LOVABLE_API_KEY=votre_lovable_api_key_ici
 ```
 
 Vous pouvez copier `env.example` et remplir les valeurs :
@@ -58,6 +57,10 @@ L'Edge Function `analyze-fund` est déjà déployée automatiquement ! ✅
 1. Obtenez une clé API Gemini gratuite : [https://makersuite.google.com/app/apikey](https://makersuite.google.com/app/apikey)
 2. Dans Supabase Dashboard > **Edge Functions** > **analyze-fund** > **Settings** > **Secrets**
 3. Ajoutez le secret `GEMINI_API_KEY` avec votre clé API Gemini
+
+**Optionnel (recommandé)** : Activer l’enrichissement via recherche web (Brave Search)
+
+4. (Optionnel) Ajoutez le secret `BRAVE_API_KEY` pour enrichir les données (sources, site officiel, LinkedIn, contexte marché)
 
 > 💡 **Gratuit** : Gemini offre 15 requêtes/minute et 1,500 requêtes/jour gratuitement !
 

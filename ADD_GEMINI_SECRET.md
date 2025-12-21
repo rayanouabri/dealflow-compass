@@ -16,7 +16,7 @@ Pour que l'Edge Function fonctionne en production, vous devez ajouter le secret 
 
 4. **Remplissez** :
    - **Nom** : `GEMINI_API_KEY`
-   - **Valeur** : `AIzaSyDum1TiEMtDv9TgmpkgiOwV_AAO0GOPa4s`
+   - **Valeur** : `<VOTRE_CLE_GEMINI_ICI>`
 
 5. **Cliquez sur "Save"**
 
