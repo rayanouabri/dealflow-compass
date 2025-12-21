@@ -113,8 +113,10 @@ export default function Index() {
 
   // Fetch history on mount and when user changes
   useEffect(() => {
-    if (!authLoading) {
+    if (!authLoading && user) {
       fetchHistory();
+    } else if (!authLoading && !user) {
+      setHistory([]);
     }
   }, [user, authLoading]);
 
