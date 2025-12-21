@@ -105,11 +105,26 @@ CREATE TRIGGER on_auth_user_created
 
 ### 2. Activer l'Email Auth dans Supabase
 
-1. **Allez dans** : Authentication → Providers
-2. **Activez "Email"** si ce n'est pas déjà fait
-3. **Configurez** (optionnel) :
-   - Email confirmation : ON (recommandé pour production)
-   - Email confirmation : OFF (pour développement rapide)
+**Instructions Détaillées** :
+
+1. **Allez dans** : **Authentication** (menu de gauche dans Supabase Dashboard)
+2. **Cliquez sur "Sign In / Providers"** dans la section **CONFIGURATION**
+3. **Trouvez "Email"** dans la liste des providers
+4. **Cliquez sur "Email"** pour ouvrir ses paramètres
+5. **Activez le toggle** (bouton ON/OFF) à côté de "Enable Email provider"
+   - ✅ Le toggle doit être **vert/activé** pour que ça fonctionne
+
+**Configuration Optionnelle** :
+
+- **Pour le Développement (Test Rapide)** :
+  - **Désactivez "Confirm email"** (toggle OFF)
+  - ⚠️ Cela permet de tester rapidement sans confirmer l'email
+
+- **Pour la Production** :
+  - **Activez "Confirm email"** (toggle ON)
+  - ⚠️ Les utilisateurs devront confirmer leur email avant de se connecter
+
+> 📖 **Guide complet avec captures d'écran** : Voir [`ACTIVER_EMAIL_AUTH.md`](./ACTIVER_EMAIL_AUTH.md)
 
 ### 3. Tester l'Authentification
 
