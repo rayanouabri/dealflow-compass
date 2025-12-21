@@ -207,6 +207,9 @@ export default function Index() {
           'apikey': supabaseKey,
         },
         body: JSON.stringify(requestBody),
+      }).catch((fetchError) => {
+        console.error("Fetch error:", fetchError);
+        throw new Error(`Network error: ${fetchError.message}. Please check that the Edge Function is deployed and accessible.`);
       });
 
       let data: any;
