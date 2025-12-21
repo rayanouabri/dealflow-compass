@@ -78,19 +78,32 @@ async function enrichStartupData(startup: any): Promise<any> {
 
   console.log(`Enriching data for startup: ${name}`);
 
-  // Search for company info, funding, and metrics in parallel
+  // Search for company info, funding, and metrics in parallel - MORE COMPREHENSIVE
   const [
     generalResults,
     fundingResults,
+    metricsResults,
+    financialResults,
     linkedinResults,
+    crunchbaseResults,
   ] = await Promise.all([
     braveSearch(`${name} startup company official website`, 3),
-    braveSearch(`${name} startup funding round valuation ARR revenue`, 3),
-    braveSearch(`${name} startup LinkedIn company`, 2),
+    braveSearch(`${name} funding round valuation investors series A B C`, 5),
+    braveSearch(`${name} ARR MRR revenue metrics customers growth 2024`, 5),
+    braveSearch(`${name} CAC LTV churn NRR burn rate runway financial metrics`, 5),
+    braveSearch(`${name} LinkedIn company employees team size`, 2),
+    braveSearch(`${name} Crunchbase profile funding revenue`, 3),
   ]);
 
-  // Extract URLs
-  const allResults = [...generalResults, ...fundingResults, ...linkedinResults];
+  // Extract URLs - combine all search results
+  const allResults = [
+    ...generalResults, 
+    ...fundingResults, 
+    ...metricsResults,
+    ...financialResults,
+    ...linkedinResults,
+    ...crunchbaseResults
+  ];
   
   const websiteUrl = generalResults.find(r => 
     !r.url.includes("linkedin") && 
@@ -102,8 +115,14 @@ async function enrichStartupData(startup: any): Promise<any> {
   const linkedinUrl = linkedinResults.find(r => r.url.includes("linkedin.com/company"))?.url;
   const crunchbaseUrl = allResults.find(r => r.url.includes("crunchbase.com"))?.url;
 
-  // Extract snippets for context
+  // Extract snippets for context - prioritize metrics and financial data
+  const metricsSnippets = [...metricsResults, ...financialResults, ...fundingResults]
+    .flatMap(r => [r.description, ...(r.extra_snippets || [])])
+    .filter(Boolean);
   const allSnippets = allResults.flatMap(r => [r.description, ...(r.extra_snippets || [])]).filter(Boolean);
+  
+  // Combine with priority on metrics
+  const enrichedContext = [...metricsSnippets, ...allSnippets].slice(0, 10).join(" | ");
 
   // Build sources array
   const sources: { name: string; url: string; type: string }[] = [];
@@ -126,8 +145,9 @@ async function enrichStartupData(startup: any): Promise<any> {
     website: websiteUrl || startup.website,
     linkedinUrl,
     crunchbaseUrl,
-    sources: sources.slice(0, 6),
-    dataContext: allSnippets.slice(0, 5).join(" | "),
+    sources: sources.slice(0, 8),
+    dataContext: enrichedContext,
+    metricsContext: metricsSnippets.join(" | "), // Separate context for metrics
     verificationStatus: sources.length >= 2 ? "verified" : "partially_verified",
   };
 }
@@ -285,11 +305,29 @@ TON RÔLE :
 3. Effectuer une DUE DILIGENCE COMPLÈTE de niveau senior VC avec TOUTES les métriques chiffrées
 4. Générer un rapport d'investissement prêt pour un Investment Committee
 
-⚠️ RÈGLE CRITIQUE : DONNÉES VÉRIFIÉES UNIQUEMENT ⚠️
-Tu as accès à des données de recherche web réelles ci-dessous. UTILISE CES DONNÉES pour tes analyses.
+⚠️ RÈGLE CRITIQUE : DONNÉES VÉRIFIÉES + ESTIMATIONS INTELLIGENTES ⚠️
+
+PRIORITÉ 1 - DONNÉES RÉELLES :
+Tu as accès à des données de recherche web réelles ci-dessous. UTILISE CES DONNÉES en PRIORITÉ pour tes analyses.
 Pour chaque information clé (TAM, SAM, SOM, ARR, MRR, valorisation, funding, traction, CAC, LTV, churn, NRR), indique TOUJOURS la source avec URL.
-Si une donnée n'est pas vérifiable, marque-la clairement comme "Estimation" ou "Non vérifié".
-QUALITÉ > QUANTITÉ : Mieux vaut moins de startups mais avec des données 100% vérifiées et chiffrées.
+
+PRIORITÉ 2 - ESTIMATIONS INTELLIGENTES :
+Si une donnée n'est PAS disponible dans les recherches web, fais une ESTIMATION INTELLIGENTE basée sur :
+1. Le stade de la startup (Seed, Series A, B, etc.)
+2. Le secteur (SaaS, Marketplace, Fintech, etc.)
+3. Les moyennes du marché pour ce type d'entreprise
+4. Les données disponibles sur la startup (funding, équipe, etc.)
+
+FORMAT DES MÉTRIQUES :
+- Si données réelles : "$2.5M ARR (source: techcrunch.com/article)"
+- Si estimation : "$1.8M ARR (estimation basée sur stade Series A SaaS, moyenne marché $1-3M)"
+- Si vraiment non disponible : "Non disponible (startup trop récente)"
+
+⚠️ IMPORTANT : 
+- Ne laisse JAMAIS "Non disponible" sans avoir cherché
+- Fais TOUJOURS une estimation intelligente si possible
+- Compare avec les moyennes du marché
+- Indique clairement "(estimation)" pour les métriques estimées
 
 ${fundThesisContext ? `
 === THÈSE D'INVESTISSEMENT DU FONDS (pour comprendre quoi chercher) ===
@@ -348,19 +386,19 @@ Tu dois répondre avec un objet JSON valide contenant:
    - "linkedin": URL LinkedIn de la startup
    - "crunchbaseUrl": URL Crunchbase si disponible
    - "metrics": {
-       "arr": "ARR en $ avec source URL (ex: $2.5M ARR - source: techcrunch.com/article)",
-       "mrr": "MRR en $ avec source",
-       "growth": "Croissance MoM/YoY en % avec source",
-       "customers": "Nombre de clients avec source",
-       "nrr": "Net Revenue Retention en % avec source",
-       "cac": "Customer Acquisition Cost en $ avec source",
-       "ltv": "Lifetime Value en $ avec source",
-       "ltvCacRatio": "Ratio LTV/CAC avec source",
-       "churn": "Taux de churn en % avec source",
-       "grossMargin": "Marge brute en % avec source",
-       "burnRate": "Burn rate mensuel en $ avec source",
-       "runway": "Runway en mois avec source",
-       "valuation": "Valorisation actuelle en $ avec source URL"
+       "arr": "ARR en $ avec source OU estimation (ex: '$2.5M ARR (source: techcrunch.com)' ou '$1.8M ARR (estimation basée sur stade Series A SaaS)')",
+       "mrr": "MRR en $ avec source OU estimation (ex: '$200K MRR (source: ...)' ou '$150K MRR (estimation)')",
+       "growth": "Croissance MoM/YoY en % avec source OU estimation",
+       "customers": "Nombre de clients avec source OU estimation basée sur ARR/MRR et secteur",
+       "nrr": "Net Revenue Retention en % avec source OU estimation (moyenne SaaS: 100-120%)",
+       "cac": "Customer Acquisition Cost en $ avec source OU estimation (moyenne SaaS: $500-2000)",
+       "ltv": "Lifetime Value en $ avec source OU estimation (calculé: LTV = ARPU / churn rate)",
+       "ltvCacRatio": "Ratio LTV/CAC avec source OU estimation (bon ratio: 3:1 minimum)",
+       "churn": "Taux de churn mensuel en % avec source OU estimation (moyenne SaaS: 3-7%/mois)",
+       "grossMargin": "Marge brute en % avec source OU estimation (moyenne SaaS: 70-90%)",
+       "burnRate": "Burn rate mensuel en $ avec source OU estimation (basé sur funding et runway)",
+       "runway": "Runway en mois avec source OU estimation (calculé: cash / burn rate)",
+       "valuation": "Valorisation actuelle en $ avec source URL OU estimation basée sur dernière levée"
      }
    - "team": {
        "founders": [{"name": "Nom complet", "role": "CEO/CTO/etc", "linkedin": "URL", "background": "Expérience"}],
@@ -408,18 +446,18 @@ Tu dois répondre avec un objet JSON valide contenant:
        "content": "Métriques DÉTAILLÉES avec SOURCES VÉRIFIÉES et CHIFFRES PRÉCIS (min 400 mots). Inclure: ARR/MRR, croissance MoM/YoY, nombre de clients, NRR, CAC, LTV, ratio LTV/CAC, churn, burn rate, runway, unit economics, cohort analysis si disponible.",
        "keyPoints": ["ARR: $X avec source URL", "MRR: $Y avec croissance Z% MoM", "Clients: N avec source", "NRR: X% avec source", "CAC: $X avec source", "LTV: $Y avec source", "LTV/CAC: X avec source", "Churn: X% avec source", "Burn: $X/mois avec source", "Runway: X mois avec source"],
        "metrics": { 
-         "arr": "ARR en $ avec source URL", 
-         "mrr": "MRR en $ avec source",
-         "mrrGrowth": "Croissance MRR en % MoM/YoY avec source", 
-         "customers": "Nombre de clients avec source", 
-         "nrr": "NRR en % avec source",
-         "cac": "CAC en $ avec source",
-         "ltv": "LTV en $ avec source",
-         "ltvCacRatio": "Ratio LTV/CAC avec source",
-         "churn": "Churn en % avec source",
-         "burnRate": "Burn rate mensuel en $ avec source",
-         "runway": "Runway en mois avec source",
-         "grossMargin": "Marge brute en % avec source",
+         "arr": "ARR en $ avec source URL OU estimation. Format: '$2.5M ARR (source: ...)' ou '$1.2M ARR (estimation - Series A SaaS)'",
+         "mrr": "MRR en $ avec source OU estimation. Si ARR disponible, MRR = ARR/12.",
+         "mrrGrowth": "Croissance MRR en % MoM/YoY avec source OU estimation. Estime basé sur stade si non disponible.", 
+         "customers": "Nombre de clients avec source OU estimation. Calcule si ARR/MRR et ARPU disponibles.", 
+         "nrr": "NRR en % avec source OU estimation (moyenne SaaS par stade: Seed 80-100%, Series A 100-120%, etc.)",
+         "cac": "CAC en $ avec source OU estimation (moyenne SaaS par stade: Seed $500-1500, Series A $1000-2000, etc.)",
+         "ltv": "LTV en $ avec source OU estimation. Calcule: LTV = ARPU / churn rate si données disponibles.",
+         "ltvCacRatio": "Ratio LTV/CAC avec source OU estimation. Calcule si LTV et CAC disponibles. Bon: 3:1+",
+         "churn": "Churn mensuel en % avec source OU estimation (moyenne SaaS: Seed 5-10%, Series A 3-7%, etc.)",
+         "burnRate": "Burn rate mensuel en $ avec source OU estimation. Estime basé sur équipe et stade.",
+         "runway": "Runway en mois avec source OU estimation. Calcule: cash / burn rate si données disponibles.",
+         "grossMargin": "Marge brute en % avec source OU estimation (SaaS typique: 70-90%)",
          "sources": ["source1", "source2", "source3"]
        }
      },
@@ -485,19 +523,35 @@ Chaque startup doit être :
 ÉTAPE 3 - DUE DILIGENCE COMPLÈTE (niveau senior VC) :
 Pour chaque startup sourcée, génère un rapport de due diligence PROFESSIONNEL avec TOUTES les métriques chiffrées :
 
-OBLIGATOIRE - Métriques financières avec sources :
-- ARR/MRR en $ avec source URL
-- Croissance MoM/YoY en % avec source
-- Nombre de clients avec source
-- NRR (Net Revenue Retention) en % avec source
-- CAC (Customer Acquisition Cost) en $ avec source
-- LTV (Lifetime Value) en $ avec source
-- Ratio LTV/CAC avec source
-- Churn en % avec source
-- Burn rate mensuel en $ avec source
-- Runway en mois avec source
-- Marge brute en % avec source
-- Valorisation actuelle en $ avec source URL
+OBLIGATOIRE - Métriques financières (RÉELLES ou ESTIMATIONS INTELLIGENTES) :
+
+POUR CHAQUE MÉTRIQUE :
+1. Cherche d'abord dans les données de recherche web fournies
+2. Si trouvé → Utilise la donnée réelle avec source URL
+3. Si NON trouvé → Fais une ESTIMATION INTELLIGENTE basée sur :
+   - Le stade de la startup (Seed, Series A, B, etc.)
+   - Le secteur (SaaS, Marketplace, Fintech, etc.)
+   - Les moyennes du marché pour ce type d'entreprise
+   - Les données disponibles (funding, équipe, etc.)
+
+MÉTRIQUES REQUISES :
+- ARR/MRR en $ (avec source OU estimation avec justification)
+- Croissance MoM/YoY en % (avec source OU estimation)
+- Nombre de clients (avec source OU estimation basée sur ARR/MRR moyen par client)
+- NRR en % (avec source OU estimation: moyenne SaaS 100-120%)
+- CAC en $ (avec source OU estimation: moyenne SaaS $500-2000)
+- LTV en $ (avec source OU estimation: calculé LTV = ARPU / churn)
+- Ratio LTV/CAC (avec source OU estimation: bon ratio 3:1 minimum)
+- Churn mensuel en % (avec source OU estimation: moyenne SaaS 3-7%/mois)
+- Burn rate mensuel en $ (avec source OU estimation basée sur funding/runtime)
+- Runway en mois (avec source OU estimation: calculé cash / burn rate)
+- Marge brute en % (avec source OU estimation: moyenne SaaS 70-90%)
+- Valorisation en $ (avec source URL OU estimation basée sur dernière levée)
+
+FORMAT OBLIGATOIRE :
+- Donnée réelle : "$2.5M ARR (source: techcrunch.com/article)"
+- Estimation : "$1.8M ARR (estimation - stade Series A SaaS, moyenne marché $1-3M)"
+- Ne JAMAIS mettre "Non disponible" sans estimation
 
 OBLIGATOIRE - Analyse marché :
 - TAM/SAM/SOM en $ avec sources URL (ex: $50B TAM - Grand View Research 2024)

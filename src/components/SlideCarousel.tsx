@@ -147,9 +147,20 @@ export function SlideCarousel({ slides, startupName, onExport }: SlideCarouselPr
                   <p className="text-sm font-semibold text-foreground uppercase tracking-wider">Métriques Clés</p>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {Object.entries(slide.metrics).map(([key, value]) => {
+                  {Object.entries(slide.metrics)
+                    .filter(([key, value]) => {
+                      // Filtrer les métriques vides ou "Non disponible" sans estimation
+                      if (!value) return false;
+                      const strValue = String(value).toLowerCase();
+                      if (strValue === "non disponible" || strValue === "n/a" || strValue === "na") return false;
+                      return true;
+                    })
+                    .map(([key, value]) => {
                     // Formatage intelligent des valeurs
                     let formattedValue: string;
+                    let isEstimation = false;
+                    let sourceInfo = "";
+                    
                     if (typeof value === "number") {
                       if (value >= 1000000) {
                         formattedValue = `$${(value / 1000000).toFixed(1)}M`;
@@ -159,22 +170,51 @@ export function SlideCarousel({ slides, startupName, onExport }: SlideCarouselPr
                         formattedValue = value.toLocaleString();
                       }
                     } else if (typeof value === "string") {
-                      // Extraire les nombres des strings comme "$10,000,000" ou "10,000,000"
-                      const cleanStr = value.replace(/[$,]/g, '').trim();
-                      const num = parseFloat(cleanStr);
+                      const valueStr = value.trim();
                       
-                      if (!isNaN(num) && num > 0) {
-                        // C'est un nombre, on le formate
-                        if (num >= 1000000) {
-                          formattedValue = `$${(num / 1000000).toFixed(1)}M`;
-                        } else if (num >= 1000) {
-                          formattedValue = `$${(num / 1000).toFixed(1)}K`;
+                      // Détecter si c'est une estimation
+                      if (valueStr.toLowerCase().includes("estimation") || valueStr.toLowerCase().includes("(estimation")) {
+                        isEstimation = true;
+                      }
+                      
+                      // Extraire la source si présente
+                      const sourceMatch = valueStr.match(/\(source[^)]*\)/i) || valueStr.match(/source:\s*([^)]+)/i);
+                      if (sourceMatch) {
+                        sourceInfo = sourceMatch[0];
+                      }
+                      
+                      // Extraire le nombre principal
+                      // Patterns: "$2.5M ARR (source: ...)" ou "$1.8M ARR (estimation ...)" ou "$2.5M"
+                      const numberMatch = valueStr.match(/\$?([\d,]+\.?\d*)\s*([KMkm]?)/);
+                      
+                      if (numberMatch) {
+                        let num = parseFloat(numberMatch[1].replace(/,/g, ''));
+                        const unit = numberMatch[2].toUpperCase();
+                        
+                        if (unit === 'M' || unit === 'MILLION') {
+                          num = num * 1000000;
+                        } else if (unit === 'K' || unit === 'THOUSAND') {
+                          num = num * 1000;
+                        }
+                        
+                        if (!isNaN(num) && num > 0) {
+                          // Formater le nombre
+                          if (num >= 1000000) {
+                            formattedValue = `$${(num / 1000000).toFixed(1)}M`;
+                          } else if (num >= 1000) {
+                            formattedValue = `$${(num / 1000).toFixed(1)}K`;
+                          } else {
+                            formattedValue = `$${num.toLocaleString()}`;
+                          }
                         } else {
-                          formattedValue = `$${num.toLocaleString()}`;
+                          formattedValue = valueStr;
                         }
                       } else {
-                        // Ce n'est pas un nombre, on garde la valeur originale
-                        formattedValue = value;
+                        // Pas de nombre trouvé, garder la valeur originale mais nettoyer
+                        formattedValue = valueStr
+                          .replace(/\(source[^)]*\)/gi, '')
+                          .replace(/source:\s*[^,)]+/gi, '')
+                          .trim();
                       }
                     } else {
                       formattedValue = String(value);
@@ -194,10 +234,18 @@ export function SlideCarousel({ slides, startupName, onExport }: SlideCarouselPr
                       >
                         <p className="text-2xl md:text-3xl font-bold text-primary mb-2 leading-tight">
                           {formattedValue}
+                          {isEstimation && (
+                            <span className="text-sm font-normal text-muted-foreground ml-2">(estimation)</span>
+                          )}
                         </p>
                         <p className="text-xs text-muted-foreground uppercase tracking-wider leading-tight font-medium">
                           {formattedKey}
                         </p>
+                        {sourceInfo && !isEstimation && (
+                          <p className="text-[10px] text-muted-foreground mt-1 truncate" title={sourceInfo}>
+                            {sourceInfo.length > 30 ? sourceInfo.substring(0, 30) + '...' : sourceInfo}
+                          </p>
+                        )}
                       </div>
                     );
                   })}
