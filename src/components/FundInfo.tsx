@@ -179,7 +179,7 @@ export function FundInfoCard({ fundInfo, metadata }: FundInfoProps) {
                       className="text-xs text-primary hover:underline flex items-center gap-1.5 block"
                     >
                       <ExternalLink className="w-3 h-3" />
-                      {sourceUrl.length > 60 ? `${sourceUrl.substring(0, 60)}...` : sourceUrl}
+                      {sourceName.length > 60 ? `${sourceName.substring(0, 60)}...` : sourceName}
                     </a>
                   );
                 }
