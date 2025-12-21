@@ -47,7 +47,10 @@ export function LoginForm({ onSuccess, onSwitchToSignup }: LoginFormProps) {
         description: "Bienvenue sur DealFlow Compass !",
       });
 
-      onSuccess?.();
+      // Wait a bit for auth state to update
+      setTimeout(() => {
+        onSuccess?.();
+      }, 300);
     } catch (error: any) {
       toast({
         title: "Erreur de connexion",

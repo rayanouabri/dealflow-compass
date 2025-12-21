@@ -13,9 +13,10 @@ interface AuthDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultView?: "login" | "signup";
+  onAuthSuccess?: () => void;
 }
 
-export function AuthDialog({ open, onOpenChange, defaultView = "login" }: AuthDialogProps) {
+export function AuthDialog({ open, onOpenChange, defaultView = "login", onAuthSuccess }: AuthDialogProps) {
   const [view, setView] = useState<"login" | "signup">(defaultView);
 
   // Update view when defaultView changes
@@ -26,8 +27,15 @@ export function AuthDialog({ open, onOpenChange, defaultView = "login" }: AuthDi
   }, [defaultView, open]);
 
   const handleSuccess = () => {
+    console.log("AuthDialog: handleSuccess called");
     // Close dialog - parent will handle redirect
     onOpenChange(false);
+    // Call success callback if provided
+    if (onAuthSuccess) {
+      setTimeout(() => {
+        onAuthSuccess();
+      }, 200);
+    }
     // Reset view to login for next time
     setTimeout(() => setView("login"), 100);
   };

@@ -120,6 +120,14 @@ export default function Index() {
     }
   }, [user, authLoading]);
 
+  // Redirect to analyzer when user logs in from landing page
+  useEffect(() => {
+    if (!authLoading && user && view === "landing" && !showAuthDialog) {
+      console.log("User logged in, redirecting to analyzer");
+      setView("analyzer");
+    }
+  }, [user, authLoading, view, showAuthDialog]);
+
   const fetchHistory = async () => {
     if (!user) {
       setHistory([]);
@@ -139,15 +147,19 @@ export default function Index() {
   };
 
   const handleStartTrial = () => {
+    console.log("handleStartTrial called, user:", user);
     if (!user) {
+      console.log("No user, opening signup dialog");
       setAuthView("signup");
       setShowAuthDialog(true);
     } else {
+      console.log("User exists, switching to analyzer");
       setView("analyzer");
     }
   };
 
   const handleLogin = () => {
+    console.log("handleLogin called");
     setAuthView("login");
     setShowAuthDialog(true);
   };
@@ -659,15 +671,20 @@ export default function Index() {
       <AuthDialog 
         open={showAuthDialog}
         onOpenChange={(open) => {
+          console.log("AuthDialog onOpenChange:", open, "user:", user, "view:", view);
           setShowAuthDialog(open);
-          // When dialog closes after successful auth, redirect to analyzer
-          if (!open && user && view === "landing") {
-            setTimeout(() => {
-              setView("analyzer");
-            }, 100);
-          }
         }}
         defaultView={authView}
+        onAuthSuccess={() => {
+          console.log("Auth success callback, user:", user, "view:", view);
+          // Wait a bit for auth state to update, then redirect
+          setTimeout(() => {
+            if (view === "landing") {
+              console.log("Redirecting to analyzer after auth success");
+              setView("analyzer");
+            }
+          }, 500);
+        }}
       />
     </div>
   );

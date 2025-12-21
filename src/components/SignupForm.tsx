@@ -48,12 +48,23 @@ export function SignupForm({ onSuccess, onSwitchToLogin }: SignupFormProps) {
 
       if (error) throw error;
 
-      toast({
-        title: "Compte créé avec succès !",
-        description: "Vérifiez votre email pour confirmer votre compte.",
-      });
+      // Check if email confirmation is required
+      if (authData.user && !authData.session) {
+        toast({
+          title: "Compte créé avec succès !",
+          description: "Vérifiez votre email pour confirmer votre compte.",
+        });
+      } else {
+        toast({
+          title: "Compte créé avec succès !",
+          description: "Bienvenue sur DealFlow Compass !",
+        });
+      }
 
-      onSuccess?.();
+      // Wait a bit for auth state to update
+      setTimeout(() => {
+        onSuccess?.();
+      }, 300);
     } catch (error: any) {
       toast({
         title: "Erreur lors de l'inscription",
