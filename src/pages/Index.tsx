@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/components/AuthProvider";
+import { AuthDialog } from "@/components/AuthDialog";
 import { SearchInput } from "@/components/SearchInput";
 import { InvestmentCriteria } from "@/components/InvestmentCriteria";
 import { StartupCard } from "@/components/StartupCard";
@@ -13,7 +15,7 @@ import { AnalysisParameters, AnalysisParams, defaultParams } from "@/components/
 import { CustomThesisInput, CustomThesis } from "@/components/CustomThesisInput";
 import { PaywallModal } from "@/components/PaywallModal";
 import { useTrial } from "@/hooks/useTrial";
-import { BarChart3, ArrowLeft, Crown, Sparkles, ToggleLeft, ToggleRight } from "lucide-react";
+import { BarChart3, ArrowLeft, Crown, Sparkles, ToggleLeft, ToggleRight, LogOut, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -93,6 +95,7 @@ type AppView = "landing" | "analyzer" | "results";
 
 export default function Index() {
   const { toast } = useToast();
+  const { user, loading: authLoading, signOut, profile } = useAuth();
   const { trialRemaining, hasTrialRemaining, useTrialCredit } = useTrial();
   
   const [view, setView] = useState<AppView>("landing");
@@ -105,16 +108,26 @@ export default function Index() {
   const [useCustomThesis, setUseCustomThesis] = useState(false);
   const [customThesis, setCustomThesis] = useState<CustomThesis>({});
   const [selectedStartupIndex, setSelectedStartupIndex] = useState(0);
+  const [showAuthDialog, setShowAuthDialog] = useState(false);
+  const [authView, setAuthView] = useState<"login" | "signup">("login");
 
-  // Fetch history on mount
+  // Fetch history on mount and when user changes
   useEffect(() => {
-    fetchHistory();
-  }, []);
+    if (!authLoading) {
+      fetchHistory();
+    }
+  }, [user, authLoading]);
 
   const fetchHistory = async () => {
+    if (!user) {
+      setHistory([]);
+      return;
+    }
+
     const { data, error } = await supabase
       .from("analysis_history")
       .select("*")
+      .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(10);
 
@@ -124,15 +137,17 @@ export default function Index() {
   };
 
   const handleStartTrial = () => {
+    if (!user) {
+      setAuthView("signup");
+      setShowAuthDialog(true);
+      return;
+    }
     setView("analyzer");
   };
 
   const handleLogin = () => {
-    // TODO: Implement login
-    toast({
-      title: "Coming Soon",
-      description: "Sign in functionality will be available soon.",
-    });
+    setAuthView("login");
+    setShowAuthDialog(true);
   };
 
   const handleSearch = async (searchFundName?: string) => {
@@ -255,8 +270,9 @@ export default function Index() {
       const startups = data.startups || (data.startup ? [data.startup] : []);
       const reports = data.dueDiligenceReports || (data.dueDiligenceReport ? [data.dueDiligenceReport] : []);
       
-      if (startups.length > 0) {
+      if (startups.length > 0 && user) {
         const { error: insertError } = await supabase.from("analysis_history").insert({
+          user_id: user.id,
           fund_name: useCustomThesis ? "Custom Thesis" : searchFundName,
           startup_name: startups[0].name,
           investment_thesis: data.investmentThesis,
@@ -408,6 +424,12 @@ export default function Index() {
               </button>
             </div>
             <div className="flex items-center gap-3">
+              {user && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <User className="w-4 h-4" />
+                  <span className="hidden sm:inline">{user.email}</span>
+                </div>
+              )}
               {hasTrialRemaining ? (
                 <Badge variant="outline" className="gap-1.5 px-3 py-1">
                   <Sparkles className="w-3 h-3 text-primary" />
@@ -417,6 +439,16 @@ export default function Index() {
                 <Badge variant="outline" className="gap-1.5 px-3 py-1 border-destructive/50 text-destructive">
                   Trial ended
                 </Badge>
+              )}
+              {user ? (
+                <Button size="sm" variant="outline" className="gap-2" onClick={signOut}>
+                  <LogOut className="w-4 h-4" />
+                  <span className="hidden sm:inline">Déconnexion</span>
+                </Button>
+              ) : (
+                <Button size="sm" variant="outline" className="gap-2" onClick={handleLogin}>
+                  Connexion
+                </Button>
               )}
               <Button size="sm" className="gap-2" onClick={() => setShowPaywall(true)}>
                 <Crown className="w-4 h-4" />
@@ -609,6 +641,12 @@ export default function Index() {
         isOpen={showPaywall} 
         onClose={() => setShowPaywall(false)}
         trialRemaining={trialRemaining}
+      />
+      
+      <AuthDialog 
+        open={showAuthDialog}
+        onOpenChange={setShowAuthDialog}
+        defaultView={authView}
       />
     </div>
   );

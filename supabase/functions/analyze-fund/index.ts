@@ -224,12 +224,19 @@ serve(async (req) => {
     const primarySector = customThesis?.sectors?.[0] || "technology startups";
     const marketData = await enrichMarketData(primarySector, customThesis?.geography || "global");
 
-    const systemPrompt = `Tu es un analyste VC senior expert en sourcing et due diligence.
+    const systemPrompt = `Tu es un analyste VC SENIOR avec 15+ ans d'expérience en sourcing de startups et due diligence approfondie pour les plus grands fonds (Sequoia, a16z, Accel, etc.).
+
+🎯 MISSION PRINCIPALE : SOURCING + DUE DILIGENCE PROFESSIONNELLE
+Ton rôle est de :
+1. SOURCER des startups RÉELLES qui correspondent PARFAITEMENT à la thèse d'investissement du fonds
+2. Effectuer une DUE DILIGENCE COMPLÈTE de niveau senior VC avec toutes les métriques critiques
+3. Générer un rapport d'investissement prêt pour un Investment Committee
 
 ⚠️ RÈGLE CRITIQUE : DONNÉES VÉRIFIÉES UNIQUEMENT ⚠️
 Tu as accès à des données de recherche web réelles ci-dessous. UTILISE CES DONNÉES pour tes analyses.
-Pour chaque information clé (TAM, SAM, SOM, ARR, valorisation), indique la source.
+Pour chaque information clé (TAM, SAM, SOM, ARR, valorisation, funding, traction), indique TOUJOURS la source.
 Si une donnée n'est pas vérifiable, marque-la clairement comme "Estimation" ou "Non vérifié".
+QUALITÉ > QUANTITÉ : Mieux vaut moins de startups mais avec des données 100% vérifiées.
 
 ${fundContext ? `
 === DONNÉES RÉELLES SUR LE FONDS (source: Brave Search) ===
@@ -373,8 +380,36 @@ Tu dois répondre avec un objet JSON valide contenant:
    - "sources": Array de toutes les sources utilisées { "name", "url", "type" }`;
 
     const userPrompt = fundName 
-      ? `Analyse le fonds "${fundName}" et identifie ${numberOfStartups} startup(s) RÉELLE(S) qui correspondent à leur thèse. Génère un rapport de due diligence avec des données VÉRIFIÉES et des SOURCES pour chaque métrique importante.`
-      : `Identifie ${numberOfStartups} startup(s) RÉELLE(S) correspondant à la thèse. Génère un rapport avec données VÉRIFIÉES et SOURCES.`;
+      ? `🎯 SOURCING + DUE DILIGENCE POUR LE FONDS "${fundName}"
+
+ÉTAPE 1 - SOURCING :
+Identifie ${numberOfStartups} startup(s) RÉELLE(S) et VÉRIFIÉES qui correspondent PARFAITEMENT à la thèse d'investissement du fonds "${fundName}".
+Chaque startup doit être :
+- Une entreprise RÉELLE (pas inventée)
+- Correspondre aux critères du fonds (secteur, stade, géographie, ticket)
+- Avoir des données vérifiables (site web, LinkedIn, Crunchbase, etc.)
+
+ÉTAPE 2 - DUE DILIGENCE COMPLÈTE :
+Pour chaque startup sourcée, génère un rapport de due diligence PROFESSIONNEL de niveau senior VC incluant :
+- Analyse marché approfondie (TAM/SAM/SOM avec sources)
+- Métriques de traction VÉRIFIÉES (ARR, MRR, croissance, clients)
+- Analyse compétitive détaillée
+- Évaluation équipe (founders, advisors, LinkedIn)
+- Modèle économique et unit economics
+- Risques et opportunités
+- Recommandation d'investissement claire (INVEST / PASS / WATCH)
+
+IMPORTANT : Utilise UNIQUEMENT les données réelles trouvées dans les recherches web. Ne crée PAS de données fictives.`
+      : `🎯 SOURCING + DUE DILIGENCE POUR THÈSE PERSONNALISÉE
+
+ÉTAPE 1 - SOURCING :
+Identifie ${numberOfStartups} startup(s) RÉELLE(S) et VÉRIFIÉES correspondant à la thèse personnalisée fournie.
+Chaque startup doit être une entreprise RÉELLE avec des données vérifiables.
+
+ÉTAPE 2 - DUE DILIGENCE COMPLÈTE :
+Génère un rapport de due diligence PROFESSIONNEL de niveau senior VC pour chaque startup sourcée.
+
+IMPORTANT : Utilise UNIQUEMENT les données réelles trouvées dans les recherches web. Ne crée PAS de données fictives.`;
 
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

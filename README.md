@@ -1,11 +1,18 @@
 # DealFlow Compass
 
-> **📝 Note** : Pour comprendre l'état actuel du projet et reprendre le travail, consultez [`SESSION_NOTES.md`](./SESSION_NOTES.md)
+**🎯 AI-Powered Startup Sourcing & Due Diligence Platform for VC Funds**
+
+DealFlow Compass est une plateforme SaaS professionnelle qui aide les fonds VC à :
+- **SOURCER** des startups réelles qui correspondent parfaitement à leur thèse d'investissement
+- **EFFECTUER** des due diligences approfondies de niveau senior VC avec toutes les métriques critiques
+- **GÉNÉRER** des rapports d'investissement prêts pour Investment Committee
 
 ## 🚀 État Actuel
 
 ✅ **Frontend** : Fonctionnel sur `localhost:8080`  
-✅ **Backend** : Edge Function déployée  
+✅ **Backend** : Edge Function déployée avec sourcing + due diligence  
+✅ **Authentification** : Système complet d'inscription/connexion  
+✅ **Base de données** : Migrations SQL avec RLS (Row Level Security)  
 ⚠️ **⚠️ ACTION REQUISE** : Configurer `GEMINI_API_KEY` dans Supabase Dashboard
 
 ### 🔧 Configuration Rapide (2 minutes)
@@ -33,11 +40,32 @@
 
 ---
 
-# DealFlow Compass
+## 🎯 Fonctionnalités Principales
 
-**AI-Powered Startup Sourcing & Due Diligence Platform for VC Funds**
+### 1. **Sourcing Intelligent de Startups**
+- Identification de startups **RÉELLES** correspondant à la thèse d'investissement
+- Recherche web enrichie avec données vérifiables (Crunchbase, LinkedIn, sites officiels)
+- Filtrage par secteur, stade, géographie, taille de ticket
 
-DealFlow Compass est une plateforme SaaS qui aide les fonds VC à automatiser leur sourcing de startups et à effectuer des due diligences approfondies grâce à l'IA.
+### 2. **Due Diligence Complète (Niveau Senior VC)**
+- Analyse marché approfondie (TAM/SAM/SOM avec sources)
+- Métriques de traction vérifiées (ARR, MRR, croissance, clients, NRR)
+- Analyse compétitive détaillée
+- Évaluation équipe (founders, advisors, LinkedIn)
+- Modèle économique et unit economics
+- Risques et opportunités
+- Recommandation d'investissement claire (INVEST / PASS / WATCH)
+
+### 3. **Rapports Professionnels**
+- Génération automatique de pitch decks prêts pour Investment Committee
+- Slides structurées avec données vérifiées et sources citées
+- Export en PDF/PPT (à venir)
+
+### 4. **Authentification & Gestion Utilisateurs**
+- Inscription/Connexion sécurisée avec Supabase Auth
+- Profils utilisateurs avec gestion des crédits
+- Historique des analyses sauvegardé par utilisateur
+- Row Level Security (RLS) pour la sécurité des données
 
 ## 🚀 Configuration Supabase
 
@@ -66,9 +94,17 @@ cp env.example .env
 ### 3. Appliquer les migrations
 
 Les migrations Supabase sont dans `supabase/migrations/`. Elles créent automatiquement :
-- La table `analysis_history` pour stocker les analyses
-- Les politiques RLS (Row Level Security)
+- La table `analysis_history` pour stocker les analyses (avec `user_id`)
+- La table `user_profiles` pour les profils utilisateurs
+- Les politiques RLS (Row Level Security) pour la sécurité
 - Les index pour les performances
+- Le trigger pour créer automatiquement un profil à l'inscription
+
+**Pour appliquer les migrations :**
+1. Allez dans Supabase Dashboard → SQL Editor
+2. Exécutez les fichiers SQL dans l'ordre :
+   - `20251214171526_c6fdb6b8-8483-4f31-b474-511c4518ed13.sql` (table analysis_history)
+   - `20250115000000_add_auth_and_user_profiles.sql` (auth + user_profiles)
 
 ### 4. Déployer l'Edge Function
 
