@@ -209,38 +209,102 @@ serve(async (req) => {
     console.log(`Analyzing fund: ${fundName || 'Custom Thesis'}`);
     console.log(`Generating ${numberOfStartups} startup(s)`);
 
-    // Step 1: Search for real fund information if fundName provided
-    let fundContext = "";
+    // Step 1: Search for fund investment thesis and criteria (to understand what startups to source)
+    let fundThesisContext = "";
     let fundSources: { name: string; url: string }[] = [];
+    let investmentCriteria = {
+      sectors: [] as string[],
+      stage: "",
+      geography: "",
+      ticketSize: "",
+      focus: ""
+    };
     
     if (fundName) {
-      console.log(`Searching for fund info: ${fundName}`);
-      const fundResults = await braveSearch(`${fundName} venture capital portfolio investments thesis`, 5);
-      fundContext = fundResults.map(r => `${r.title}: ${r.description}`).join("\n");
+      console.log(`Step 1: Analyzing fund thesis for: ${fundName}`);
+      // Search for fund investment thesis and criteria
+      const fundResults = await braveSearch(`${fundName} investment thesis criteria sectors stage geography ticket size`, 8);
+      fundThesisContext = fundResults.map(r => `${r.title}: ${r.description}`).join("\n");
       fundSources = fundResults.slice(0, 4).map(r => ({ name: r.title.substring(0, 60), url: r.url }));
+      
+      // Additional search for portfolio examples to understand their focus
+      const portfolioResults = await braveSearch(`${fundName} portfolio companies investments 2023 2024`, 5);
+      fundThesisContext += "\n\nPORTFOLIO EXAMPLES:\n" + portfolioResults.map(r => `${r.title}: ${r.description}`).join("\n");
     }
 
-    // Step 2: Search for market data
+    // Step 2: Search for market data and potential startups
     const primarySector = customThesis?.sectors?.[0] || "technology startups";
     const marketData = await enrichMarketData(primarySector, customThesis?.geography || "global");
+    
+    // Step 3: Search for REAL startups matching the thesis (CRITICAL for sourcing)
+    console.log(`Step 3: Sourcing startups matching thesis...`);
+    let startupSearchQueries: string[] = [];
+    
+    if (fundName && fundThesisContext) {
+      // Extract key criteria from fund thesis
+      const sectors = customThesis?.sectors || [];
+      const stage = customThesis?.stage || "seed";
+      const geography = customThesis?.geography || "global";
+      
+      // Build targeted search queries for real startups
+      sectors.forEach(sector => {
+        startupSearchQueries.push(`${sector} startup ${stage} stage ${geography} 2024`);
+        startupSearchQueries.push(`${sector} company funding ${stage} round 2024`);
+      });
+    } else if (customThesis) {
+      const sectors = customThesis.sectors || ["technology"];
+      const stage = customThesis.stage || "seed";
+      const geography = customThesis.geography || "global";
+      sectors.forEach(sector => {
+        startupSearchQueries.push(`${sector} startup ${stage} ${geography} 2024`);
+      });
+    }
+    
+    // Execute searches for real startups
+    let startupSearchResults: BraveSearchResult[] = [];
+    for (const query of startupSearchQueries.slice(0, 3)) {
+      const results = await braveSearch(query, 5);
+      startupSearchResults.push(...results);
+      await new Promise(r => setTimeout(r, 500)); // Rate limit
+    }
+    
+    const startupSearchContext = startupSearchResults
+      .slice(0, 15)
+      .map(r => `${r.title}: ${r.description} | URL: ${r.url}`)
+      .join("\n");
 
     const systemPrompt = `Tu es un analyste VC SENIOR avec 15+ ans d'expérience en sourcing de startups et due diligence approfondie pour les plus grands fonds (Sequoia, a16z, Accel, etc.).
 
-🎯 MISSION PRINCIPALE : SOURCING + DUE DILIGENCE PROFESSIONNELLE
-Ton rôle est de :
-1. SOURCER des startups RÉELLES qui correspondent PARFAITEMENT à la thèse d'investissement du fonds
-2. Effectuer une DUE DILIGENCE COMPLÈTE de niveau senior VC avec toutes les métriques critiques
-3. Générer un rapport d'investissement prêt pour un Investment Committee
+🎯 MISSION PRINCIPALE : SOURCING DE STARTUPS + DUE DILIGENCE PROFESSIONNELLE
+
+⚠️ ATTENTION : TU NE DOIS PAS ANALYSER LE FONDS, MAIS SOURCER DES STARTUPS QUI CORRESPONDENT À SA THÈSE ⚠️
+
+TON RÔLE :
+1. COMPRENDRE la thèse d'investissement du fonds (secteurs, stade, géographie, ticket) - C'EST UNIQUEMENT POUR COMPRENDRE QUOI CHERCHER
+2. SOURCER ${numberOfStartups} startup(s) RÉELLE(S) qui correspondent PARFAITEMENT à cette thèse
+3. Effectuer une DUE DILIGENCE COMPLÈTE de niveau senior VC avec TOUTES les métriques chiffrées
+4. Générer un rapport d'investissement prêt pour un Investment Committee
 
 ⚠️ RÈGLE CRITIQUE : DONNÉES VÉRIFIÉES UNIQUEMENT ⚠️
 Tu as accès à des données de recherche web réelles ci-dessous. UTILISE CES DONNÉES pour tes analyses.
-Pour chaque information clé (TAM, SAM, SOM, ARR, valorisation, funding, traction), indique TOUJOURS la source.
+Pour chaque information clé (TAM, SAM, SOM, ARR, MRR, valorisation, funding, traction, CAC, LTV, churn, NRR), indique TOUJOURS la source avec URL.
 Si une donnée n'est pas vérifiable, marque-la clairement comme "Estimation" ou "Non vérifié".
-QUALITÉ > QUANTITÉ : Mieux vaut moins de startups mais avec des données 100% vérifiées.
+QUALITÉ > QUANTITÉ : Mieux vaut moins de startups mais avec des données 100% vérifiées et chiffrées.
 
-${fundContext ? `
-=== DONNÉES RÉELLES SUR LE FONDS (source: Brave Search) ===
-${fundContext}
+${fundThesisContext ? `
+=== THÈSE D'INVESTISSEMENT DU FONDS (pour comprendre quoi chercher) ===
+${fundThesisContext}
+
+⚠️ IMPORTANT : Ces informations servent UNIQUEMENT à comprendre les critères d'investissement du fonds.
+Tu dois maintenant SOURCER des startups RÉELLES qui correspondent à ces critères, PAS analyser le fonds.
+` : ''}
+
+${startupSearchContext ? `
+=== STARTUPS POTENTIELLES TROUVÉES (source: Brave Search) ===
+${startupSearchContext}
+
+⚠️ UTILISE CES RÉSULTATS pour identifier des startups RÉELLES à analyser.
+Chaque startup doit être une entreprise EXISTANTE avec un site web, des données vérifiables.
 ` : ''}
 
 === DONNÉES MARCHÉ (source: Brave Search) ===
@@ -257,47 +321,54 @@ THÈSE D'INVESTISSEMENT PERSONNALISÉE:
 
 Tu dois répondre avec un objet JSON valide contenant:
 
-1. "fundInfo": Informations sur le fonds:
-   - "officialName": Nom officiel
-   - "website": Site web officiel (URL réelle)
-   - "headquarters": Siège social
-   - "foundedYear": Année de création
-   - "aum": Assets Under Management avec source
-   - "keyPartners": Array des partners principaux
-   - "notablePortfolio": Array de 5-10 investissements notables RÉELS
-   - "sources": Array de sources utilisées { "name", "url" }
-
-2. "investmentThesis": Critères d'investissement:
-   - "sectors": Array des secteurs focus
+1. "investmentThesis": Critères d'investissement du fonds (résumé concis, max 200 mots):
+   - "sectors": Array des secteurs focus identifiés
    - "stage": Stade d'investissement préféré
    - "geography": Régions cibles
    - "ticketSize": Taille de ticket moyenne
-   - "description": Description détaillée de leur thèse
-   - "differentiators": Ce qui distingue ce fonds
-   - "valueAdd": Valeur ajoutée pour les startups
+   - "description": Description concise de leur thèse (max 200 mots)
+   
+   ⚠️ Ce champ sert UNIQUEMENT de contexte. Le focus principal doit être sur les STARTUPS.
 
-3. "startups": Array de ${numberOfStartups} startup(s) RÉELLE(S):
-   Chaque startup contient:
-   - "name": Nom RÉEL de la startup
+2. "startups": Array de ${numberOfStartups} startup(s) RÉELLE(S) SOURCÉES:
+   Chaque startup contient (TOUTES les données doivent être VÉRIFIÉES avec sources):
+   - "name": Nom RÉEL de la startup (doit exister vraiment)
    - "tagline": Description en une ligne
    - "sector": Secteur principal
-   - "stage": Stade actuel (Seed, Series A, etc.)
-   - "location": Siège
+   - "stage": Stade actuel (Seed, Series A, etc.) avec source
+   - "location": Siège (ville, pays)
    - "founded": Année de création
-   - "problem": Problème adressé
-   - "solution": Solution proposée
-   - "businessModel": Modèle économique
-   - "competitors": Concurrents principaux
-   - "moat": Avantage compétitif
-   - "fundingHistory": Historique de levées avec sources
-   - "website": Site web RÉEL
+   - "problem": Problème adressé (détaillé)
+   - "solution": Solution proposée (détaillée)
+   - "businessModel": Modèle économique détaillé (B2B, B2C, marketplace, SaaS, etc.)
+   - "competitors": Concurrents principaux avec leurs données (nom, funding, taille)
+   - "moat": Avantage compétitif détaillé
+   - "fundingHistory": Historique COMPLET de levées avec montants, dates, investisseurs, sources URL
+   - "website": Site web RÉEL (URL complète)
+   - "linkedin": URL LinkedIn de la startup
+   - "crunchbaseUrl": URL Crunchbase si disponible
    - "metrics": {
-       "arr": "ARR si disponible (avec source)",
-       "growth": "Croissance MoM/YoY",
-       "customers": "Nombre de clients",
-       "nrr": "Net Revenue Retention"
+       "arr": "ARR en $ avec source URL (ex: $2.5M ARR - source: techcrunch.com/article)",
+       "mrr": "MRR en $ avec source",
+       "growth": "Croissance MoM/YoY en % avec source",
+       "customers": "Nombre de clients avec source",
+       "nrr": "Net Revenue Retention en % avec source",
+       "cac": "Customer Acquisition Cost en $ avec source",
+       "ltv": "Lifetime Value en $ avec source",
+       "ltvCacRatio": "Ratio LTV/CAC avec source",
+       "churn": "Taux de churn en % avec source",
+       "grossMargin": "Marge brute en % avec source",
+       "burnRate": "Burn rate mensuel en $ avec source",
+       "runway": "Runway en mois avec source",
+       "valuation": "Valorisation actuelle en $ avec source URL"
+     }
+   - "team": {
+       "founders": [{"name": "Nom complet", "role": "CEO/CTO/etc", "linkedin": "URL", "background": "Expérience"}],
+       "teamSize": "Nombre d'employés",
+       "keyHires": "Recrutements clés récents"
      }
    - "verificationStatus": "verified" | "partially_verified" | "unverified"
+   - "sources": Array de toutes les sources utilisées { "name": "Nom", "url": "URL", "type": "article/crunchbase/linkedin/etc" }
 
 4. "dueDiligenceReports": Array de ${numberOfStartups} rapport(s):
    Chaque rapport est un Array de slides:
@@ -334,14 +405,22 @@ Tu dois répondre avec un objet JSON valide contenant:
      },
      {
        "title": "Business Metrics & Traction",
-       "content": "Métriques avec SOURCES VÉRIFIÉES (min 300 mots)",
-       "keyPoints": ["Métrique 1 avec source", ...],
+       "content": "Métriques DÉTAILLÉES avec SOURCES VÉRIFIÉES et CHIFFRES PRÉCIS (min 400 mots). Inclure: ARR/MRR, croissance MoM/YoY, nombre de clients, NRR, CAC, LTV, ratio LTV/CAC, churn, burn rate, runway, unit economics, cohort analysis si disponible.",
+       "keyPoints": ["ARR: $X avec source URL", "MRR: $Y avec croissance Z% MoM", "Clients: N avec source", "NRR: X% avec source", "CAC: $X avec source", "LTV: $Y avec source", "LTV/CAC: X avec source", "Churn: X% avec source", "Burn: $X/mois avec source", "Runway: X mois avec source"],
        "metrics": { 
-         "arr": "ARR avec source", 
-         "mrrGrowth": "Croissance MRR", 
-         "customers": "Clients", 
-         "nrr": "NRR",
-         "sources": ["source1"]
+         "arr": "ARR en $ avec source URL", 
+         "mrr": "MRR en $ avec source",
+         "mrrGrowth": "Croissance MRR en % MoM/YoY avec source", 
+         "customers": "Nombre de clients avec source", 
+         "nrr": "NRR en % avec source",
+         "cac": "CAC en $ avec source",
+         "ltv": "LTV en $ avec source",
+         "ltvCacRatio": "Ratio LTV/CAC avec source",
+         "churn": "Churn en % avec source",
+         "burnRate": "Burn rate mensuel en $ avec source",
+         "runway": "Runway en mois avec source",
+         "grossMargin": "Marge brute en % avec source",
+         "sources": ["source1", "source2", "source3"]
        }
      },
      {
@@ -380,34 +459,75 @@ Tu dois répondre avec un objet JSON valide contenant:
    - "sources": Array de toutes les sources utilisées { "name", "url", "type" }`;
 
     const userPrompt = fundName 
-      ? `🎯 SOURCING + DUE DILIGENCE POUR LE FONDS "${fundName}"
+      ? `🎯 MISSION : SOURCER ET ANALYSER DES STARTUPS POUR LE FONDS "${fundName}"
 
-ÉTAPE 1 - SOURCING :
-Identifie ${numberOfStartups} startup(s) RÉELLE(S) et VÉRIFIÉES qui correspondent PARFAITEMENT à la thèse d'investissement du fonds "${fundName}".
+⚠️ ATTENTION : TU NE DOIS PAS ANALYSER LE FONDS "${fundName}". TU DOIS SOURCER DES STARTUPS QUI CORRESPONDENT À SA THÈSE.
+
+ÉTAPE 1 - COMPRENDRE LA THÈSE (rapide, max 100 mots) :
+Analyse rapidement la thèse d'investissement du fonds "${fundName}" pour identifier :
+- Les secteurs cibles
+- Le stade d'investissement préféré (Seed, Series A, etc.)
+- La géographie cible
+- La taille de ticket moyenne
+
+ÉTAPE 2 - SOURCING DE STARTUPS RÉELLES (PRIORITÉ ABSOLUE) :
+Identifie ${numberOfStartups} startup(s) RÉELLE(S) et VÉRIFIÉES qui correspondent PARFAITEMENT à la thèse du fonds "${fundName}".
+
 Chaque startup doit être :
-- Une entreprise RÉELLE (pas inventée)
+- Une entreprise RÉELLE et EXISTANTE (pas inventée)
 - Correspondre aux critères du fonds (secteur, stade, géographie, ticket)
-- Avoir des données vérifiables (site web, LinkedIn, Crunchbase, etc.)
+- Avoir un site web RÉEL, LinkedIn, et idéalement Crunchbase
+- Avoir des données vérifiables (funding, métriques, équipe)
 
-ÉTAPE 2 - DUE DILIGENCE COMPLÈTE :
-Pour chaque startup sourcée, génère un rapport de due diligence PROFESSIONNEL de niveau senior VC incluant :
-- Analyse marché approfondie (TAM/SAM/SOM avec sources)
-- Métriques de traction VÉRIFIÉES (ARR, MRR, croissance, clients)
-- Analyse compétitive détaillée
-- Évaluation équipe (founders, advisors, LinkedIn)
-- Modèle économique et unit economics
-- Risques et opportunités
-- Recommandation d'investissement claire (INVEST / PASS / WATCH)
+⚠️ UTILISE les résultats de recherche web fournis ci-dessus pour identifier des startups RÉELLES.
+⚠️ Ne crée PAS de startups fictives. Si tu ne trouves pas assez de startups réelles, dis-le clairement.
 
-IMPORTANT : Utilise UNIQUEMENT les données réelles trouvées dans les recherches web. Ne crée PAS de données fictives.`
-      : `🎯 SOURCING + DUE DILIGENCE POUR THÈSE PERSONNALISÉE
+ÉTAPE 3 - DUE DILIGENCE COMPLÈTE (niveau senior VC) :
+Pour chaque startup sourcée, génère un rapport de due diligence PROFESSIONNEL avec TOUTES les métriques chiffrées :
+
+OBLIGATOIRE - Métriques financières avec sources :
+- ARR/MRR en $ avec source URL
+- Croissance MoM/YoY en % avec source
+- Nombre de clients avec source
+- NRR (Net Revenue Retention) en % avec source
+- CAC (Customer Acquisition Cost) en $ avec source
+- LTV (Lifetime Value) en $ avec source
+- Ratio LTV/CAC avec source
+- Churn en % avec source
+- Burn rate mensuel en $ avec source
+- Runway en mois avec source
+- Marge brute en % avec source
+- Valorisation actuelle en $ avec source URL
+
+OBLIGATOIRE - Analyse marché :
+- TAM/SAM/SOM en $ avec sources URL (ex: $50B TAM - Grand View Research 2024)
+- CAGR en % avec source
+- Tendances du marché avec sources
+
+OBLIGATOIRE - Équipe :
+- Founders avec LinkedIn, background, expérience
+- Taille de l'équipe
+- Recrutements clés récents
+
+OBLIGATOIRE - Recommandation :
+- INVEST / PASS / WATCH avec justification détaillée
+- Multiple cible (ex: 10x en 5 ans)
+- Risques identifiés
+- Opportunités identifiées
+
+IMPORTANT : 
+- Utilise UNIQUEMENT les données réelles trouvées dans les recherches web
+- Ne crée PAS de données fictives
+- Pour chaque chiffre, indique la source avec URL
+- Si une donnée n'est pas disponible, marque "Non disponible" au lieu d'inventer`
+      : `🎯 MISSION : SOURCER ET ANALYSER DES STARTUPS POUR THÈSE PERSONNALISÉE
 
 ÉTAPE 1 - SOURCING :
 Identifie ${numberOfStartups} startup(s) RÉELLE(S) et VÉRIFIÉES correspondant à la thèse personnalisée fournie.
-Chaque startup doit être une entreprise RÉELLE avec des données vérifiables.
+Chaque startup doit être une entreprise RÉELLE avec des données vérifiables (site web, LinkedIn, Crunchbase).
 
 ÉTAPE 2 - DUE DILIGENCE COMPLÈTE :
-Génère un rapport de due diligence PROFESSIONNEL de niveau senior VC pour chaque startup sourcée.
+Génère un rapport de due diligence PROFESSIONNEL de niveau senior VC avec TOUTES les métriques chiffrées (ARR, MRR, CAC, LTV, churn, burn rate, etc.) avec sources URL pour chaque donnée.
 
 IMPORTANT : Utilise UNIQUEMENT les données réelles trouvées dans les recherches web. Ne crée PAS de données fictives.`;
 
