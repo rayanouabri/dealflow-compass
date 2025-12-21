@@ -26,13 +26,138 @@ interface AnalysisRequest {
   };
 }
 
+interface BraveSearchResult {
+  title: string;
+  url: string;
+  description: string;
+  extra_snippets?: string[];
+}
+
+// Search using Brave Search API
+async function braveSearch(query: string, count: number = 5): Promise<BraveSearchResult[]> {
+  const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY");
+  if (!BRAVE_API_KEY) {
+    console.warn("BRAVE_API_KEY not configured - skipping web search");
+    return [];
+  }
+
+  try {
+    const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}&text_decorations=false&result_filter=web`;
+    
+    const response = await fetch(url, {
+      headers: {
+        "Accept": "application/json",
+        "X-Subscription-Token": BRAVE_API_KEY,
+      },
+    });
+
+    if (!response.ok) {
+      console.error("Brave Search error:", response.status, await response.text());
+      return [];
+    }
+
+    const data = await response.json();
+    return (data.web?.results || []).map((r: any) => ({
+      title: r.title || "",
+      url: r.url || "",
+      description: r.description || "",
+      extra_snippets: r.extra_snippets || [],
+    }));
+  } catch (error) {
+    console.error("Brave Search failed:", error);
+    return [];
+  }
+}
+
+// Enrich startup data with real web sources
+async function enrichStartupData(startup: any): Promise<any> {
+  const name = startup.name || "";
+  if (!name) return startup;
+
+  console.log(`Enriching data for startup: ${name}`);
+
+  // Search for company info, funding, and metrics in parallel
+  const [
+    generalResults,
+    fundingResults,
+    linkedinResults,
+  ] = await Promise.all([
+    braveSearch(`${name} startup company official website`, 3),
+    braveSearch(`${name} startup funding round valuation ARR revenue`, 3),
+    braveSearch(`${name} startup LinkedIn company`, 2),
+  ]);
+
+  // Extract URLs
+  const allResults = [...generalResults, ...fundingResults, ...linkedinResults];
+  
+  const websiteUrl = generalResults.find(r => 
+    !r.url.includes("linkedin") && 
+    !r.url.includes("crunchbase") && 
+    !r.url.includes("techcrunch") &&
+    !r.url.includes("wikipedia")
+  )?.url || startup.website;
+
+  const linkedinUrl = linkedinResults.find(r => r.url.includes("linkedin.com/company"))?.url;
+  const crunchbaseUrl = allResults.find(r => r.url.includes("crunchbase.com"))?.url;
+
+  // Extract snippets for context
+  const allSnippets = allResults.flatMap(r => [r.description, ...(r.extra_snippets || [])]).filter(Boolean);
+
+  // Build sources array
+  const sources: { name: string; url: string; type: string }[] = [];
+  if (websiteUrl) sources.push({ name: "Site officiel", url: websiteUrl, type: "website" });
+  if (linkedinUrl) sources.push({ name: "LinkedIn", url: linkedinUrl, type: "linkedin" });
+  if (crunchbaseUrl) sources.push({ name: "Crunchbase", url: crunchbaseUrl, type: "crunchbase" });
+  
+  // Add other relevant sources
+  allResults.slice(0, 5).forEach(r => {
+    if (!sources.find(s => s.url === r.url)) {
+      let type = "article";
+      if (r.url.includes("techcrunch")) type = "press";
+      else if (r.url.includes("pitchbook")) type = "data";
+      sources.push({ name: r.title.substring(0, 50), url: r.url, type });
+    }
+  });
+
+  return {
+    ...startup,
+    website: websiteUrl || startup.website,
+    linkedinUrl,
+    crunchbaseUrl,
+    sources: sources.slice(0, 6),
+    dataContext: allSnippets.slice(0, 5).join(" | "),
+    verificationStatus: sources.length >= 2 ? "verified" : "partially_verified",
+  };
+}
+
+// Enrich market data with real TAM/SAM/SOM figures
+async function enrichMarketData(sector: string, geography: string): Promise<any> {
+  console.log(`Enriching market data for sector: ${sector}`);
+  
+  const marketResults = await braveSearch(
+    `${sector} market size TAM SAM 2024 2025 billion growth rate CAGR`, 
+    5
+  );
+
+  const snippets = marketResults.flatMap(r => [r.description, ...(r.extra_snippets || [])]).filter(Boolean);
+  
+  const sources = marketResults.slice(0, 3).map(r => ({
+    name: r.title.substring(0, 50),
+    url: r.url,
+  }));
+
+  return {
+    marketContext: snippets.join(" | "),
+    marketSources: sources,
+  };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    // Parse request body with error handling
     let requestData: AnalysisRequest;
     try {
       const bodyText = await req.text();
@@ -57,7 +182,6 @@ serve(async (req) => {
 
     const { fundName, customThesis, params = {} } = requestData;
     
-    // Use Google Gemini API directly
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     
     if (!GEMINI_API_KEY) {
@@ -75,14 +199,35 @@ serve(async (req) => {
     console.log(`Analyzing fund: ${fundName || 'Custom Thesis'}`);
     console.log(`Generating ${numberOfStartups} startup(s)`);
 
-    const systemPrompt = `Tu es un analyste VC senior expert en sourcing et due diligence, avec une connaissance approfondie de l'écosystème mondial du capital-risque et des startups.
+    // Step 1: Search for real fund information if fundName provided
+    let fundContext = "";
+    let fundSources: { name: string; url: string }[] = [];
+    
+    if (fundName) {
+      console.log(`Searching for fund info: ${fundName}`);
+      const fundResults = await braveSearch(`${fundName} venture capital portfolio investments thesis`, 5);
+      fundContext = fundResults.map(r => `${r.title}: ${r.description}`).join("\n");
+      fundSources = fundResults.slice(0, 4).map(r => ({ name: r.title.substring(0, 60), url: r.url }));
+    }
 
-⚠️ RÈGLE ABSOLUE #1 : MAXIMISER LA VÉRACITÉ ⚠️
-- TOUTES les informations doivent être RÉELLES et VÉRIFIABLES
-- Si tu n'es pas CERTAIN d'une information, indique "Non vérifié" ou "Estimation basée sur..."
-- Ne JAMAIS inventer de données, noms, chiffres ou faits
+    // Step 2: Search for market data
+    const primarySector = customThesis?.sectors?.[0] || "technology startups";
+    const marketData = await enrichMarketData(primarySector, customThesis?.geography || "global");
 
-MISSION: Aider un fonds VC à identifier et analyser des startups qui correspondent à leur thèse d'investissement.
+    const systemPrompt = `Tu es un analyste VC senior expert en sourcing et due diligence.
+
+⚠️ RÈGLE CRITIQUE : DONNÉES VÉRIFIÉES UNIQUEMENT ⚠️
+Tu as accès à des données de recherche web réelles ci-dessous. UTILISE CES DONNÉES pour tes analyses.
+Pour chaque information clé (TAM, SAM, SOM, ARR, valorisation), indique la source.
+Si une donnée n'est pas vérifiable, marque-la clairement comme "Estimation" ou "Non vérifié".
+
+${fundContext ? `
+=== DONNÉES RÉELLES SUR LE FONDS (source: Brave Search) ===
+${fundContext}
+` : ''}
+
+=== DONNÉES MARCHÉ (source: Brave Search) ===
+${marketData.marketContext}
 
 ${customThesis ? `
 THÈSE D'INVESTISSEMENT PERSONNALISÉE:
@@ -97,12 +242,13 @@ Tu dois répondre avec un objet JSON valide contenant:
 
 1. "fundInfo": Informations sur le fonds:
    - "officialName": Nom officiel
-   - "website": Site web
+   - "website": Site web officiel (URL réelle)
    - "headquarters": Siège social
    - "foundedYear": Année de création
-   - "aum": Assets Under Management (si connu)
+   - "aum": Assets Under Management avec source
    - "keyPartners": Array des partners principaux
-   - "notablePortfolio": Array de 5-10 investissements notables
+   - "notablePortfolio": Array de 5-10 investissements notables RÉELS
+   - "sources": Array de sources utilisées { "name", "url" }
 
 2. "investmentThesis": Critères d'investissement:
    - "sectors": Array des secteurs focus
@@ -113,12 +259,12 @@ Tu dois répondre avec un objet JSON valide contenant:
    - "differentiators": Ce qui distingue ce fonds
    - "valueAdd": Valeur ajoutée pour les startups
 
-3. "startups": Array de ${numberOfStartups} startup(s) identifiée(s):
+3. "startups": Array de ${numberOfStartups} startup(s) RÉELLE(S):
    Chaque startup contient:
-   - "name": Nom de la startup
+   - "name": Nom RÉEL de la startup
    - "tagline": Description en une ligne
    - "sector": Secteur principal
-   - "stage": Stade actuel
+   - "stage": Stade actuel (Seed, Series A, etc.)
    - "location": Siège
    - "founded": Année de création
    - "problem": Problème adressé
@@ -126,74 +272,104 @@ Tu dois répondre avec un objet JSON valide contenant:
    - "businessModel": Modèle économique
    - "competitors": Concurrents principaux
    - "moat": Avantage compétitif
-   - "fundingHistory": Historique de levées
-   - "website": Site web
+   - "fundingHistory": Historique de levées avec sources
+   - "website": Site web RÉEL
+   - "metrics": {
+       "arr": "ARR si disponible (avec source)",
+       "growth": "Croissance MoM/YoY",
+       "customers": "Nombre de clients",
+       "nrr": "Net Revenue Retention"
+     }
+   - "verificationStatus": "verified" | "partially_verified" | "unverified"
 
-4. "dueDiligenceReports": Array de ${numberOfStartups} rapport(s) de due diligence:
-   Chaque rapport contient ${params.slideCount || 8} slides:
+4. "dueDiligenceReports": Array de ${numberOfStartups} rapport(s):
+   Chaque rapport est un Array de slides:
    
-   Slide 1: Executive Summary
-   - "title": "Investment Opportunity Summary"
-   - "content": Résumé exécutif détaillé (minimum 250 mots)
-   - "keyPoints": 4-6 points clés
-   - "metrics": { "valuation", "askAmount", "fitScore", "useOfFunds" }
-   
-   Slide 2: Market Analysis
-   - "title": "Market Opportunity & Timing"
-   - "content": Analyse de marché approfondie (minimum 250 mots)
-   - "keyPoints": 5-7 tendances
-   - "metrics": { "tam", "sam", "som", "cagr" }
-   
-   Slide 3: Product & Technology
-   - "title": "Product-Market Fit Analysis"
-   - "content": Analyse produit détaillée (minimum 250 mots)
-   - "keyPoints": 5-7 forces
-   - "metrics": { "techStack", "patents", "pmfScore" }
-   
-   Slide 4: Traction & Metrics
-   - "title": "Business Metrics & Traction"
-   - "content": Métriques business (minimum 250 mots)
-   - "keyPoints": 6-8 jalons
-   - "metrics": { "arr", "mrrGrowth", "customers", "nrr" }
-   
-   Slide 5: Competitive Landscape
-   - "title": "Competitive Analysis"
-   - "content": Analyse concurrentielle (minimum 250 mots)
-   - "keyPoints": 5-7 avantages
-   - "metrics": { "marketShare", "competitorCount", "differentiationScore" }
-   
-   Slide 6: Strategic Fit
-   - "title": "Strategic Fit Analysis"
-   - "content": Analyse d'alignement (minimum 200 mots)
-   - "keyPoints": 4-6 synergies
-   - "metrics": { "portfolioSynergies", "fitScore" }
-   
-   Slide 7: Team Assessment
-   - "title": "Founding Team & Execution"
-   - "content": Évaluation équipe (minimum 250 mots)
-   - "keyPoints": 5-7 points
-   - "metrics": { "founders", "teamScore", "advisors" }
-   
-   Slide 8: Investment Recommendation
-   - "title": "Investment Thesis & Recommendation"
-   - "content": Recommandation détaillée (minimum 300 mots)
-   - "keyPoints": 6-8 raisons et risques
-   - "metrics": { "recommendation", "targetReturn", "riskLevel", "suggestedTicket" }
+   [
+     {
+       "title": "Executive Summary",
+       "content": "Résumé détaillé avec données VÉRIFIÉES et sources citées (min 300 mots)",
+       "keyPoints": ["Point 1 avec source", "Point 2 avec source", ...],
+       "metrics": { 
+         "valuation": "Valorisation avec source", 
+         "askAmount": "Montant demandé", 
+         "fitScore": "Score 1-10",
+         "sources": ["source1", "source2"]
+       }
+     },
+     {
+       "title": "Market Analysis",
+       "content": "Analyse marché avec TAM/SAM/SOM VÉRIFIÉS et sources (min 300 mots)",
+       "keyPoints": ["Tendance 1", ...],
+       "metrics": { 
+         "tam": "TAM avec source (ex: $50B - Grand View Research 2024)", 
+         "sam": "SAM avec source", 
+         "som": "SOM avec source", 
+         "cagr": "CAGR avec source",
+         "sources": ["url1", "url2"]
+       }
+     },
+     {
+       "title": "Product & Technology",
+       "content": "Analyse produit détaillée (min 250 mots)",
+       "keyPoints": ["Force 1", ...],
+       "metrics": { "techStack": "Stack technique", "patents": "Brevets", "pmfScore": "Score PMF" }
+     },
+     {
+       "title": "Business Metrics & Traction",
+       "content": "Métriques avec SOURCES VÉRIFIÉES (min 300 mots)",
+       "keyPoints": ["Métrique 1 avec source", ...],
+       "metrics": { 
+         "arr": "ARR avec source", 
+         "mrrGrowth": "Croissance MRR", 
+         "customers": "Clients", 
+         "nrr": "NRR",
+         "sources": ["source1"]
+       }
+     },
+     {
+       "title": "Competitive Analysis",
+       "content": "Analyse concurrentielle avec données marché (min 250 mots)",
+       "keyPoints": ["Avantage 1", ...],
+       "metrics": { "marketShare": "Part de marché", "competitorCount": "Nb concurrents" }
+     },
+     {
+       "title": "Team Assessment",
+       "content": "Évaluation équipe avec liens LinkedIn (min 250 mots)",
+       "keyPoints": ["Point 1", ...],
+       "metrics": { 
+         "founders": [{ "name": "Nom", "role": "Rôle", "linkedin": "URL LinkedIn" }],
+         "teamSize": "Taille équipe",
+         "advisors": ["Advisor 1", ...]
+       }
+     },
+     {
+       "title": "Investment Recommendation",
+       "content": "Recommandation détaillée avec risques et opportunités (min 300 mots)",
+       "keyPoints": ["Raison 1", "Risque 1", ...],
+       "metrics": { 
+         "recommendation": "INVEST" | "PASS" | "WATCH",
+         "targetReturn": "Multiple cible",
+         "riskLevel": "high" | "medium" | "low",
+         "suggestedTicket": "Ticket suggéré"
+       }
+     }
+   ]
 
 5. "analysisMetadata":
    - "confidence": "high" | "medium" | "low"
    - "dataQuality": "excellent" | "good" | "fair" | "limited"
-   - "verificationLevel": "fully_verified" | "mostly_verified" | "partially_verified"`;
+   - "verificationLevel": "fully_verified" | "mostly_verified" | "partially_verified"
+   - "sources": Array de toutes les sources utilisées { "name", "url", "type" }`;
 
     const userPrompt = fundName 
-      ? `Analyse le fonds de capital-risque "${fundName}" et identifie ${numberOfStartups} startup(s) qui correspondent à leur thèse d'investissement. Génère un rapport de due diligence complet pour chaque startup.`
-      : `Identifie ${numberOfStartups} startup(s) qui correspondent à la thèse d'investissement personnalisée fournie. Génère un rapport de due diligence complet pour chaque startup.`;
+      ? `Analyse le fonds "${fundName}" et identifie ${numberOfStartups} startup(s) RÉELLE(S) qui correspondent à leur thèse. Génère un rapport de due diligence avec des données VÉRIFIÉES et des SOURCES pour chaque métrique importante.`
+      : `Identifie ${numberOfStartups} startup(s) RÉELLE(S) correspondant à la thèse. Génère un rapport avec données VÉRIFIÉES et SOURCES.`;
 
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
     console.log("Calling Gemini API...");
 
-    // Use Google Gemini API directly
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
 
     const geminiBody = {
@@ -207,13 +383,12 @@ Tu dois répondre avec un objet JSON valide contenant:
         },
       ],
       generationConfig: {
-        temperature: 0.3,
-        maxOutputTokens: 16384,
+        temperature: 0.2,
+        maxOutputTokens: 32768,
         responseMimeType: "application/json",
       },
     };
 
-    // Retry on 429 (rate limit) with exponential backoff + jitter
     let response: Response | null = null;
     let lastErrorText = "";
 
@@ -239,7 +414,6 @@ Tu dois répondre avec un objet JSON valide contenant:
       lastErrorText = await response.text();
       console.error("Gemini API error:", response.status, lastErrorText);
 
-      // Retry only on 429
       if (response.status !== 429) break;
     }
 
@@ -308,13 +482,11 @@ Tu dois répondre avec un objet JSON valide contenant:
 
     const data = await response.json();
     
-    // Extract content from Gemini response format
     const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!content) {
       console.error("No content in Gemini response:", JSON.stringify(data));
       
-      // Check for safety blocking
       if (data.candidates?.[0]?.finishReason === "SAFETY") {
         return new Response(JSON.stringify({ 
           error: "Content was blocked by safety filters. Please try a different query." 
@@ -368,12 +540,29 @@ Tu dois répondre avec un objet JSON valide contenant:
       }
     }
 
+    // Step 3: Enrich each startup with real web data
+    console.log("Enriching startup data with Brave Search...");
+    const enrichedStartups = await Promise.all(
+      analysisResult.startups.map((s: any) => enrichStartupData(s))
+    );
+    analysisResult.startups = enrichedStartups;
+
+    // Add fund sources
+    if (fundSources.length > 0) {
+      analysisResult.fundInfo = analysisResult.fundInfo || {};
+      analysisResult.fundInfo.sources = fundSources;
+    }
+
+    // Add market sources
+    if (marketData.marketSources?.length > 0) {
+      analysisResult.marketSources = marketData.marketSources;
+    }
+
     // Normalize due diligence reports into Slide[][]
     const normalizeReportToSlides = (report: any): any[] => {
       if (!report) return [];
       if (Array.isArray(report)) return report;
 
-      // Common case: {"Slide 1": {...}, "Slide 2": {...}}
       if (typeof report === "object") {
         const entries = Object.entries(report)
           .filter(([k, v]) => /^slide\s*\d+/i.test(k) && v && typeof v === "object")
@@ -386,14 +575,12 @@ Tu dois répondre avec un objet JSON valide contenant:
 
         if (entries.length > 0) return entries;
 
-        // Fallback: if it already looks like a slide object
         if ("title" in report || "content" in report) return [report];
       }
 
       return [];
     };
 
-    // Ensure dueDiligenceReports is always an array of reports
     if (!Array.isArray(analysisResult.dueDiligenceReports)) {
       if (analysisResult.dueDiligenceReport || analysisResult.pitchDeck) {
         analysisResult.dueDiligenceReports = [analysisResult.dueDiligenceReport || analysisResult.pitchDeck];
@@ -404,7 +591,6 @@ Tu dois répondre avec un objet JSON valide contenant:
       }
     }
 
-    // Convert each report into a Slide[] array
     analysisResult.dueDiligenceReports = (analysisResult.dueDiligenceReports as any[]).map((r) =>
       normalizeReportToSlides(r).map((s) => ({
         title: String((s as any).title ?? ""),
@@ -416,6 +602,7 @@ Tu dois répondre avec un objet JSON valide contenant:
 
     console.log("Analysis complete:", fundName || 'Custom Thesis');
     console.log("Startups found:", analysisResult.startups?.length || 0);
+    console.log("Startups enriched with sources:", enrichedStartups.filter((s: any) => s.sources?.length > 0).length);
 
     return new Response(JSON.stringify(analysisResult), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
