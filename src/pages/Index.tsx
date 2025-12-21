@@ -140,9 +140,9 @@ export default function Index() {
     if (!user) {
       setAuthView("signup");
       setShowAuthDialog(true);
-      return;
+    } else {
+      setView("analyzer");
     }
-    setView("analyzer");
   };
 
   const handleLogin = () => {
@@ -151,6 +151,17 @@ export default function Index() {
   };
 
   const handleSearch = async (searchFundName?: string) => {
+    // Check if user is logged in
+    if (!user) {
+      setAuthView("signup");
+      setShowAuthDialog(true);
+      toast({
+        title: "Connexion requise",
+        description: "Veuillez vous connecter ou créer un compte pour effectuer une analyse.",
+      });
+      return;
+    }
+
     // Check trial credits
     if (!hasTrialRemaining) {
       setShowPaywall(true);
@@ -645,7 +656,15 @@ export default function Index() {
       
       <AuthDialog 
         open={showAuthDialog}
-        onOpenChange={setShowAuthDialog}
+        onOpenChange={(open) => {
+          setShowAuthDialog(open);
+          // When dialog closes after successful auth, redirect to analyzer
+          if (!open && user && view === "landing") {
+            setTimeout(() => {
+              setView("analyzer");
+            }, 100);
+          }
+        }}
         defaultView={authView}
       />
     </div>

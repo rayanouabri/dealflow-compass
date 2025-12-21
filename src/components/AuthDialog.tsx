@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -18,9 +18,18 @@ interface AuthDialogProps {
 export function AuthDialog({ open, onOpenChange, defaultView = "login" }: AuthDialogProps) {
   const [view, setView] = useState<"login" | "signup">(defaultView);
 
+  // Update view when defaultView changes
+  useEffect(() => {
+    if (open) {
+      setView(defaultView);
+    }
+  }, [defaultView, open]);
+
   const handleSuccess = () => {
+    // Close dialog - parent will handle redirect
     onOpenChange(false);
-    setView("login");
+    // Reset view to login for next time
+    setTimeout(() => setView("login"), 100);
   };
 
   return (
