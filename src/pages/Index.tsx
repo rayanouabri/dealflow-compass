@@ -316,7 +316,8 @@ export default function Index() {
     const startups = result.startups || (result.startup ? [result.startup] : []);
     const reports = result.dueDiligenceReports || (result.dueDiligenceReport ? [result.dueDiligenceReport] : []) || (result.pitchDeck ? [result.pitchDeck] : []);
     const currentStartup = startups[selectedStartupIndex] || startups[0];
-    const currentReport = reports[selectedStartupIndex] || reports[0] || [];
+    const currentReportData = reports[selectedStartupIndex] || reports[0];
+    const currentReport: Slide[] = Array.isArray(currentReportData) ? currentReportData : currentReportData ? [currentReportData] : [];
     
     if (!currentStartup) return;
 
@@ -554,7 +555,8 @@ export default function Index() {
                 const startups = result.startups || (result.startup ? [result.startup] : []);
                 const reports = result.dueDiligenceReports || (result.dueDiligenceReport ? [result.dueDiligenceReport] : []) || (result.pitchDeck ? [result.pitchDeck] : []);
                 const currentStartup = startups[selectedStartupIndex];
-                const currentReport = reports[selectedStartupIndex] || reports[0] || [];
+                const currentReportData = reports[selectedStartupIndex] || reports[0];
+                const currentReport: Slide[] = Array.isArray(currentReportData) ? currentReportData : currentReportData ? [currentReportData] : [];
                 
                 if (!currentStartup) return null;
                 
