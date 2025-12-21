@@ -2,6 +2,12 @@ import { Globe, Users, Calendar, Briefcase, ExternalLink, AlertCircle, CheckCirc
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
+interface Source {
+  name?: string;
+  url?: string;
+  type?: string;
+}
+
 interface FundInfo {
   officialName: string;
   website?: string;
@@ -12,7 +18,7 @@ interface FundInfo {
   keyPartners?: string[];
   notablePortfolio?: string[];
   recentNews?: string[];
-  sources?: string[];
+  sources?: (string | Source)[];
 }
 
 interface AnalysisMetadata {
@@ -152,11 +158,16 @@ export function FundInfoCard({ fundInfo, metadata }: FundInfoProps) {
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2 font-medium">Sources & Références</p>
             <div className="space-y-1.5">
               {fundInfo.sources.slice(0, 5).map((source, i) => {
-                const sourceUrl = typeof source === "string" && source.startsWith("http") 
-                  ? source 
-                  : typeof source === "string"
-                  ? `https://${source}`
-                  : null;
+                // Handle both string and object formats
+                const sourceUrl = typeof source === "string"
+                  ? (source.startsWith("http") ? source : `https://${source}`)
+                  : (source as Source).url 
+                    ? ((source as Source).url!.startsWith("http") ? (source as Source).url! : `https://${(source as Source).url!}`)
+                    : null;
+                
+                const sourceName = typeof source === "string"
+                  ? source
+                  : (source as Source).name || (source as Source).url || "Source";
                 
                 if (sourceUrl) {
                   return (
