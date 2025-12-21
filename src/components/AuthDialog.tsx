@@ -40,6 +40,11 @@ export function AuthDialog({ open, onOpenChange, defaultView = "login", onAuthSu
     setTimeout(() => setView("login"), 100);
   };
 
+  // Debug: log when dialog open state changes
+  useEffect(() => {
+    console.log("AuthDialog open state:", open, "view:", view);
+  }, [open, view]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">

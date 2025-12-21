@@ -152,6 +152,7 @@ export default function Index() {
       console.log("No user, opening signup dialog");
       setAuthView("signup");
       setShowAuthDialog(true);
+      console.log("showAuthDialog set to true, authView:", "signup");
     } else {
       console.log("User exists, switching to analyzer");
       setView("analyzer");
