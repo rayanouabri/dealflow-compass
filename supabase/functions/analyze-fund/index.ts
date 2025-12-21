@@ -57,13 +57,13 @@ serve(async (req) => {
 
     const { fundName, customThesis, params = {} } = requestData;
     
-    // Use Lovable AI Gateway (pre-configured, no API key needed from user)
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    // Use Google Gemini API directly
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     
-    if (!LOVABLE_API_KEY) {
-      console.error("LOVABLE_API_KEY not configured");
+    if (!GEMINI_API_KEY) {
+      console.error("GEMINI_API_KEY not configured");
       return new Response(JSON.stringify({ 
-        error: "AI service not configured. Please contact support." 
+        error: "GEMINI_API_KEY not configured. Please add it in your secrets." 
       }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -189,27 +189,35 @@ Tu dois répondre avec un objet JSON valide contenant:
       ? `Analyse le fonds de capital-risque "${fundName}" et identifie ${numberOfStartups} startup(s) qui correspondent à leur thèse d'investissement. Génère un rapport de due diligence complet pour chaque startup.`
       : `Identifie ${numberOfStartups} startup(s) qui correspondent à la thèse d'investissement personnalisée fournie. Génère un rapport de due diligence complet pour chaque startup.`;
 
-    console.log("Calling Lovable AI Gateway...");
+    console.log("Calling Gemini API...");
 
-    // Use Lovable AI Gateway
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    // Use Google Gemini API directly
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+    
+    const response = await fetch(geminiUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${LOVABLE_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
+        contents: [
+          {
+            parts: [
+              { text: `${systemPrompt}\n\n${userPrompt}\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.` }
+            ]
+          }
         ],
+        generationConfig: {
+          temperature: 0.3,
+          maxOutputTokens: 16384,
+          responseMimeType: "application/json"
+        }
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("Lovable AI error:", response.status, errorText);
+      console.error("Gemini API error:", response.status, errorText);
       
       if (response.status === 429) {
         return new Response(JSON.stringify({ 
@@ -220,17 +228,33 @@ Tu dois répondre avec un objet JSON valide contenant:
         });
       }
       
-      if (response.status === 402) {
+      if (response.status === 403) {
         return new Response(JSON.stringify({ 
-          error: "Payment required, please add funds." 
+          error: "Invalid or expired Gemini API key. Please check your GEMINI_API_KEY." 
         }), {
-          status: 402,
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (response.status === 400) {
+        let errorMessage = "Invalid request to Gemini API.";
+        try {
+          const errorData = JSON.parse(errorText);
+          if (errorData.error?.message) {
+            errorMessage = `Gemini API: ${errorData.error.message}`;
+          }
+        } catch (e) {
+          // Keep default message
+        }
+        return new Response(JSON.stringify({ error: errorMessage }), {
+          status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       
       return new Response(JSON.stringify({ 
-        error: `AI service error (${response.status})` 
+        error: `Gemini API error (${response.status})` 
       }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -239,20 +263,22 @@ Tu dois répondre avec un objet JSON valide contenant:
 
     const data = await response.json();
     
-    if (data.error) {
-      console.error("AI error response:", data.error);
-      return new Response(JSON.stringify({ 
-        error: `AI error: ${data.error.message || JSON.stringify(data.error)}` 
-      }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    
-    const content = data.choices?.[0]?.message?.content;
+    // Extract content from Gemini response format
+    const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!content) {
-      console.error("No content in AI response");
+      console.error("No content in Gemini response:", JSON.stringify(data));
+      
+      // Check for safety blocking
+      if (data.candidates?.[0]?.finishReason === "SAFETY") {
+        return new Response(JSON.stringify({ 
+          error: "Content was blocked by safety filters. Please try a different query." 
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      
       return new Response(JSON.stringify({ 
         error: "No content in AI response" 
       }), {
@@ -261,7 +287,7 @@ Tu dois répondre avec un objet JSON valide contenant:
       });
     }
 
-    console.log("AI response received, length:", content.length);
+    console.log("Gemini response received, length:", content.length);
 
     let analysisResult;
     try {
@@ -277,7 +303,7 @@ Tu dois répondre avec un objet JSON valide contenant:
       }
       analysisResult = JSON.parse(cleanContent.trim());
     } catch (parseError) {
-      console.error("Failed to parse AI response:", parseError);
+      console.error("Failed to parse Gemini response:", parseError);
       console.error("Content preview:", content.substring(0, 500));
       return new Response(JSON.stringify({ 
         error: `Failed to parse AI response: ${parseError instanceof Error ? parseError.message : "Unknown error"}` 
