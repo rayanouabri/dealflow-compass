@@ -184,10 +184,11 @@ serve(async (req) => {
     
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     
-    if (!GEMINI_API_KEY) {
+    if (!GEMINI_API_KEY || GEMINI_API_KEY.trim() === "") {
       console.error("GEMINI_API_KEY not configured");
       return new Response(JSON.stringify({ 
-        error: "GEMINI_API_KEY not configured. Please add it in your secrets." 
+        error: "GEMINI_API_KEY not configured. Please add it in Supabase Dashboard > Edge Functions > analyze-fund > Settings > Secrets.\n\n📖 Guide : https://github.com/rayanouabri/dealflow-compass/blob/main/GEMINI_SETUP.md",
+        setupRequired: true
       }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -454,15 +455,25 @@ Tu dois répondre avec un objet JSON valide contenant:
 
       if (status === 400) {
         let errorMessage = "Invalid request to Gemini API.";
+        let setupInstructions = "";
         try {
           const errorData = JSON.parse(errorText);
           if (errorData.error?.message) {
             errorMessage = `Gemini API: ${errorData.error.message}`;
+            // Détecter spécifiquement le problème de clé API manquante
+            if (errorData.error.message.toLowerCase().includes("api key") || 
+                errorData.error.message.toLowerCase().includes("key not found") ||
+                errorData.error.message.toLowerCase().includes("invalid api key")) {
+              setupInstructions = "\n\n🔧 SOLUTION : Configurez GEMINI_API_KEY dans Supabase Dashboard > Edge Functions > analyze-fund > Settings > Secrets. Guide complet : https://github.com/rayanouabri/dealflow-compass/blob/main/GEMINI_SETUP.md";
+            }
           }
         } catch {
           // ignore
         }
-        return new Response(JSON.stringify({ error: errorMessage }), {
+        return new Response(JSON.stringify({ 
+          error: errorMessage + setupInstructions,
+          setupRequired: setupInstructions.length > 0
+        }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });

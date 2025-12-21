@@ -280,15 +280,30 @@ export default function Index() {
         stack: error instanceof Error ? error.stack : undefined
       });
       
+      // Détecter les différents types d'erreurs
       const isPaymentRequired = /payment required/i.test(errorMessage);
+      const isApiKeyMissing = /api key|key not found|gemini_api_key|not configured/i.test(errorMessage);
+      const isRateLimited = /rate limit|429/i.test(errorMessage);
+
+      let title = "Analysis Failed";
+      let description = errorMessage;
+
+      if (isApiKeyMissing) {
+        title = "🔧 Configuration Requise";
+        description = `La clé API Gemini n'est pas configurée.\n\n📖 Étapes :\n1. Obtenez une clé gratuite sur https://makersuite.google.com/app/apikey\n2. Dans Supabase Dashboard → Edge Functions → analyze-fund → Settings → Secrets\n3. Ajoutez le secret "GEMINI_API_KEY" avec votre clé\n\nGuide complet : Voir GEMINI_SETUP.md`;
+      } else if (isRateLimited) {
+        title = "⏱️ Rate Limit Exceeded";
+        description = "Trop de requêtes. Veuillez attendre 30-60 secondes avant de réessayer.";
+      } else if (isPaymentRequired) {
+        title = "AI credits required";
+        description = "Your AI backend is out of credits. Top up your Lovable AI usage (Workspace → Usage) then retry.";
+      }
 
       toast({
-        title: isPaymentRequired ? "AI credits required" : "Analysis Failed",
-        description: isPaymentRequired
-          ? "Your AI backend is out of credits. Top up your Lovable AI usage (Workspace → Usage) then retry."
-          : errorMessage,
+        title,
+        description,
         variant: "destructive",
-        duration: 10000,
+        duration: isApiKeyMissing ? 20000 : 10000,
       });
     } finally {
       setIsLoading(false);

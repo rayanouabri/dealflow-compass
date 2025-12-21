@@ -5,8 +5,31 @@
 ## 🚀 État Actuel
 
 ✅ **Frontend** : Fonctionnel sur `localhost:8080`  
-✅ **Backend** : Edge Function v7 déployée  
-⚠️ **Action requise** : Ajouter `GEMINI_API_KEY` dans Supabase Dashboard (voir [`SESSION_NOTES.md`](./SESSION_NOTES.md))
+✅ **Backend** : Edge Function déployée  
+⚠️ **⚠️ ACTION REQUISE** : Configurer `GEMINI_API_KEY` dans Supabase Dashboard
+
+### 🔧 Configuration Rapide (2 minutes)
+
+**Si vous voyez l'erreur "API Key not found" :**
+
+1. **Obtenez une clé API Gemini (GRATUITE)** :
+   - Allez sur [https://makersuite.google.com/app/apikey](https://makersuite.google.com/app/apikey)
+   - Connectez-vous avec Google
+   - Cliquez sur "Create API Key"
+   - **Copiez la clé** (commence par `AIza...`)
+
+2. **Ajoutez-la dans Supabase** :
+   - Allez sur [Supabase Dashboard](https://app.supabase.com)
+   - Sélectionnez votre projet
+   - **Edge Functions** → `analyze-fund` → **Settings** → **Secrets**
+   - Cliquez sur **"Add Secret"**
+   - Nom : `GEMINI_API_KEY` (exactement comme ça)
+   - Valeur : Collez votre clé API
+   - **Save**
+
+3. **Attendez 10-30 secondes** (propagation) puis réessayez
+
+📖 **Guide détaillé** : Voir [`GEMINI_SETUP.md`](./GEMINI_SETUP.md)
 
 ---
 
