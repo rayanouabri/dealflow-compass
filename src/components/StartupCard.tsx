@@ -3,6 +3,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
+interface Source {
+  name?: string;
+  url?: string;
+  type?: string;
+}
+
 interface Startup {
   name: string;
   tagline: string;
@@ -18,10 +24,11 @@ interface Startup {
   moat?: string;
   website?: string;
   linkedin?: string;
+  linkedinUrl?: string;
   revenue?: string | number;
   fundingHistory?: string | any;
   verificationStatus?: "verified" | "partially_verified" | "estimated";
-  sources?: string[];
+  sources?: (string | Source)[];
 }
 
 interface StartupCardProps {
@@ -67,7 +74,7 @@ export function StartupCard({ startup }: StartupCardProps) {
                   </a>
                 </Button>
               )}
-              {startup.linkedin && (
+              {(startup.linkedin || startup.linkedinUrl) && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -75,7 +82,7 @@ export function StartupCard({ startup }: StartupCardProps) {
                   asChild
                 >
                   <a
-                    href={startup.linkedin.startsWith("http") ? startup.linkedin : `https://${startup.linkedin}`}
+                    href={(startup.linkedinUrl || startup.linkedin || "").startsWith("http") ? (startup.linkedinUrl || startup.linkedin || "") : `https://${startup.linkedinUrl || startup.linkedin}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1"
@@ -198,18 +205,33 @@ export function StartupCard({ startup }: StartupCardProps) {
           <div className="pt-3 border-t border-border">
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Sources</p>
             <div className="space-y-1">
-              {startup.sources.slice(0, 3).map((source, i) => (
-                <a
-                  key={i}
-                  href={source.startsWith("http") ? source : `https://${source}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-primary hover:underline flex items-center gap-1 block"
-                >
-                  <ExternalLink className="w-3 h-3" />
-                  {source.length > 50 ? `${source.substring(0, 50)}...` : source}
-                </a>
-              ))}
+              {startup.sources.slice(0, 3).map((source, i) => {
+                // Handle both string and object formats
+                const sourceUrl = typeof source === 'string' 
+                  ? source 
+                  : (source as Source).url || '';
+                const sourceName = typeof source === 'string'
+                  ? source
+                  : (source as Source).name || (source as Source).url || 'Source';
+                
+                if (!sourceUrl) return null;
+                
+                const url = sourceUrl.startsWith("http") ? sourceUrl : `https://${sourceUrl}`;
+                const displayName = sourceName.length > 50 ? `${sourceName.substring(0, 50)}...` : sourceName;
+                
+                return (
+                  <a
+                    key={i}
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-primary hover:underline flex items-center gap-1 block"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    {displayName}
+                  </a>
+                );
+              })}
             </div>
           </div>
         )}
