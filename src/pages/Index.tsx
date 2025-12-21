@@ -147,9 +147,18 @@ export default function Index() {
   };
 
   const handleStartTrial = () => {
-    console.log("handleStartTrial called, user:", user);
+    console.log("handleStartTrial called, user:", user, "hasTrialRemaining:", hasTrialRemaining);
+    
+    // Si l'utilisateur a encore des crédits trial, il peut accéder directement
+    if (hasTrialRemaining) {
+      console.log("Trial credits available, switching to analyzer");
+      setView("analyzer");
+      return;
+    }
+    
+    // Si plus de crédits trial, demander l'inscription
     if (!user) {
-      console.log("No user, opening signup dialog");
+      console.log("No trial credits left, opening signup dialog");
       setAuthView("signup");
       setShowAuthDialog(true);
       console.log("showAuthDialog set to true, authView:", "signup");
@@ -166,20 +175,20 @@ export default function Index() {
   };
 
   const handleSearch = async (searchFundName?: string) => {
-    // Check if user is logged in
-    if (!user) {
-      setAuthView("signup");
-      setShowAuthDialog(true);
-      toast({
-        title: "Connexion requise",
-        description: "Veuillez vous connecter ou créer un compte pour effectuer une analyse.",
-      });
-      return;
-    }
-
-    // Check trial credits
+    // Check trial credits first (works for both logged in and anonymous users)
     if (!hasTrialRemaining) {
-      setShowPaywall(true);
+      // Si plus de crédits trial, demander l'inscription
+      if (!user) {
+        setAuthView("signup");
+        setShowAuthDialog(true);
+        toast({
+          title: "Inscription requise",
+          description: "Vous avez utilisé vos 3 analyses gratuites. Créez un compte pour continuer.",
+        });
+      } else {
+        // Utilisateur connecté mais plus de crédits
+        setShowPaywall(true);
+      }
       return;
     }
 
