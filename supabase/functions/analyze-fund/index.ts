@@ -348,6 +348,31 @@ Chaque startup doit être une entreprise EXISTANTE avec un site web, des donnée
 === DONNÉES MARCHÉ (source: Brave Search) ===
 ${marketData.marketContext}
 
+=== MOYENNES DU MARCHÉ PAR STADE (pour estimations intelligentes) ===
+
+SAAS (Software as a Service) :
+- Seed: ARR $0-500K, MRR $0-40K, CAC $500-1500, Churn 5-10%/mois, NRR 80-100%, Marge brute 70-85%
+- Series A: ARR $500K-2M, MRR $40K-170K, CAC $1000-2000, Churn 3-7%/mois, NRR 100-120%, Marge brute 75-90%
+- Series B: ARR $2M-10M, MRR $170K-830K, CAC $1500-3000, Churn 2-5%/mois, NRR 110-130%, Marge brute 80-92%
+- Series C+: ARR $10M+, MRR $830K+, CAC $2000-5000, Churn 1-3%/mois, NRR 120-150%, Marge brute 85-95%
+
+MARKETPLACE :
+- Seed: GMV $0-2M, Take rate 10-20%, CAC $50-200, Churn 10-20%/mois
+- Series A: GMV $2M-10M, Take rate 15-25%, CAC $100-300, Churn 8-15%/mois
+- Series B+: GMV $10M+, Take rate 20-30%, CAC $150-400, Churn 5-12%/mois
+
+FINTECH :
+- Seed: ARR $0-1M, CAC $200-800, Churn 4-8%/mois, NRR 90-110%
+- Series A: ARR $1M-5M, CAC $500-1500, Churn 3-6%/mois, NRR 100-115%
+- Series B+: ARR $5M+, CAC $800-2500, Churn 2-5%/mois, NRR 110-130%
+
+HEALTHCARE IT :
+- Seed: ARR $0-800K, CAC $1000-3000, Churn 2-5%/mois (plus bas que SaaS)
+- Series A: ARR $800K-3M, CAC $2000-5000, Churn 1-4%/mois
+- Series B+: ARR $3M+, CAC $3000-8000, Churn 1-3%/mois
+
+⚠️ UTILISE CES MOYENNES pour faire des estimations intelligentes quand les données réelles ne sont pas disponibles.
+
 ${customThesis ? `
 THÈSE D'INVESTISSEMENT PERSONNALISÉE:
 - Secteurs: ${customThesis.sectors?.join(', ') || 'Non spécifié'}
