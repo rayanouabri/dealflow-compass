@@ -182,12 +182,15 @@ serve(async (req) => {
 
     const { fundName, customThesis, params = {} } = requestData;
     
+    // Support multiple AI providers: Groq (preferred) or Gemini
+    const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    const AI_PROVIDER = GROQ_API_KEY ? "groq" : (GEMINI_API_KEY ? "gemini" : null);
     
-    if (!GEMINI_API_KEY || GEMINI_API_KEY.trim() === "") {
-      console.error("GEMINI_API_KEY not configured");
+    if (!AI_PROVIDER) {
+      console.error("No AI provider configured");
       return new Response(JSON.stringify({ 
-        error: "GEMINI_API_KEY not configured. Please add it in Supabase Dashboard > Edge Functions > analyze-fund > Settings > Secrets.\n\n📖 Guide : https://github.com/rayanouabri/dealflow-compass/blob/main/GEMINI_SETUP.md",
+        error: "No AI provider configured. Please add either GROQ_API_KEY or GEMINI_API_KEY in Supabase Dashboard > Edge Functions > analyze-fund > Settings > Secrets.\n\n📖 Groq (Recommandé - GRATUIT) : https://console.groq.com\n📖 Gemini : https://makersuite.google.com/app/apikey",
         setupRequired: true
       }), {
         status: 500,
@@ -369,57 +372,107 @@ Tu dois répondre avec un objet JSON valide contenant:
 
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-    console.log("Calling Gemini API...");
-
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
-
-    const geminiBody = {
-      contents: [
-        {
-          parts: [
-            {
-              text: `${systemPrompt}\n\n${userPrompt}\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.`,
-            },
-          ],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.2,
-        maxOutputTokens: 32768,
-        responseMimeType: "application/json",
-      },
-    };
+    console.log(`Calling ${AI_PROVIDER.toUpperCase()} API...`);
 
     let response: Response | null = null;
     let lastErrorText = "";
 
-    for (let attempt = 0; attempt < 3; attempt++) {
-      if (attempt > 0) {
-        const backoffMs = Math.min(8000, 800 * Math.pow(2, attempt - 1));
-        const jitterMs = Math.floor(Math.random() * 400);
-        const waitMs = backoffMs + jitterMs;
-        console.log(`Gemini rate-limited. Retrying in ${waitMs}ms (attempt ${attempt + 1}/3)`);
-        await sleep(waitMs);
+    // Use Groq if available, otherwise fallback to Gemini
+    if (AI_PROVIDER === "groq") {
+      const groqUrl = "https://api.groq.com/openai/v1/chat/completions";
+      const groqModel = Deno.env.get("GROQ_MODEL") || "llama-3.1-70b-versatile";
+      
+      const groqBody = {
+        model: groqModel,
+        messages: [
+          {
+            role: "system",
+            content: systemPrompt,
+          },
+          {
+            role: "user",
+            content: `${userPrompt}\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.`,
+          },
+        ],
+        temperature: 0.2,
+        max_tokens: 32768,
+        response_format: { type: "json_object" },
+      };
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) {
+          const backoffMs = Math.min(8000, 800 * Math.pow(2, attempt - 1));
+          const jitterMs = Math.floor(Math.random() * 400);
+          const waitMs = backoffMs + jitterMs;
+          console.log(`Groq rate-limited. Retrying in ${waitMs}ms (attempt ${attempt + 1}/3)`);
+          await sleep(waitMs);
+        }
+
+        response = await fetch(groqUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${GROQ_API_KEY}`,
+          },
+          body: JSON.stringify(groqBody),
+        });
+
+        if (response.ok) break;
+
+        lastErrorText = await response.text();
+        console.error("Groq API error:", response.status, lastErrorText);
+
+        if (response.status !== 429) break;
       }
+    } else {
+      // Gemini fallback
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
 
-      response = await fetch(geminiUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const geminiBody = {
+        contents: [
+          {
+            parts: [
+              {
+                text: `${systemPrompt}\n\n${userPrompt}\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.`,
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.2,
+          maxOutputTokens: 32768,
+          responseMimeType: "application/json",
         },
-        body: JSON.stringify(geminiBody),
-      });
+      };
 
-      if (response.ok) break;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) {
+          const backoffMs = Math.min(8000, 800 * Math.pow(2, attempt - 1));
+          const jitterMs = Math.floor(Math.random() * 400);
+          const waitMs = backoffMs + jitterMs;
+          console.log(`Gemini rate-limited. Retrying in ${waitMs}ms (attempt ${attempt + 1}/3)`);
+          await sleep(waitMs);
+        }
 
-      lastErrorText = await response.text();
-      console.error("Gemini API error:", response.status, lastErrorText);
+        response = await fetch(geminiUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(geminiBody),
+        });
 
-      if (response.status !== 429) break;
+        if (response.ok) break;
+
+        lastErrorText = await response.text();
+        console.error("Gemini API error:", response.status, lastErrorText);
+
+        if (response.status !== 429) break;
+      }
     }
 
     if (!response) {
-      return new Response(JSON.stringify({ error: "Failed to call Gemini API." }), {
+      return new Response(JSON.stringify({ error: `Failed to call ${AI_PROVIDER.toUpperCase()} API.` }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -442,9 +495,11 @@ Tu dois répondre avec un objet JSON valide contenant:
       }
 
       if (status === 403) {
+        const providerName = AI_PROVIDER === "groq" ? "Groq" : "Gemini";
+        const keyName = AI_PROVIDER === "groq" ? "GROQ_API_KEY" : "GEMINI_API_KEY";
         return new Response(
           JSON.stringify({
-            error: "Invalid or expired Gemini API key. Please check your GEMINI_API_KEY.",
+            error: `Invalid or expired ${providerName} API key. Please check your ${keyName}.`,
           }),
           {
             status: 403,
@@ -454,17 +509,23 @@ Tu dois répondre avec un objet JSON valide contenant:
       }
 
       if (status === 400) {
-        let errorMessage = "Invalid request to Gemini API.";
+        const providerName = AI_PROVIDER === "groq" ? "Groq" : "Gemini";
+        let errorMessage = `Invalid request to ${providerName} API.`;
         let setupInstructions = "";
         try {
           const errorData = JSON.parse(errorText);
           if (errorData.error?.message) {
-            errorMessage = `Gemini API: ${errorData.error.message}`;
+            errorMessage = `${providerName} API: ${errorData.error.message}`;
             // Détecter spécifiquement le problème de clé API manquante
             if (errorData.error.message.toLowerCase().includes("api key") || 
                 errorData.error.message.toLowerCase().includes("key not found") ||
-                errorData.error.message.toLowerCase().includes("invalid api key")) {
-              setupInstructions = "\n\n🔧 SOLUTION : Configurez GEMINI_API_KEY dans Supabase Dashboard > Edge Functions > analyze-fund > Settings > Secrets. Guide complet : https://github.com/rayanouabri/dealflow-compass/blob/main/GEMINI_SETUP.md";
+                errorData.error.message.toLowerCase().includes("invalid api key") ||
+                errorData.error.message.toLowerCase().includes("unauthorized")) {
+              if (AI_PROVIDER === "groq") {
+                setupInstructions = "\n\n🔧 SOLUTION : Configurez GROQ_API_KEY dans Supabase Dashboard > Edge Functions > analyze-fund > Settings > Secrets.\n📖 Guide : https://console.groq.com (GRATUIT, pas de carte bancaire)";
+              } else {
+                setupInstructions = "\n\n🔧 SOLUTION : Configurez GEMINI_API_KEY dans Supabase Dashboard > Edge Functions > analyze-fund > Settings > Secrets.\n📖 Guide : https://makersuite.google.com/app/apikey";
+              }
             }
           }
         } catch {
@@ -481,7 +542,7 @@ Tu dois répondre avec un objet JSON valide contenant:
 
       return new Response(
         JSON.stringify({
-          error: `Gemini API error (${status})`,
+          error: `${AI_PROVIDER === "groq" ? "Groq" : "Gemini"} API error (${status})`,
           details: errorText,
         }),
         {
@@ -493,12 +554,18 @@ Tu dois répondre avec un objet JSON valide contenant:
 
     const data = await response.json();
     
-    const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    // Handle different response formats: Groq vs Gemini
+    let content: string;
+    if (AI_PROVIDER === "groq") {
+      content = data.choices?.[0]?.message?.content || "";
+    } else {
+      content = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    }
 
     if (!content) {
-      console.error("No content in Gemini response:", JSON.stringify(data));
+      console.error(`No content in ${AI_PROVIDER} response:`, JSON.stringify(data));
       
-      if (data.candidates?.[0]?.finishReason === "SAFETY") {
+      if (AI_PROVIDER === "gemini" && data.candidates?.[0]?.finishReason === "SAFETY") {
         return new Response(JSON.stringify({ 
           error: "Content was blocked by safety filters. Please try a different query." 
         }), {
@@ -508,14 +575,14 @@ Tu dois répondre avec un objet JSON valide contenant:
       }
       
       return new Response(JSON.stringify({ 
-        error: "No content in AI response" 
+        error: `No content in ${AI_PROVIDER} response` 
       }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    console.log("Gemini response received, length:", content.length);
+    console.log(`${AI_PROVIDER} response received, length:`, content.length);
 
     let analysisResult;
     try {
