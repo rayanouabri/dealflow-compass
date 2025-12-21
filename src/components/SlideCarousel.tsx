@@ -31,6 +31,15 @@ const SLIDE_ICONS = [
 export function SlideCarousel({ slides, startupName, onExport }: SlideCarouselProps) {
   const [currentSlide, setCurrentSlide] = useState(0);
 
+  // Guard against empty or invalid slides
+  if (!slides || slides.length === 0) {
+    return (
+      <Card className="bg-card border-border p-8 text-center">
+        <p className="text-muted-foreground">No slides available</p>
+      </Card>
+    );
+  }
+
   const goToPrevious = () => {
     setCurrentSlide((prev) => (prev === 0 ? slides.length - 1 : prev - 1));
   };
@@ -39,7 +48,7 @@ export function SlideCarousel({ slides, startupName, onExport }: SlideCarouselPr
     setCurrentSlide((prev) => (prev === slides.length - 1 ? 0 : prev + 1));
   };
 
-  const slide = slides[currentSlide];
+  const slide = slides[currentSlide] || { title: "", content: "", keyPoints: [] };
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -102,7 +111,7 @@ export function SlideCarousel({ slides, startupName, onExport }: SlideCarouselPr
             {/* Main Content - Enriched */}
             <div className="prose prose-sm dark:prose-invert max-w-none">
               <div className="text-secondary-foreground leading-relaxed whitespace-pre-line text-base space-y-4">
-                {slide.content.split('\n\n').map((paragraph, i) => (
+                {(slide.content || "").split('\n\n').map((paragraph, i) => (
                   paragraph.trim() && (
                     <p key={i} className="mb-4 last:mb-0">
                       {paragraph.trim()}
