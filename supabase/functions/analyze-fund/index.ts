@@ -189,76 +189,121 @@ Tu dois répondre avec un objet JSON valide contenant:
       ? `Analyse le fonds de capital-risque "${fundName}" et identifie ${numberOfStartups} startup(s) qui correspondent à leur thèse d'investissement. Génère un rapport de due diligence complet pour chaque startup.`
       : `Identifie ${numberOfStartups} startup(s) qui correspondent à la thèse d'investissement personnalisée fournie. Génère un rapport de due diligence complet pour chaque startup.`;
 
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
     console.log("Calling Gemini API...");
 
     // Use Google Gemini API directly
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
-    
-    const response = await fetch(geminiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+
+    const geminiBody = {
+      contents: [
+        {
+          parts: [
+            {
+              text: `${systemPrompt}\n\n${userPrompt}\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.`,
+            },
+          ],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.3,
+        maxOutputTokens: 16384,
+        responseMimeType: "application/json",
       },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: `${systemPrompt}\n\n${userPrompt}\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.` }
-            ]
-          }
-        ],
-        generationConfig: {
-          temperature: 0.3,
-          maxOutputTokens: 16384,
-          responseMimeType: "application/json"
-        }
-      }),
-    });
+    };
+
+    // Retry on 429 (rate limit) with exponential backoff + jitter
+    let response: Response | null = null;
+    let lastErrorText = "";
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        const backoffMs = Math.min(8000, 800 * Math.pow(2, attempt - 1));
+        const jitterMs = Math.floor(Math.random() * 400);
+        const waitMs = backoffMs + jitterMs;
+        console.log(`Gemini rate-limited. Retrying in ${waitMs}ms (attempt ${attempt + 1}/3)`);
+        await sleep(waitMs);
+      }
+
+      response = await fetch(geminiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(geminiBody),
+      });
+
+      if (response.ok) break;
+
+      lastErrorText = await response.text();
+      console.error("Gemini API error:", response.status, lastErrorText);
+
+      // Retry only on 429
+      if (response.status !== 429) break;
+    }
+
+    if (!response) {
+      return new Response(JSON.stringify({ error: "Failed to call Gemini API." }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Gemini API error:", response.status, errorText);
-      
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ 
-          error: "Rate limit exceeded. Please try again in a few moments." 
-        }), {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      
-      if (response.status === 403) {
-        return new Response(JSON.stringify({ 
-          error: "Invalid or expired Gemini API key. Please check your GEMINI_API_KEY." 
-        }), {
-          status: 403,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+      const status = response.status;
+      const errorText = lastErrorText || (await response.text());
+
+      if (status === 429) {
+        return new Response(
+          JSON.stringify({
+            error: "Rate limit exceeded. Please wait ~30-60s and retry.",
+          }),
+          {
+            status: 429,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
       }
 
-      if (response.status === 400) {
+      if (status === 403) {
+        return new Response(
+          JSON.stringify({
+            error: "Invalid or expired Gemini API key. Please check your GEMINI_API_KEY.",
+          }),
+          {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      if (status === 400) {
         let errorMessage = "Invalid request to Gemini API.";
         try {
           const errorData = JSON.parse(errorText);
           if (errorData.error?.message) {
             errorMessage = `Gemini API: ${errorData.error.message}`;
           }
-        } catch (e) {
-          // Keep default message
+        } catch {
+          // ignore
         }
         return new Response(JSON.stringify({ error: errorMessage }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      
-      return new Response(JSON.stringify({ 
-        error: `Gemini API error (${response.status})` 
-      }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+
+      return new Response(
+        JSON.stringify({
+          error: `Gemini API error (${status})`,
+          details: errorText,
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     const data = await response.json();
