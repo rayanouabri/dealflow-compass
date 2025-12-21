@@ -280,11 +280,15 @@ export default function Index() {
         stack: error instanceof Error ? error.stack : undefined
       });
       
+      const isPaymentRequired = /payment required/i.test(errorMessage);
+
       toast({
-        title: "Analysis Failed",
-        description: errorMessage,
+        title: isPaymentRequired ? "AI credits required" : "Analysis Failed",
+        description: isPaymentRequired
+          ? "Your AI backend is out of credits. Top up your Lovable AI usage (Workspace → Usage) then retry."
+          : errorMessage,
         variant: "destructive",
-        duration: 10000, // Show for 10 seconds
+        duration: 10000,
       });
     } finally {
       setIsLoading(false);
