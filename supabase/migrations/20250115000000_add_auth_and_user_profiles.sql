@@ -1,9 +1,9 @@
 -- Add user_id to analysis_history table
 ALTER TABLE public.analysis_history 
-ADD COLUMN user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
 
 -- Create user_profiles table for additional user data
-CREATE TABLE public.user_profiles (
+CREATE TABLE IF NOT EXISTS public.user_profiles (
   id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
   email TEXT,
   full_name TEXT,
@@ -36,6 +36,27 @@ ON public.user_profiles
 FOR INSERT
 WITH CHECK (auth.uid() = id);
 
+-- Drop existing policies if they exist (to avoid conflicts)
+DROP POLICY IF EXISTS "Users can view own profile" ON public.user_profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON public.user_profiles;
+DROP POLICY IF EXISTS "Users can insert own profile" ON public.user_profiles;
+
+-- Recreate policies (in case they were dropped)
+CREATE POLICY "Users can view own profile"
+ON public.user_profiles
+FOR SELECT
+USING (auth.uid() = id);
+
+CREATE POLICY "Users can update own profile"
+ON public.user_profiles
+FOR UPDATE
+USING (auth.uid() = id);
+
+CREATE POLICY "Users can insert own profile"
+ON public.user_profiles
+FOR INSERT
+WITH CHECK (auth.uid() = id);
+
 -- Update analysis_history RLS policies to require auth
 DROP POLICY IF EXISTS "Allow public read access" ON public.analysis_history;
 DROP POLICY IF EXISTS "Allow public insert access" ON public.analysis_history;
@@ -58,19 +79,24 @@ ON public.analysis_history
 FOR DELETE
 USING (auth.uid() = user_id);
 
--- Create index for faster queries
-CREATE INDEX idx_analysis_history_user_id ON public.analysis_history(user_id, created_at DESC);
-CREATE INDEX idx_user_profiles_email ON public.user_profiles(email);
+-- Create indexes for faster queries
+CREATE INDEX IF NOT EXISTS idx_analysis_history_user_id ON public.analysis_history(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_profiles_email ON public.user_profiles(email);
 
+-- Function to automatically create user profile on signup
 -- Function to automatically create user profile on signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
   INSERT INTO public.user_profiles (id, email, full_name)
-  VALUES (NEW.id, NEW.email, COALESCE(NEW.raw_user_meta_data->>'full_name', ''));
+  VALUES (NEW.id, NEW.email, COALESCE(NEW.raw_user_meta_data->>'full_name', ''))
+  ON CONFLICT (id) DO NOTHING;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Drop existing trigger if it exists
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 
 -- Trigger to create profile when user signs up
 CREATE TRIGGER on_auth_user_created
