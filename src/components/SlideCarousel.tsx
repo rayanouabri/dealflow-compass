@@ -251,12 +251,28 @@ export function SlideCarousel({ slides, startupName, onExport }: SlideCarouselPr
                       formattedValue = String(value);
                     }
                     
-                    // Formatage des clés
-                    const formattedKey = key
+                    // Formatage des clés avec unités intelligentes
+                    let formattedKey = key
                       .replace(/([A-Z])/g, " $1")
                       .replace(/^./, str => str.toUpperCase())
-                      .replace(/(arr|mrr|nrr|cac|ltv|tam|sam|som)/gi, (match) => match.toUpperCase())
+                      .replace(/(arr|mrr|nrr|cac|ltv|tam|sam|som|cagr)/gi, (match) => match.toUpperCase())
                       .trim();
+                    
+                    // Ajouter unité par défaut si manquante pour certaines métriques
+                    const keyUpper = key.toUpperCase();
+                    if ((keyUpper.includes('TAM') || keyUpper.includes('SAM') || keyUpper.includes('SOM')) && !formattedValue.includes('B') && !formattedValue.includes('M')) {
+                      // Si TAM/SAM/SOM sans unité visible, c'est probablement en billions
+                      if (!formattedValue.match(/[BMK]/)) {
+                        // Pas d'unité détectée, ajouter B par défaut pour TAM/SAM/SOM
+                        const numMatch = formattedValue.match(/\$?([\d.]+)/);
+                        if (numMatch) {
+                          const num = parseFloat(numMatch[1]);
+                          if (num > 0 && num < 1000) {
+                            formattedValue = `$${num}B`;
+                          }
+                        }
+                      }
+                    }
                     
                     return (
                       <div 
