@@ -610,12 +610,7 @@ export default function Index() {
                 New Analysis
               </button>
               
-              {result.fundInfo && (
-                <FundInfoCard fundInfo={result.fundInfo} metadata={result.analysisMetadata} />
-              )}
-              <InvestmentCriteria fundName={fundName || "Custom Thesis"} thesis={result.investmentThesis} />
-              
-              {/* Affichage des startups multiples */}
+              {/* Affichage des startups multiples - EN PREMIER */}
               {(() => {
                 const startups = result.startups || (result.startup ? [result.startup] : []);
                 const reports = result.dueDiligenceReports || (result.dueDiligenceReport ? [result.dueDiligenceReport] : []) || (result.pitchDeck ? [result.pitchDeck] : []);
@@ -652,6 +647,12 @@ export default function Index() {
                 
                 return startups.length > 0 ? <StartupCard startup={startups[0]} /> : null;
               })()}
+              
+              {/* Fund Info - APRÈS les startups */}
+              {result.fundInfo && (
+                <FundInfoCard fundInfo={result.fundInfo} metadata={result.analysisMetadata} />
+              )}
+              <InvestmentCriteria fundName={fundName || "Custom Thesis"} thesis={result.investmentThesis} />
               
               {history.length > 0 && (
                 <AnalysisHistory history={history} onSelect={handleHistorySelect} />

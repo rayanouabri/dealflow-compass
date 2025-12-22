@@ -183,29 +183,60 @@ export function SlideCarousel({ slides, startupName, onExport }: SlideCarouselPr
                         sourceInfo = sourceMatch[0];
                       }
                       
-                      // Extraire le nombre principal
-                      // Patterns: "$2.5M ARR (source: ...)" ou "$1.8M ARR (estimation ...)" ou "$2.5M"
-                      const numberMatch = valueStr.match(/\$?([\d,]+\.?\d*)\s*([KMkm]?)/);
+                      // Extraire le nombre principal avec support pour B (billions), M (millions), K (thousands)
+                      // Patterns: "$2.5M ARR (source: ...)" ou "$42.3B TAM" ou "42.3" (sans unité, à inférer)
+                      const numberMatch = valueStr.match(/\$?([\d,]+\.?\d*)\s*([BKMbkm]?)/);
                       
                       if (numberMatch) {
                         let num = parseFloat(numberMatch[1].replace(/,/g, ''));
                         const unit = numberMatch[2].toUpperCase();
                         
-                        if (unit === 'M' || unit === 'MILLION') {
+                        // Convertir en nombre brut
+                        if (unit === 'B' || unit === 'BILLION') {
+                          num = num * 1000000000;
+                        } else if (unit === 'M' || unit === 'MILLION') {
                           num = num * 1000000;
                         } else if (unit === 'K' || unit === 'THOUSAND') {
                           num = num * 1000;
+                        } else if (!unit && num > 0) {
+                          // Pas d'unité spécifiée - inférer selon la clé de métrique
+                          const keyUpper = key.toUpperCase();
+                          if (keyUpper.includes('TAM') || keyUpper.includes('SAM') || keyUpper.includes('SOM')) {
+                            // TAM/SAM/SOM sont généralement en billions ou millions selon la taille
+                            if (num >= 1 && num < 1000) {
+                              // Probablement en billions
+                              num = num * 1000000000;
+                            } else if (num >= 1000) {
+                              // Probablement déjà en millions
+                              num = num * 1000000;
+                            }
+                          } else if (keyUpper.includes('CAGR') || keyUpper.includes('GROWTH') || keyUpper.includes('CHURN') || keyUpper.includes('NRR') || keyUpper.includes('MARGIN')) {
+                            // Pourcentages - garder tel quel
+                            formattedValue = `${num.toFixed(1)}%`;
+                          } else {
+                            // Autres métriques - supposer millions si > 1, sinon thousands
+                            if (num >= 1 && num < 1000) {
+                              num = num * 1000000;
+                            } else if (num < 1) {
+                              num = num * 1000;
+                            }
+                          }
                         }
                         
                         if (!isNaN(num) && num > 0) {
-                          // Formater le nombre
-                          if (num >= 1000000) {
+                          // Formater le nombre avec unité appropriée
+                          if (num >= 1000000000) {
+                            formattedValue = `$${(num / 1000000000).toFixed(1)}B`;
+                          } else if (num >= 1000000) {
                             formattedValue = `$${(num / 1000000).toFixed(1)}M`;
                           } else if (num >= 1000) {
                             formattedValue = `$${(num / 1000).toFixed(1)}K`;
                           } else {
                             formattedValue = `$${num.toLocaleString()}`;
                           }
+                        } else if (key.toUpperCase().includes('CAGR') || key.toUpperCase().includes('GROWTH') || key.toUpperCase().includes('CHURN') || key.toUpperCase().includes('NRR') || key.toUpperCase().includes('MARGIN')) {
+                          // Pourcentages
+                          formattedValue = `${num.toFixed(1)}%`;
                         } else {
                           formattedValue = valueStr;
                         }

@@ -43,21 +43,7 @@ export function FundInfoCard({ fundInfo, metadata }: FundInfoProps) {
   return (
     <Card className="bg-card border-border animate-slide-in-right">
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base text-foreground">Fund Intelligence</CardTitle>
-          {metadata?.confidence && (
-            <div className="flex items-center gap-1.5">
-              {metadata.confidence === "high" ? (
-                <CheckCircle2 className={`w-3.5 h-3.5 ${confidenceColors[metadata.confidence]}`} />
-              ) : (
-                <AlertCircle className={`w-3.5 h-3.5 ${confidenceColors[metadata.confidence]}`} />
-              )}
-              <span className={`text-xs ${confidenceColors[metadata.confidence]} capitalize`}>
-                {metadata.confidence} confidence
-              </span>
-            </div>
-          )}
-        </div>
+        <CardTitle className="text-base text-foreground">Fund Intelligence</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Official Name & Website */}
