@@ -34,7 +34,6 @@
 ```env
 VITE_SUPABASE_URL=https://votre-project-id.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=votre_anon_key_ici
-LOVABLE_API_KEY=votre_lovable_api_key_ici
 ```
 
 **Important**: Remplacez `votre-project-id` et `votre_anon_key_ici` par les vraies valeurs de votre projet Supabase.
@@ -76,8 +75,11 @@ L'Edge Function `analyze-fund` est nécessaire pour analyser les fonds VC.
 # Déployer la fonction
 supabase functions deploy analyze-fund
 
-# Configurer le secret LOVABLE_API_KEY
-supabase secrets set LOVABLE_API_KEY=votre_lovable_api_key
+# Configurer le secret GEMINI_API_KEY (obligatoire)
+supabase secrets set GEMINI_API_KEY="votre_cle_gemini_ici"
+
+# (Optionnel) Configurer BRAVE_API_KEY pour enrichissement web
+supabase secrets set BRAVE_API_KEY="votre_cle_brave_ici"
 ```
 
 #### Via le Dashboard Supabase :
@@ -86,15 +88,14 @@ supabase secrets set LOVABLE_API_KEY=votre_lovable_api_key
 2. Créez une nouvelle fonction nommée `analyze-fund`
 3. Copiez-collez le contenu de `supabase/functions/analyze-fund/index.ts`
 4. Allez dans **Settings** > **Edge Functions** > **Secrets**
-5. Ajoutez le secret `LOVABLE_API_KEY` avec votre clé API Lovable
+5. Ajoutez le secret `GEMINI_API_KEY` avec votre clé API Gemini
+6. (Optionnel) Ajoutez le secret `BRAVE_API_KEY` pour enrichir les sources via recherche web
 
-### Étape 6 : Obtenir une clé API Lovable
+### Étape 6 : Obtenir une clé API Gemini (Gratuit)
 
-1. Allez sur [https://lovable.dev](https://lovable.dev)
-2. Créez un compte ou connectez-vous
-3. Allez dans les paramètres de votre compte
-4. Générez une clé API
-5. Utilisez cette clé pour `LOVABLE_API_KEY` dans votre `.env` et dans les secrets Supabase
+1. Allez sur [https://makersuite.google.com/app/apikey](https://makersuite.google.com/app/apikey)
+2. Créez une clé (elle commence généralement par `AIza...`)
+3. Ajoutez-la dans Supabase en secret `GEMINI_API_KEY` (voir étape 5)
 
 ## ✅ Vérification
 
@@ -118,9 +119,10 @@ Pour vérifier que tout fonctionne :
 - Vérifiez que votre fichier `.env` existe et contient les bonnes variables
 - Redémarrez le serveur de développement après avoir créé/modifié `.env`
 
-### Erreur : "LOVABLE_API_KEY is not configured"
+### Erreur : "GEMINI_API_KEY is not configured"
 - Vérifiez que vous avez configuré le secret dans Supabase Edge Functions
-- Vérifiez que le secret s'appelle exactement `LOVABLE_API_KEY`
+- Vérifiez que le secret s'appelle exactement `GEMINI_API_KEY`
+- Attendez 10-30 secondes après modification (propagation)
 
 ### Erreur : "relation 'analysis_history' does not exist"
 - La migration n'a pas été appliquée
@@ -135,5 +137,5 @@ Pour vérifier que tout fonctionne :
 
 - [Documentation Supabase](https://supabase.com/docs)
 - [Supabase Edge Functions](https://supabase.com/docs/guides/functions)
-- [Lovable AI](https://lovable.dev)
+- [Google AI Studio (Gemini)](https://makersuite.google.com/app/apikey)
 

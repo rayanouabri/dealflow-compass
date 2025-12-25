@@ -77,7 +77,10 @@ supabase login
 supabase link --project-ref bdsetpsitqhzpnitxibo
 
 # Ajouter le secret
-supabase secrets set LOVABLE_API_KEY=votre_cle_api_lovable_ici
+supabase secrets set GEMINI_API_KEY="votre_cle_gemini_ici"
+
+# (Optionnel) Enrichissement web (sources, LinkedIn, contexte marché)
+supabase secrets set BRAVE_API_KEY="votre_cle_brave_ici"
 ```
 
 ### Étape 3 : Vérifier que le secret est bien configuré
@@ -127,17 +130,18 @@ Une fois le secret ajouté, testez votre Edge Function :
 
 ### Erreur : "Failed to parse AI response"
 
-**Cause** : L'API Lovable a retourné une réponse dans un format inattendu.
+**Cause** : Le modèle a retourné un JSON invalide ou incomplet.
 
 **Solution** :
 - Vérifiez les logs de l'Edge Function dans Supabase
-- Vérifiez que votre clé API Lovable est valide
+- Réessayez (un retry peut suffire en cas de contenu tronqué)
+- Réduisez `numberOfStartups` / `slideCount` si vous atteignez des limites de tokens
 
 ## 📚 Ressources
 
 - [Documentation Supabase Edge Functions](https://supabase.com/docs/guides/functions)
 - [Gestion des secrets dans Supabase](https://supabase.com/docs/guides/functions/secrets)
-- [Lovable AI Documentation](https://lovable.dev/docs)
+- [Google AI Studio (Gemini)](https://makersuite.google.com/app/apikey)
 
 ## 💡 Astuce
 

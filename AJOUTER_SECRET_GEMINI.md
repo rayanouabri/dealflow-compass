@@ -42,7 +42,7 @@ Cliquez sur **"analyze-fund"** dans la liste
 1. Cliquez sur **"Add Secret"** ou **"New Secret"** ou **"Create Secret"**
 2. Remplissez :
    - **Name** (ou **Nom**) : `GEMINI_API_KEY` ⚠️ **EXACTEMENT comme ça, en majuscules**
-   - **Value** (ou **Valeur**) : `AIzaSyDum1TiEMtDv9TgmpkgiOwV_AAO0GOPa4s`
+   - **Value** (ou **Valeur**) : `<VOTRE_CLE_GEMINI_ICI>`
 3. Cliquez sur **"Save"** ou **"Add"** ou **"Create"**
 
 ### 6️⃣ Vérifier

@@ -62,7 +62,7 @@ VITE_SUPABASE_PUBLISHABLE_KEY=votre_anon_key_ici
 
 ### Problème 3 : L'Edge Function ne répond pas
 **Solution** :
-- Vérifiez que `GROQ_API_KEY` est configuré dans Supabase
+- Vérifiez que `GEMINI_API_KEY` est configuré dans Supabase
 - Vérifiez les logs dans Supabase Dashboard
 
 ### Problème 4 : Les résultats ne s'affichent pas

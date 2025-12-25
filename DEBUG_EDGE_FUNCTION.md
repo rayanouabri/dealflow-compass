@@ -45,8 +45,8 @@ testFunction();
 
 Dans Supabase Dashboard :
 1. Allez dans Edge Functions > analyze-fund > Settings > Secrets
-2. Vérifiez que `GROQ_API_KEY` existe
-3. Vérifiez que la valeur est correcte (commence par `gsk_`)
+2. Vérifiez que `GEMINI_API_KEY` existe
+3. (Optionnel) Vérifiez que `BRAVE_API_KEY` existe si vous voulez l'enrichissement web
 
 ### Test 3 : Vérifier les variables d'environnement frontend
 
@@ -63,7 +63,7 @@ console.log("SUPABASE_KEY:", import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.subs
 - Vérifiez que la clé API est correcte
 - Vérifiez les logs dans Supabase Dashboard
 
-### Problème 2 : Secret GROQ_API_KEY non configuré
+### Problème 2 : Secret GEMINI_API_KEY non configuré
 - L'Edge Function retournera une erreur claire
 - Vérifiez dans Supabase Dashboard > Secrets
 
@@ -81,5 +81,5 @@ Pour que je puisse vous aider, donnez-moi :
 1. Le message d'erreur exact dans la console (F12)
 2. Le status code de la réponse (dans Network tab)
 3. Le contenu de la réponse (dans Network tab)
-4. Si `GROQ_API_KEY` est bien configuré dans Supabase
+4. Si `GEMINI_API_KEY` est bien configuré dans Supabase (et `BRAVE_API_KEY` si vous voulez l’enrichissement web)
 
