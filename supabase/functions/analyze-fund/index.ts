@@ -210,13 +210,13 @@ serve(async (req) => {
     
     // Support multiple AI providers: Groq (preferred) or Gemini
     const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_KEY_2") || Deno.env.get("GEMINI_API_KEY");
     const AI_PROVIDER = GROQ_API_KEY ? "groq" : (GEMINI_API_KEY ? "gemini" : null);
     
     if (!AI_PROVIDER) {
       console.error("No AI provider configured");
       return new Response(JSON.stringify({ 
-        error: "No AI provider configured. Please add either GROQ_API_KEY or GEMINI_API_KEY in Supabase Dashboard > Edge Functions > analyze-fund > Settings > Secrets.\n\n📖 Groq (Recommandé - GRATUIT) : https://console.groq.com\n📖 Gemini : https://makersuite.google.com/app/apikey",
+        error: "No AI provider configured. Please add either GROQ_API_KEY or GEMINI_KEY_2 (or GEMINI_API_KEY) in Supabase Dashboard > Edge Functions > analyze-fund > Settings > Secrets.\n\n📖 Groq (Recommandé - GRATUIT) : https://console.groq.com\n📖 Gemini : https://makersuite.google.com/app/apikey",
         setupRequired: true
       }), {
         status: 500,
@@ -736,7 +736,7 @@ IMPORTANT : Utilise UNIQUEMENT les données réelles trouvées dans les recherch
 
       if (status === 403) {
         const providerName = AI_PROVIDER === "groq" ? "Groq" : "Gemini";
-        const keyName = AI_PROVIDER === "groq" ? "GROQ_API_KEY" : "GEMINI_API_KEY";
+        const keyName = AI_PROVIDER === "groq" ? "GROQ_API_KEY" : "GEMINI_KEY_2 (ou GEMINI_API_KEY)";
         return new Response(
           JSON.stringify({
             error: `Invalid or expired ${providerName} API key. Please check your ${keyName}.`,
@@ -764,7 +764,7 @@ IMPORTANT : Utilise UNIQUEMENT les données réelles trouvées dans les recherch
               if (AI_PROVIDER === "groq") {
                 setupInstructions = "\n\n🔧 SOLUTION : Configurez GROQ_API_KEY dans Supabase Dashboard > Edge Functions > analyze-fund > Settings > Secrets.\n📖 Guide : https://console.groq.com (GRATUIT, pas de carte bancaire)";
               } else {
-                setupInstructions = "\n\n🔧 SOLUTION : Configurez GEMINI_API_KEY dans Supabase Dashboard > Edge Functions > analyze-fund > Settings > Secrets.\n📖 Guide : https://makersuite.google.com/app/apikey";
+                setupInstructions = "\n\n🔧 SOLUTION : Configurez GEMINI_KEY_2 (ou GEMINI_API_KEY) dans Supabase Dashboard > Edge Functions > analyze-fund > Settings > Secrets.\n📖 Guide : https://makersuite.google.com/app/apikey";
               }
             }
           }

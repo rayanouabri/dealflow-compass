@@ -15,9 +15,11 @@ import { AnalysisParameters, AnalysisParams, defaultParams } from "@/components/
 import { CustomThesisInput, CustomThesis } from "@/components/CustomThesisInput";
 import { PaywallModal } from "@/components/PaywallModal";
 import { useTrial } from "@/hooks/useTrial";
+import { AIQAChat } from "@/components/AIQAChat";
 import { BarChart3, ArrowLeft, Crown, Sparkles, ToggleLeft, ToggleRight, LogOut, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface FundInfo {
   officialName: string;
@@ -473,8 +475,13 @@ export default function Index() {
                   <BarChart3 className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <h1 className="text-lg font-semibold text-foreground">DealFlow Compass</h1>
-                  <p className="text-xs text-muted-foreground">Startup Sourcing & Due Diligence Platform</p>
+                  <h1 className="text-lg font-semibold text-foreground">
+                    <span className="text-[#2C3E50]">bpi</span>
+                    <span className="text-[#FFD700]">france</span>
+                    <span className="text-[#2C3E50]">.</span>
+                    <span className="text-[#FFD700]">.</span>
+                  </h1>
+                  <p className="text-xs text-muted-foreground">Sourcing & Analyse de Startups</p>
                 </div>
               </button>
             </div>
@@ -671,11 +678,31 @@ export default function Index() {
                 if (!currentStartup) return null;
                 
                 return (
-                  <SlideCarousel
-                    slides={currentReport}
-                    startupName={currentStartup.name}
-                    onExport={handleExport}
-                  />
+                  <Tabs defaultValue="report" className="w-full">
+                    <TabsList className="grid w-full grid-cols-2 mb-4">
+                      <TabsTrigger value="report">Rapport d'Analyse</TabsTrigger>
+                      <TabsTrigger value="qa">Assistant IA</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="report" className="mt-0">
+                      <SlideCarousel
+                        slides={currentReport}
+                        startupName={currentStartup.name}
+                        onExport={handleExport}
+                      />
+                    </TabsContent>
+                    <TabsContent value="qa" className="mt-0">
+                      <div className="h-[600px]">
+                        <AIQAChat
+                          startupData={{
+                            ...currentStartup,
+                            dueDiligenceReport: currentReport,
+                          }}
+                          investmentThesis={result.investmentThesis}
+                          fundName={fundName}
+                        />
+                      </div>
+                    </TabsContent>
+                  </Tabs>
                 );
               })()}
             </div>
@@ -687,7 +714,7 @@ export default function Index() {
       <footer className="border-t border-border bg-card/30 mt-auto">
         <div className="container max-w-7xl mx-auto px-4 py-4">
           <p className="text-xs text-muted-foreground text-center">
-            DealFlow Compass • AI-Powered Startup Sourcing & Due Diligence for VC Funds
+            BPI France • Outil de Sourcing et d'Analyse de Startups pour Fonds d'Investissement
           </p>
         </div>
       </footer>

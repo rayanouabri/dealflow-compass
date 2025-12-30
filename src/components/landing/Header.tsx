@@ -33,9 +33,14 @@ export function Header({ onStartTrial, onLogin }: HeaderProps) {
               <BarChart3 className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-foreground">VC Match</h1>
+              <h1 className="text-lg font-bold text-foreground">
+                <span className="text-[#2C3E50]">bpi</span>
+                <span className="text-[#FFD700]">france</span>
+                <span className="text-[#2C3E50]">.</span>
+                <span className="text-[#FFD700]">.</span>
+              </h1>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                Smart VC Matching
+                Sourcing & Analyse
               </p>
             </div>
           </div>

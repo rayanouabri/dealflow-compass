@@ -8,87 +8,92 @@
 
 @layer base {
   :root {
-    --background: 220 20% 4%;
-    --foreground: 210 20% 95%;
+    /* BPI France Brand Colors */
+    --background: 0 0% 100%;
+    --foreground: 220 15% 20%;
 
-    --card: 220 18% 7%;
-    --card-foreground: 210 20% 95%;
+    --card: 0 0% 98%;
+    --card-foreground: 220 15% 20%;
 
-    --popover: 220 18% 7%;
-    --popover-foreground: 210 20% 95%;
+    --popover: 0 0% 98%;
+    --popover-foreground: 220 15% 20%;
 
-    --primary: 142 70% 45%;
-    --primary-foreground: 220 20% 4%;
+    /* BPI France primary: dark gray/blue */
+    --primary: 220 30% 25%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 16% 12%;
-    --secondary-foreground: 210 20% 85%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 220 15% 20%;
 
-    --muted: 220 16% 14%;
-    --muted-foreground: 215 16% 50%;
+    --muted: 0 0% 94%;
+    --muted-foreground: 220 10% 45%;
 
-    --accent: 217 91% 60%;
-    --accent-foreground: 210 20% 98%;
+    /* BPI France accent: vivid yellow */
+    --accent: 48 100% 50%;
+    --accent-foreground: 220 30% 25%;
 
-    --destructive: 0 62% 50%;
-    --destructive-foreground: 210 20% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 220 16% 16%;
-    --input: 220 16% 14%;
-    --ring: 142 70% 45%;
+    --border: 0 0% 90%;
+    --input: 0 0% 96%;
+    --ring: 220 30% 25%;
 
     --radius: 0.5rem;
 
-    /* Custom fintech tokens */
-    --terminal-bg: 220 20% 3%;
-    --terminal-grid: 220 16% 8%;
+    /* BPI France custom tokens */
+    --bpi-gray: 220 15% 30%;
+    --bpi-yellow: 48 100% 50%;
+    --bpi-blue: 220 50% 40%;
     --success: 142 70% 45%;
     --success-glow: 142 70% 45%;
     --chart-green: 142 76% 36%;
     --chart-red: 0 84% 60%;
-    --data-blue: 217 91% 60%;
-    --data-amber: 38 92% 50%;
+    --data-blue: 220 50% 50%;
+    --data-amber: 48 100% 50%;
 
-    /* Gradients */
-    --gradient-terminal: linear-gradient(180deg, hsl(220 20% 4%) 0%, hsl(220 20% 2%) 100%);
-    --gradient-card: linear-gradient(135deg, hsl(220 18% 8%) 0%, hsl(220 18% 6%) 100%);
-    --gradient-success: linear-gradient(135deg, hsl(142 70% 45%) 0%, hsl(142 70% 35%) 100%);
-    --gradient-accent: linear-gradient(135deg, hsl(217 91% 60%) 0%, hsl(217 91% 50%) 100%);
+    /* Gradients - BPI France style */
+    --gradient-terminal: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(0 0% 98%) 100%);
+    --gradient-card: linear-gradient(135deg, hsl(0 0% 100%) 0%, hsl(0 0% 98%) 100%);
+    --gradient-primary: linear-gradient(135deg, hsl(220 30% 25%) 0%, hsl(220 40% 30%) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(48 100% 50%) 0%, hsl(48 90% 45%) 100%);
     
-    /* Shadows */
-    --shadow-glow-success: 0 0 40px hsl(142 70% 45% / 0.15);
-    --shadow-glow-accent: 0 0 40px hsl(217 91% 60% / 0.15);
-    --shadow-card: 0 4px 24px hsl(220 20% 2% / 0.5);
+    /* Shadows - lighter, more professional */
+    --shadow-glow-primary: 0 0 20px hsl(220 30% 25% / 0.1);
+    --shadow-glow-accent: 0 0 20px hsl(48 100% 50% / 0.15);
+    --shadow-card: 0 2px 8px hsl(220 15% 20% / 0.08);
 
-    --sidebar-background: 220 18% 5%;
-    --sidebar-foreground: 210 20% 85%;
-    --sidebar-primary: 142 70% 45%;
-    --sidebar-primary-foreground: 220 20% 4%;
-    --sidebar-accent: 220 16% 12%;
-    --sidebar-accent-foreground: 210 20% 95%;
-    --sidebar-border: 220 16% 14%;
-    --sidebar-ring: 142 70% 45%;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 220 15% 20%;
+    --sidebar-primary: 220 30% 25%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 96%;
+    --sidebar-accent-foreground: 220 15% 20%;
+    --sidebar-border: 0 0% 90%;
+    --sidebar-ring: 220 30% 25%;
   }
 
   .dark {
-    --background: 220 20% 4%;
-    --foreground: 210 20% 95%;
-    --card: 220 18% 7%;
-    --card-foreground: 210 20% 95%;
-    --popover: 220 18% 7%;
-    --popover-foreground: 210 20% 95%;
-    --primary: 142 70% 45%;
-    --primary-foreground: 220 20% 4%;
-    --secondary: 220 16% 12%;
-    --secondary-foreground: 210 20% 85%;
-    --muted: 220 16% 14%;
-    --muted-foreground: 215 16% 50%;
-    --accent: 217 91% 60%;
-    --accent-foreground: 210 20% 98%;
-    --destructive: 0 62% 50%;
-    --destructive-foreground: 210 20% 98%;
-    --border: 220 16% 16%;
-    --input: 220 16% 14%;
-    --ring: 142 70% 45%;
+    /* BPI France dark mode - still professional */
+    --background: 220 20% 8%;
+    --foreground: 0 0% 95%;
+    --card: 220 18% 10%;
+    --card-foreground: 0 0% 95%;
+    --popover: 220 18% 10%;
+    --popover-foreground: 0 0% 95%;
+    --primary: 48 100% 55%;
+    --primary-foreground: 220 30% 25%;
+    --secondary: 220 16% 15%;
+    --secondary-foreground: 0 0% 90%;
+    --muted: 220 16% 12%;
+    --muted-foreground: 220 10% 60%;
+    --accent: 48 100% 50%;
+    --accent-foreground: 220 30% 25%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 16% 18%;
+    --input: 220 16% 15%;
+    --ring: 48 100% 55%;
   }
 }
 
@@ -105,6 +110,7 @@
     @apply bg-background text-foreground antialiased;
     background: var(--gradient-terminal);
     min-height: 100vh;
+    color: hsl(var(--foreground));
   }
 
   /* Custom scrollbar for terminal feel */
@@ -128,17 +134,18 @@
 }
 
 @layer components {
-  /* Terminal grid background pattern */
+  /* BPI France subtle grid pattern */
   .terminal-grid {
     background-image: 
-      linear-gradient(hsl(var(--terminal-grid)) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(var(--terminal-grid)) 1px, transparent 1px);
+      linear-gradient(hsl(var(--border)) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--border)) 1px, transparent 1px);
     background-size: 40px 40px;
+    opacity: 0.3;
   }
 
-  /* Glow effects */
+  /* BPI France glow effects */
   .glow-success {
-    box-shadow: var(--shadow-glow-success);
+    box-shadow: var(--shadow-glow-primary);
   }
 
   .glow-accent {
@@ -234,7 +241,7 @@
 
 @layer utilities {
   .text-gradient-success {
-    background: var(--gradient-success);
+    background: var(--gradient-primary);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
