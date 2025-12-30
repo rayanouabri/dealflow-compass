@@ -74,26 +74,67 @@
   }
 
   .dark {
-    /* BPI France dark mode - still professional */
-    --background: 220 20% 8%;
+    /* BPI France dark mode - couleurs BPI adaptées au thème sombre */
+    --background: 220 25% 6%;
     --foreground: 0 0% 95%;
-    --card: 220 18% 10%;
+    
+    --card: 220 20% 8%;
     --card-foreground: 0 0% 95%;
-    --popover: 220 18% 10%;
+    
+    --popover: 220 20% 8%;
     --popover-foreground: 0 0% 95%;
+    
+    /* BPI France primary: jaune vif sur fond sombre */
     --primary: 48 100% 55%;
-    --primary-foreground: 220 30% 25%;
-    --secondary: 220 16% 15%;
+    --primary-foreground: 220 30% 15%;
+    
+    --secondary: 220 18% 12%;
     --secondary-foreground: 0 0% 90%;
-    --muted: 220 16% 12%;
-    --muted-foreground: 220 10% 60%;
+    
+    --muted: 220 18% 10%;
+    --muted-foreground: 220 10% 65%;
+    
+    /* BPI France accent: jaune vif */
     --accent: 48 100% 50%;
-    --accent-foreground: 220 30% 25%;
+    --accent-foreground: 220 30% 15%;
+    
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 220 16% 18%;
-    --input: 220 16% 15%;
+    
+    --border: 220 18% 16%;
+    --input: 220 18% 12%;
     --ring: 48 100% 55%;
+    
+    /* BPI France custom tokens pour dark mode */
+    --bpi-gray: 220 15% 40%;
+    --bpi-yellow: 48 100% 55%;
+    --bpi-blue: 220 50% 55%;
+    --success: 142 70% 50%;
+    --success-glow: 142 70% 50%;
+    --chart-green: 142 76% 45%;
+    --chart-red: 0 84% 60%;
+    --data-blue: 220 50% 60%;
+    --data-amber: 48 100% 55%;
+    
+    /* Gradients BPI France dark */
+    --gradient-terminal: linear-gradient(180deg, hsl(220 25% 6%) 0%, hsl(220 25% 4%) 100%);
+    --gradient-card: linear-gradient(135deg, hsl(220 20% 9%) 0%, hsl(220 20% 7%) 100%);
+    --gradient-primary: linear-gradient(135deg, hsl(48 100% 55%) 0%, hsl(48 90% 50%) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(48 100% 50%) 0%, hsl(48 90% 45%) 100%);
+    
+    /* Shadows avec jaune BPI */
+    --shadow-glow-primary: 0 0 30px hsl(48 100% 55% / 0.2);
+    --shadow-glow-accent: 0 0 30px hsl(48 100% 50% / 0.25);
+    --shadow-card: 0 4px 20px hsl(220 25% 2% / 0.6);
+    
+    --sidebar-background: 220 22% 7%;
+    --sidebar-foreground: 0 0% 90%;
+    --sidebar-primary: 48 100% 55%;
+    --sidebar-primary-foreground: 220 30% 15%;
+    --sidebar-accent: 220 18% 12%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 220 18% 14%;
+    --sidebar-ring: 48 100% 55%;
   }
 }
 
@@ -129,27 +170,32 @@
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--muted-foreground));
+    background: hsl(var(--primary));
   }
 }
 
 @layer components {
-  /* BPI France subtle grid pattern */
+  /* BPI France grid pattern - visible en dark mode */
   .terminal-grid {
     background-image: 
       linear-gradient(hsl(var(--border)) 1px, transparent 1px),
       linear-gradient(90deg, hsl(var(--border)) 1px, transparent 1px);
     background-size: 40px 40px;
-    opacity: 0.3;
+    opacity: 0.4;
   }
 
-  /* BPI France glow effects */
+  /* BPI France glow effects - jaune vif */
   .glow-success {
     box-shadow: var(--shadow-glow-primary);
   }
 
   .glow-accent {
     box-shadow: var(--shadow-glow-accent);
+  }
+  
+  /* Glow jaune BPI France */
+  .glow-bpi {
+    box-shadow: 0 0 20px hsl(48 100% 55% / 0.3);
   }
 
   /* Data pulse animation */
@@ -249,6 +295,14 @@
 
   .text-gradient-accent {
     background: var(--gradient-accent);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  /* Gradient jaune BPI France */
+  .text-gradient-bpi {
+    background: linear-gradient(135deg, hsl(48 100% 55%) 0%, hsl(48 90% 50%) 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
