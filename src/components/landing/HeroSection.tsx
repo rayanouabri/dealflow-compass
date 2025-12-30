@@ -13,7 +13,7 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
   return (
     <section className="relative overflow-hidden pt-20 pb-32 md:pt-32 md:pb-40">
       {/* Background effects */}
-      <div className="absolute inset-0 terminal-grid opacity-20" />
+      <div className="absolute inset-0 terminal-grid opacity-10" />
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-primary/5 rounded-full blur-3xl" />
       
       <div className="container max-w-7xl mx-auto px-4 relative">
