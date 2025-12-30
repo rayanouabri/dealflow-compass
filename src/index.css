@@ -120,7 +120,7 @@
   }
 
   ::-webkit-scrollbar-track {
-    background: hsl(var(--terminal-bg));
+    background: hsl(var(--background));
   }
 
   ::-webkit-scrollbar-thumb {
