@@ -316,43 +316,111 @@ function parseJSONResponse(content: string): any {
 
 // Helper function to fix unterminated strings by truncating at a safe position
 function fixUnterminatedStrings(json: string): string {
-  // Find the last complete string/value pair and truncate there
-  // Look for patterns that indicate the end of a complete property
-  const safeEndPatterns = [
-    '",',      // End of string value
-    '"}',      // End of string value in object
-    '"]',      // End of string in array
-    '"\n',     // End of string with newline
-  ];
+  // Strategy: Find where we are in a string and truncate before the incomplete string starts
+  let inString = false;
+  let escapeNext = false;
+  let stringStartPos = -1;
+  let lastCompletePos = json.length - 1;
   
+  for (let i = 0; i < json.length; i++) {
+    const char = json[i];
+    const prevChar = i > 0 ? json[i - 1] : '';
+    
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+    
+    if (char === '\\') {
+      escapeNext = true;
+      continue;
+    }
+    
+    if (char === '"' && prevChar !== '\\') {
+      if (!inString) {
+        inString = true;
+        stringStartPos = i;
+      } else {
+        inString = false;
+        lastCompletePos = i;
+        stringStartPos = -1;
+      }
+    }
+  }
+  
+  // If we're still in a string at the end, we need to truncate before that string started
+  if (inString && stringStartPos > 0) {
+    // Find the last complete property/value before this string
+    // Look backwards for common JSON patterns
+    let truncatePos = stringStartPos - 1;
+    
+    // Try to find the start of this property (look for : or , before the string)
+    for (let i = truncatePos; i >= 0 && i > stringStartPos - 200; i--) {
+      if (json[i] === ':' && i < stringStartPos) {
+        // Found the property separator, now find the property name start
+        for (let j = i - 1; j >= 0 && j > i - 50; j--) {
+          if (json[j] === '"' && json.substring(j, i).match(/"[^"]*"\s*:/)) {
+            // Found property name, truncate before it
+            truncatePos = j - 1;
+            // Look for comma before this property
+            for (let k = truncatePos; k >= 0 && k > truncatePos - 100; k--) {
+              if (json[k] === ',' && !inStringAt(json, k)) {
+                truncatePos = k;
+                break;
+              }
+            }
+            break;
+          }
+        }
+        break;
+      }
+    }
+    
+    if (truncatePos > json.length * 0.3) { // Keep at least 30% of content
+      let truncated = json.substring(0, truncatePos);
+      
+      // Remove trailing comma
+      truncated = truncated.replace(/,\s*$/, '');
+      
+      // Count and close structures
+      const openBraces = (truncated.match(/\{/g) || []).length;
+      const closeBraces = (truncated.match(/\}/g) || []).length;
+      const openBrackets = (truncated.match(/\[/g) || []).length;
+      const closeBrackets = (truncated.match(/\]/g) || []).length;
+      
+      for (let i = 0; i < openBrackets - closeBrackets; i++) {
+        truncated += ']';
+      }
+      for (let i = 0; i < openBraces - closeBraces; i++) {
+        truncated += '}';
+      }
+      
+      return truncated;
+    }
+  }
+  
+  // Fallback: find last complete string ending
+  const safeEndPatterns = ['",', '"}', '"]', '"\n'];
   let bestPos = -1;
   for (const pattern of safeEndPatterns) {
     const pos = json.lastIndexOf(pattern);
-    if (pos > bestPos && pos > json.length * 0.5) { // Only if we keep at least 50%
-      bestPos = pos + pattern.length - 1; // Include the closing quote
+    if (pos > bestPos && pos > json.length * 0.4) {
+      bestPos = pos + pattern.length - 1;
     }
   }
   
   if (bestPos > 0) {
-    // We found a safe truncation point
     let truncated = json.substring(0, bestPos + 1);
+    truncated = truncated.replace(/,\s*$/, '');
     
-    // Count and close any open structures
     const openBraces = (truncated.match(/\{/g) || []).length;
     const closeBraces = (truncated.match(/\}/g) || []).length;
     const openBrackets = (truncated.match(/\[/g) || []).length;
     const closeBrackets = (truncated.match(/\]/g) || []).length;
     
-    // Remove trailing comma if exists before closing
-    if (truncated[truncated.length - 1] === ',') {
-      truncated = truncated.slice(0, -1);
-    }
-    
-    // Close arrays first
     for (let i = 0; i < openBrackets - closeBrackets; i++) {
       truncated += ']';
     }
-    // Then close objects
     for (let i = 0; i < openBraces - closeBraces; i++) {
       truncated += '}';
     }
@@ -360,8 +428,27 @@ function fixUnterminatedStrings(json: string): string {
     return truncated;
   }
   
-  // If no safe pattern found, return original (will be handled by other recovery methods)
   return json;
+}
+
+// Helper to check if we're inside a string at position
+function inStringAt(json: string, pos: number): boolean {
+  let inString = false;
+  let escapeNext = false;
+  for (let i = 0; i < pos && i < json.length; i++) {
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+    if (json[i] === '\\') {
+      escapeNext = true;
+      continue;
+    }
+    if (json[i] === '"') {
+      inString = !inString;
+    }
+  }
+  return inString;
 }
 
 serve(async (req) => {
