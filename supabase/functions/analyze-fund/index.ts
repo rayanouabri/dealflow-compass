@@ -205,13 +205,18 @@ function parseJSONResponse(content: string): any {
   try {
     return JSON.parse(cleanContent);
   } catch (e) {
-    console.log("First parse attempt failed, trying to fix common issues...");
+    const errorMsg = e instanceof Error ? e.message : String(e);
+    console.log("First parse attempt failed:", errorMsg);
+    
+    // Check if it's an unterminated string error
+    if (errorMsg.includes("Unterminated string") || errorMsg.includes("unterminated string")) {
+      console.log("Detected unterminated string, attempting to fix...");
+      cleanContent = fixUnterminatedStrings(cleanContent);
+    }
   }
   
   // Second attempt: fix common JSON issues
   try {
-    // Fix unquoted property names (common in malformed JSON)
-    // This is a simple fix - replace property names without quotes
     let fixedContent = cleanContent;
     
     // Try to fix trailing commas
@@ -221,15 +226,66 @@ function parseJSONResponse(content: string): any {
     try {
       return JSON.parse(fixedContent);
     } catch (e2) {
-      // If still failing, try to extract a valid JSON subset
-      console.log("Fixed parse also failed, trying to extract valid JSON subset...");
+      console.log("Fixed parse also failed, trying progressive truncation...");
     }
   } catch (e) {
     // Continue to next attempt
   }
   
-  // Third attempt: try to extract and parse just the main structure
-  // Find the largest valid JSON object we can extract
+  // Third attempt: Progressive truncation to find valid JSON
+  // This handles cases where the JSON is cut off mid-string
+  try {
+    let truncated = cleanContent;
+    let lastValidJSON: any = null;
+    let lastValidLength = 0;
+    
+    // Try truncating from the end in increments to find the last valid JSON position
+    for (let i = 0; i < 10; i++) {
+      const truncatePos = Math.floor(truncated.length * (1 - (i + 1) * 0.1));
+      if (truncatePos <= lastValidLength) break;
+      
+      // Find the last complete property/value pair before truncatePos
+      let safeTruncatePos = truncated.lastIndexOf('",', truncatePos);
+      if (safeTruncatePos === -1) safeTruncatePos = truncated.lastIndexOf('":', truncatePos);
+      if (safeTruncatePos === -1) safeTruncatePos = truncated.lastIndexOf(',', truncatePos);
+      
+      if (safeTruncatePos > 0) {
+        // Try to close the JSON properly
+        let testJSON = truncated.substring(0, safeTruncatePos);
+        
+        // Count open braces/brackets
+        const openBraces = (testJSON.match(/\{/g) || []).length;
+        const closeBraces = (testJSON.match(/\}/g) || []).length;
+        const openBrackets = (testJSON.match(/\[/g) || []).length;
+        const closeBrackets = (testJSON.match(/\]/g) || []).length;
+        
+        // Close unclosed structures
+        for (let j = 0; j < openBrackets - closeBrackets; j++) {
+          testJSON += ']';
+        }
+        for (let j = 0; j < openBraces - closeBraces; j++) {
+          testJSON += '}';
+        }
+        
+        try {
+          const parsed = JSON.parse(testJSON);
+          lastValidJSON = parsed;
+          lastValidLength = safeTruncatePos;
+        } catch (e) {
+          // Continue
+        }
+      }
+    }
+    
+    if (lastValidJSON) {
+      console.log("Successfully parsed truncated JSON");
+      return lastValidJSON;
+    }
+  } catch (e) {
+    console.log("Progressive truncation failed");
+  }
+  
+  // Fourth attempt: try to extract and parse just the main structure
   let startIdx = cleanContent.indexOf('{');
   if (startIdx >= 0) {
     let braceCount = 0;
@@ -255,7 +311,57 @@ function parseJSONResponse(content: string): any {
   }
   
   // If all attempts fail, throw the original error
-  throw new Error(`Failed to parse JSON: ${cleanContent.substring(0, 200)}...`);
+  throw new Error(`Failed to parse JSON after all attempts. Content length: ${cleanContent.length}`);
+}
+
+// Helper function to fix unterminated strings by truncating at a safe position
+function fixUnterminatedStrings(json: string): string {
+  // Find the last complete string/value pair and truncate there
+  // Look for patterns that indicate the end of a complete property
+  const safeEndPatterns = [
+    '",',      // End of string value
+    '"}',      // End of string value in object
+    '"]',      // End of string in array
+    '"\n',     // End of string with newline
+  ];
+  
+  let bestPos = -1;
+  for (const pattern of safeEndPatterns) {
+    const pos = json.lastIndexOf(pattern);
+    if (pos > bestPos && pos > json.length * 0.5) { // Only if we keep at least 50%
+      bestPos = pos + pattern.length - 1; // Include the closing quote
+    }
+  }
+  
+  if (bestPos > 0) {
+    // We found a safe truncation point
+    let truncated = json.substring(0, bestPos + 1);
+    
+    // Count and close any open structures
+    const openBraces = (truncated.match(/\{/g) || []).length;
+    const closeBraces = (truncated.match(/\}/g) || []).length;
+    const openBrackets = (truncated.match(/\[/g) || []).length;
+    const closeBrackets = (truncated.match(/\]/g) || []).length;
+    
+    // Remove trailing comma if exists before closing
+    if (truncated[truncated.length - 1] === ',') {
+      truncated = truncated.slice(0, -1);
+    }
+    
+    // Close arrays first
+    for (let i = 0; i < openBrackets - closeBrackets; i++) {
+      truncated += ']';
+    }
+    // Then close objects
+    for (let i = 0; i < openBraces - closeBraces; i++) {
+      truncated += '}';
+    }
+    
+    return truncated;
+  }
+  
+  // If no safe pattern found, return original (will be handled by other recovery methods)
+  return json;
 }
 
 serve(async (req) => {
