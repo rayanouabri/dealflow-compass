@@ -21,7 +21,7 @@ export function CTASection({ onStartTrial }: CTASectionProps) {
         >
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/30 mb-8">
             <Sparkles className="w-4 h-4 text-primary" />
-            <span className="text-sm font-medium text-primary">Rejoignez 200+ fonds VC</span>
+            <span className="text-sm font-medium text-primary">Rejoignez-nous</span>
           </div>
           
           <h2 className="text-3xl md:text-5xl lg:text-6xl font-bold mb-6">
