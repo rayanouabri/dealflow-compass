@@ -74,25 +74,25 @@
   }
 
   .dark {
-    /* AI-VC dark mode - couleurs AI-VC adaptées au thème sombre (plus lumineux) */
-    --background: 220 25% 10%;
+    /* AI-VC dark mode - couleurs AI-VC adaptées au thème sombre (très lumineux) */
+    --background: 220 25% 15%;
     --foreground: 0 0% 95%;
     
-    --card: 220 20% 12%;
+    --card: 220 20% 18%;
     --card-foreground: 0 0% 95%;
     
-    --popover: 220 20% 12%;
+    --popover: 220 20% 18%;
     --popover-foreground: 0 0% 95%;
     
     /* AI-VC primary: jaune vif sur fond sombre */
     --primary: 48 100% 55%;
     --primary-foreground: 220 30% 15%;
     
-    --secondary: 220 18% 16%;
+    --secondary: 220 18% 22%;
     --secondary-foreground: 0 0% 90%;
     
-    --muted: 220 18% 14%;
-    --muted-foreground: 220 10% 70%;
+    --muted: 220 18% 20%;
+    --muted-foreground: 220 10% 75%;
     
     /* AI-VC accent: jaune vif */
     --accent: 48 100% 50%;
@@ -101,8 +101,8 @@
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
     
-    --border: 220 18% 20%;
-    --input: 220 18% 16%;
+    --border: 220 18% 25%;
+    --input: 220 18% 22%;
     --ring: 48 100% 55%;
     
     /* AI-VC custom tokens pour dark mode */
@@ -117,8 +117,8 @@
     --data-amber: 48 100% 55%;
     
     /* Gradients AI-VC dark */
-    --gradient-terminal: linear-gradient(180deg, hsl(220 25% 10%) 0%, hsl(220 25% 8%) 100%);
-    --gradient-card: linear-gradient(135deg, hsl(220 20% 13%) 0%, hsl(220 20% 11%) 100%);
+    --gradient-terminal: linear-gradient(180deg, hsl(220 25% 15%) 0%, hsl(220 25% 13%) 100%);
+    --gradient-card: linear-gradient(135deg, hsl(220 20% 19%) 0%, hsl(220 20% 17%) 100%);
     --gradient-primary: linear-gradient(135deg, hsl(48 100% 55%) 0%, hsl(48 90% 50%) 100%);
     --gradient-accent: linear-gradient(135deg, hsl(48 100% 50%) 0%, hsl(48 90% 45%) 100%);
     
@@ -127,13 +127,13 @@
     --shadow-glow-accent: 0 0 30px hsl(48 100% 50% / 0.25);
     --shadow-card: 0 4px 20px hsl(220 25% 2% / 0.6);
     
-    --sidebar-background: 220 22% 11%;
+    --sidebar-background: 220 22% 16%;
     --sidebar-foreground: 0 0% 90%;
     --sidebar-primary: 48 100% 55%;
     --sidebar-primary-foreground: 220 30% 15%;
-    --sidebar-accent: 220 18% 16%;
+    --sidebar-accent: 220 18% 22%;
     --sidebar-accent-foreground: 0 0% 95%;
-    --sidebar-border: 220 18% 18%;
+    --sidebar-border: 220 18% 23%;
     --sidebar-ring: 48 100% 55%;
   }
 }
