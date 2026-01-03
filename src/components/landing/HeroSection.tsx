@@ -29,7 +29,7 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
               className="mb-6 px-4 py-2 text-sm border-primary/30 bg-primary/5 backdrop-blur-sm"
             >
               <Sparkles className="w-3.5 h-3.5 mr-2 text-primary animate-pulse" />
-              +1,200 startups analysées • Due diligence automatisée
+              Outil de sourcing et d'analyse de startups • Due diligence automatisée
             </Badge>
           </motion.div>
           

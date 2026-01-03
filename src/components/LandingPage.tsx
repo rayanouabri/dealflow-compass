@@ -5,7 +5,6 @@ import { StatsSection } from "@/components/landing/StatsSection";
 import { HowItWorksSection } from "@/components/landing/HowItWorksSection";
 import { DashboardPreview } from "@/components/landing/DashboardPreview";
 import { FeaturesSection } from "@/components/landing/FeaturesSection";
-import { TestimonialsSection } from "@/components/landing/TestimonialsSection";
 import { PricingSection } from "@/components/landing/PricingSection";
 import { CTASection } from "@/components/landing/CTASection";
 import { Footer } from "@/components/landing/Footer";
@@ -38,7 +37,6 @@ export function LandingPage({ onStartTrial, onLogin, trialRemaining }: LandingPa
       <section id="features">
         <FeaturesSection />
       </section>
-      <TestimonialsSection />
       <PricingSection onStartTrial={onStartTrial} />
       <CTASection onStartTrial={onStartTrial} />
       <Footer />

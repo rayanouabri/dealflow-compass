@@ -3,28 +3,10 @@ import { TrendingUp, Users, Target, DollarSign } from "lucide-react";
 
 const stats = [
   { 
-    value: "1,200+", 
+    value: "300", 
     label: "Startups analysées",
     icon: Target,
-    description: "Base de données de startups réelles"
-  },
-  { 
-    value: "94%", 
-    label: "Précision de matching",
-    icon: TrendingUp,
-    description: "Correspondance avec la thèse d'investissement"
-  },
-  { 
-    value: "200+", 
-    label: "Fonds VC utilisateurs",
-    icon: Users,
-    description: "De Seed à Growth stage"
-  },
-  { 
-    value: "€500M+", 
-    label: "Investis via notre plateforme",
-    icon: DollarSign,
-    description: "Deals identifiés et analysés en 2024"
+    description: "Startups analysées sur la plateforme"
   },
 ];
 
@@ -34,7 +16,7 @@ export function StatsSection() {
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-primary/5 to-transparent" />
       
       <div className="container max-w-7xl mx-auto px-4 relative">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-1 gap-6 md:gap-8 max-w-sm mx-auto">
           {stats.map((stat, i) => (
             <motion.div 
               key={i}

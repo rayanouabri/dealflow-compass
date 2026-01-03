@@ -9,12 +9,12 @@ interface PricingSectionProps {
 
 const plans = [
   {
-    name: "Starter",
-    price: "99",
-    period: "/mois",
-    description: "Pour les fonds VC en phase d'exploration",
+    name: "Gratuit",
+    price: "Gratuit",
+    period: "",
+    description: "Pour commencer",
     features: [
-      "10 analyses de startups/mois",
+      "5 analyses de startups",
       "Rapports de due diligence",
       "Export Markdown & PDF",
       "Support email",
@@ -23,28 +23,14 @@ const plans = [
     popular: false
   },
   {
-    name: "Pro",
-    price: "299",
-    period: "/mois",
-    description: "Pour les fonds VC actifs",
-    features: [
-      "Analyses illimitées",
-      "Due diligence complète",
-      "Export PDF & PowerPoint",
-      "Dashboard de suivi complet",
-      "Intégrations CRM",
-      "Support prioritaire",
-    ],
-    cta: "Essai gratuit 14 jours",
-    popular: true
-  },
-  {
-    name: "Enterprise",
+    name: "Sur mesure",
     price: "Sur mesure",
     period: "",
     description: "Pour les fonds VC et family offices",
     features: [
-      "Tout Pro inclus",
+      "Analyses illimitées",
+      "Due diligence complète",
+      "Export PDF & PowerPoint",
       "Multi-utilisateurs",
       "API access",
       "IA personnalisée",
@@ -78,7 +64,7 @@ export function PricingSection({ onStartTrial }: PricingSectionProps) {
           </motion.div>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+        <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto">
           {plans.map((plan, i) => (
             <motion.div
               key={i}
@@ -104,7 +90,7 @@ export function PricingSection({ onStartTrial }: PricingSectionProps) {
                 <h3 className="text-xl font-bold mb-2">{plan.name}</h3>
                 <p className="text-sm text-muted-foreground mb-4">{plan.description}</p>
                 <div className="flex items-baseline gap-1">
-                  {plan.price !== "Sur mesure" && <span className="text-sm text-muted-foreground">€</span>}
+                  {plan.price !== "Sur mesure" && plan.price !== "Gratuit" && <span className="text-sm text-muted-foreground">€</span>}
                   <span className="text-4xl font-bold">{plan.price}</span>
                   <span className="text-muted-foreground">{plan.period}</span>
                 </div>
