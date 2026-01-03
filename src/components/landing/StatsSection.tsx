@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { TrendingUp, Users, Target, DollarSign } from "lucide-react";
+import { Target } from "lucide-react";
 
 const stats = [
   { 
