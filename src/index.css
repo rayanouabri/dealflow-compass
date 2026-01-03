@@ -117,8 +117,8 @@
     --data-amber: 48 100% 55%;
     
     /* Gradients AI-VC dark */
-    --gradient-terminal: linear-gradient(180deg, hsl(220 25% 12%) 0%, hsl(220 25% 10%) 100%);
-    --gradient-card: linear-gradient(135deg, hsl(220 20% 16%) 0%, hsl(220 20% 14%) 100%);
+    --gradient-terminal: linear-gradient(180deg, hsl(220 25% 6%) 0%, hsl(220 25% 4%) 100%);
+    --gradient-card: linear-gradient(135deg, hsl(220 20% 9%) 0%, hsl(220 20% 7%) 100%);
     --gradient-primary: linear-gradient(135deg, hsl(48 100% 55%) 0%, hsl(48 90% 50%) 100%);
     --gradient-accent: linear-gradient(135deg, hsl(48 100% 50%) 0%, hsl(48 90% 45%) 100%);
     
@@ -127,13 +127,13 @@
     --shadow-glow-accent: 0 0 30px hsl(48 100% 50% / 0.25);
     --shadow-card: 0 4px 20px hsl(220 25% 2% / 0.6);
     
-    --sidebar-background: 220 22% 14%;
+    --sidebar-background: 220 22% 7%;
     --sidebar-foreground: 0 0% 90%;
     --sidebar-primary: 48 100% 55%;
     --sidebar-primary-foreground: 220 30% 15%;
-    --sidebar-accent: 220 18% 18%;
+    --sidebar-accent: 220 18% 12%;
     --sidebar-accent-foreground: 0 0% 95%;
-    --sidebar-border: 220 18% 20%;
+    --sidebar-border: 220 18% 14%;
     --sidebar-ring: 48 100% 55%;
   }
 }
