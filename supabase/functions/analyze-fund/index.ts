@@ -174,6 +174,90 @@ async function enrichMarketData(sector: string, geography: string): Promise<any>
   };
 }
 
+// Robust JSON parsing function that handles large responses and common formatting issues
+function parseJSONResponse(content: string): any {
+  let cleanContent = content.trim();
+  
+  // Remove markdown code blocks
+  if (cleanContent.startsWith("```json")) {
+    cleanContent = cleanContent.slice(7);
+  }
+  if (cleanContent.startsWith("```")) {
+    cleanContent = cleanContent.slice(3);
+  }
+  if (cleanContent.endsWith("```")) {
+    cleanContent = cleanContent.slice(0, -3);
+  }
+  cleanContent = cleanContent.trim();
+  
+  // Try to find JSON object boundaries if there's extra text
+  const firstBrace = cleanContent.indexOf('{');
+  const lastBrace = cleanContent.lastIndexOf('}');
+  
+  if (firstBrace > 0 || lastBrace < cleanContent.length - 1) {
+    // There's extra text, extract just the JSON part
+    if (firstBrace >= 0 && lastBrace >= 0 && lastBrace > firstBrace) {
+      cleanContent = cleanContent.substring(firstBrace, lastBrace + 1);
+    }
+  }
+  
+  // First attempt: direct parse
+  try {
+    return JSON.parse(cleanContent);
+  } catch (e) {
+    console.log("First parse attempt failed, trying to fix common issues...");
+  }
+  
+  // Second attempt: fix common JSON issues
+  try {
+    // Fix unquoted property names (common in malformed JSON)
+    // This is a simple fix - replace property names without quotes
+    let fixedContent = cleanContent;
+    
+    // Try to fix trailing commas
+    fixedContent = fixedContent.replace(/,(\s*[}\]])/g, '$1');
+    
+    // Try to parse again
+    try {
+      return JSON.parse(fixedContent);
+    } catch (e2) {
+      // If still failing, try to extract a valid JSON subset
+      console.log("Fixed parse also failed, trying to extract valid JSON subset...");
+    }
+  } catch (e) {
+    // Continue to next attempt
+  }
+  
+  // Third attempt: try to extract and parse just the main structure
+  // Find the largest valid JSON object we can extract
+  let startIdx = cleanContent.indexOf('{');
+  if (startIdx >= 0) {
+    let braceCount = 0;
+    let endIdx = startIdx;
+    
+    for (let i = startIdx; i < cleanContent.length; i++) {
+      if (cleanContent[i] === '{') braceCount++;
+      if (cleanContent[i] === '}') braceCount--;
+      if (braceCount === 0) {
+        endIdx = i;
+        break;
+      }
+    }
+    
+    if (endIdx > startIdx) {
+      try {
+        const extractedJSON = cleanContent.substring(startIdx, endIdx + 1);
+        return JSON.parse(extractedJSON);
+      } catch (e) {
+        console.log("Extracted JSON parse also failed");
+      }
+    }
+  }
+  
+  // If all attempts fail, throw the original error
+  throw new Error(`Failed to parse JSON: ${cleanContent.substring(0, 200)}...`);
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -826,22 +910,26 @@ IMPORTANT : Utilise UNIQUEMENT les données réelles trouvées dans les recherch
 
     let analysisResult;
     try {
-      let cleanContent = content.trim();
-      if (cleanContent.startsWith("```json")) {
-        cleanContent = cleanContent.slice(7);
-      }
-      if (cleanContent.startsWith("```")) {
-        cleanContent = cleanContent.slice(3);
-      }
-      if (cleanContent.endsWith("```")) {
-        cleanContent = cleanContent.slice(0, -3);
-      }
-      analysisResult = JSON.parse(cleanContent.trim());
+      analysisResult = parseJSONResponse(content);
     } catch (parseError) {
-      console.error("Failed to parse Gemini response:", parseError);
-      console.error("Content preview:", content.substring(0, 500));
+      console.error(`Failed to parse ${AI_PROVIDER} response:`, parseError);
+      console.error("Content length:", content.length);
+      console.error("Content preview (first 1000 chars):", content.substring(0, 1000));
+      console.error("Content preview (last 500 chars):", content.substring(Math.max(0, content.length - 500)));
+      
+      // Log the position of the error if available
+      if (parseError instanceof Error && parseError.message.includes("position")) {
+        const match = parseError.message.match(/position (\d+)/);
+        if (match) {
+          const errorPos = parseInt(match[1]);
+          const start = Math.max(0, errorPos - 200);
+          const end = Math.min(content.length, errorPos + 200);
+          console.error(`Content around error position ${errorPos}:`, content.substring(start, end));
+        }
+      }
+      
       return new Response(JSON.stringify({ 
-        error: `Failed to parse AI response: ${parseError instanceof Error ? parseError.message : "Unknown error"}` 
+        error: `Failed to parse AI response: ${parseError instanceof Error ? parseError.message : "Unknown error"}. The response may be too large or malformed. Please try with fewer startups.` 
       }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

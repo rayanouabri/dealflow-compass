@@ -10,14 +10,14 @@ export function Footer() {
             <div className="flex items-center gap-2 mb-4">
               <BarChart3 className="w-6 h-6 text-primary" />
               <span className="font-bold text-lg">
-                <span className="text-[#2C3E50]">bpi</span>
-                <span className="text-[#FFD700]">france</span>
+                <span className="text-[#2C3E50]">ai</span>
+                <span className="text-[#FFD700]">vc</span>
                 <span className="text-[#2C3E50]">.</span>
                 <span className="text-[#FFD700]">.</span>
               </span>
             </div>
             <p className="text-sm text-muted-foreground max-w-sm mb-4">
-              Outil de sourcing et d'analyse de startups pour fonds d'investissement. BPI France accompagne l'innovation et la croissance des entreprises.
+              Outil de sourcing et d'analyse de startups pour fonds d'investissement. AI-VC accompagne l'innovation et la croissance des entreprises.
             </p>
             <div className="flex gap-4">
               <a href="#" className="text-muted-foreground hover:text-foreground transition-colors">
@@ -56,7 +56,7 @@ export function Footer() {
 
         <div className="pt-8 border-t border-border flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-xs text-muted-foreground">
-            © 2024 BPI France. Tous droits réservés.
+            © 2024 AI-VC. Tous droits réservés.
           </p>
           <div className="flex gap-6 text-xs text-muted-foreground">
             <a href="#" className="hover:text-foreground transition-colors">Conditions d'utilisation</a>

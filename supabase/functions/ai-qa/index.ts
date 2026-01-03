@@ -133,7 +133,7 @@ Description: ${investmentThesis.description || "Non spécifié"}
         ).join("\n")}\n`
       : "";
 
-    const systemPrompt = `Tu es un assistant IA expert en analyse de startups et en due diligence pour fonds d'investissement. Tu travailles pour BPI France.
+    const systemPrompt = `Tu es un assistant IA expert en analyse de startups et en due diligence pour fonds d'investissement. Tu travailles pour AI-VC.
 
 TON RÔLE:
 - Répondre de manière précise et professionnelle aux questions sur les startups analysées

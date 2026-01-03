@@ -34,8 +34,8 @@ export function Header({ onStartTrial, onLogin }: HeaderProps) {
             </div>
             <div>
               <h1 className="text-lg font-bold text-foreground">
-                <span className="text-[#2C3E50]">bpi</span>
-                <span className="text-[#FFD700]">france</span>
+                <span className="text-[#2C3E50]">ai</span>
+                <span className="text-[#FFD700]">vc</span>
                 <span className="text-[#2C3E50]">.</span>
                 <span className="text-[#FFD700]">.</span>
               </h1>

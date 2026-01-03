@@ -476,8 +476,8 @@ export default function Index() {
                 </div>
                 <div>
                   <h1 className="text-lg font-semibold text-foreground">
-                    <span className="text-[#2C3E50]">bpi</span>
-                    <span className="text-[#FFD700]">france</span>
+                    <span className="text-[#2C3E50]">ai</span>
+                    <span className="text-[#FFD700]">vc</span>
                     <span className="text-[#2C3E50]">.</span>
                     <span className="text-[#FFD700]">.</span>
                   </h1>
@@ -714,7 +714,7 @@ export default function Index() {
       <footer className="border-t border-border bg-card/30 mt-auto">
         <div className="container max-w-7xl mx-auto px-4 py-4">
           <p className="text-xs text-muted-foreground text-center">
-            BPI France • Outil de Sourcing et d'Analyse de Startups pour Fonds d'Investissement
+            AI-VC • Outil de Sourcing et d'Analyse de Startups pour Fonds d'Investissement
           </p>
         </div>
       </footer>
