@@ -537,33 +537,74 @@ serve(async (req) => {
     console.log(`Step 3: Sourcing startups matching thesis...`);
     let startupSearchQueries: string[] = [];
     
+    // Extract criteria
+    const sectors = customThesis?.sectors || [];
+    const stage = customThesis?.stage || "seed";
+    const geography = customThesis?.geography || "global";
+    
     if (fundName && fundThesisContext) {
-      // Extract key criteria from fund thesis
-      const sectors = customThesis?.sectors || [];
-      const stage = customThesis?.stage || "seed";
-      const geography = customThesis?.geography || "global";
-      
       // Build targeted search queries for real startups
       sectors.forEach(sector => {
         startupSearchQueries.push(`${sector} startup ${stage} stage ${geography} 2024`);
         startupSearchQueries.push(`${sector} company funding ${stage} round 2024`);
       });
     } else if (customThesis) {
-      const sectors = customThesis.sectors || ["technology"];
-      const stage = customThesis.stage || "seed";
-      const geography = customThesis.geography || "global";
       sectors.forEach(sector => {
         startupSearchQueries.push(`${sector} startup ${stage} ${geography} 2024`);
       });
     }
     
-    // Execute searches for real startups
+    // Execute searches for real startups (CLASSIC SOURCING)
     let startupSearchResults: BraveSearchResult[] = [];
     for (const query of startupSearchQueries.slice(0, 3)) {
       const results = await braveSearch(query, 5);
       startupSearchResults.push(...results);
       await new Promise(r => setTimeout(r, 500)); // Rate limit
     }
+    
+    // NINJA SOURCING: Find companies BEFORE they're on Crunchbase/Pitchbook
+    console.log(`Step 3b: Ninja Sourcing (Talents, IP, Spinoffs)...`);
+    let ninjaResults: BraveSearchResult[] = [];
+    
+    // 1. Talent Signals (companies hiring critical roles)
+    const criticalRoles = ["Head of Photonics", "Quantum Lead", "CTO", "VP Engineering", "Head of AI"];
+    for (const sector of sectors.slice(0, 2)) {
+      for (const role of criticalRoles.slice(0, 3)) {
+        const talentQuery = `${role} ${sector} ${geography} hiring jobs 2024`;
+        const results = await braveSearch(talentQuery, 2);
+        ninjaResults.push(...results);
+        await new Promise(r => setTimeout(r, 500));
+      }
+    }
+    
+    // 2. IP Sourcing (patents and citations)
+    for (const sector of sectors.slice(0, 2)) {
+      const ipQueries = [
+        `${sector} patent filed ${geography} 2023 2024`,
+        `${sector} patent cited by Intel Tesla Google ${geography}`,
+      ];
+      for (const query of ipQueries) {
+        const results = await braveSearch(query, 2);
+        ninjaResults.push(...results);
+        await new Promise(r => setTimeout(r, 500));
+      }
+    }
+    
+    // 3. University Spinoffs
+    const universities = geography === "europe" 
+      ? ["CNRS", "CEA", "INRIA", "Max Planck", "ETH Zurich"]
+      : ["MIT", "Stanford", "Harvard", "Berkeley"];
+    for (const sector of sectors.slice(0, 2)) {
+      for (const uni of universities.slice(0, 3)) {
+        const spinoffQuery = `${uni} ${sector} spin-off startup founded researcher`;
+        const results = await braveSearch(spinoffQuery, 2);
+        ninjaResults.push(...results);
+        await new Promise(r => setTimeout(r, 500));
+      }
+    }
+    
+    // Combine classic and ninja results
+    startupSearchResults = [...startupSearchResults, ...ninjaResults];
     
     const startupSearchContext = startupSearchResults
       .slice(0, 15)
@@ -615,11 +656,18 @@ Tu dois maintenant SOURCER des startups RÉELLES qui correspondent à ces critè
 ` : ''}
 
 ${startupSearchContext ? `
-=== STARTUPS POTENTIELLES TROUVÉES (source: Brave Search) ===
+=== STARTUPS POTENTIELLES TROUVÉES (source: Brave Search + Ninja Sourcing) ===
 ${startupSearchContext}
 
 ⚠️ UTILISE CES RÉSULTATS pour identifier des startups RÉELLES à analyser.
 Chaque startup doit être une entreprise EXISTANTE avec un site web, des données vérifiables.
+
+🎯 SOURCING NINJA : Ces résultats incluent des entreprises trouvées AVANT qu'elles ne soient sur Crunchbase/Pitchbook via :
+- Signaux RH (recrutement massif de postes critiques)
+- Propriété Intellectuelle (brevets et citations par géants tech)
+- Spinoffs universitaires (chercheurs qui fondent des startups)
+
+Ces startups sont souvent en phase pré-levée ou très récente, ce qui représente des opportunités d'investissement précoces.
 ` : ''}
 
 === DONNÉES MARCHÉ (source: Brave Search) ===
