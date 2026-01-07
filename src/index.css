@@ -86,7 +86,7 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    background: hsl(var(--background));
+    background: var(--gradient-terminal);
     min-height: 100vh;
     color: hsl(var(--foreground));
   }
