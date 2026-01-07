@@ -75,24 +75,24 @@
 
   .dark {
     /* AI-VC dark mode - couleurs AI-VC adaptées au thème sombre */
-    --background: 220 25% 6%;
-    --foreground: 0 0% 95%;
+    --background: 220 25% 18%;
+    --foreground: 0 0% 98%;
     
-    --card: 220 20% 10%;
-    --card-foreground: 0 0% 95%;
+    --card: 220 20% 24%;
+    --card-foreground: 0 0% 98%;
     
-    --popover: 220 20% 8%;
-    --popover-foreground: 0 0% 95%;
+    --popover: 220 20% 20%;
+    --popover-foreground: 0 0% 98%;
     
     /* AI-VC primary: jaune vif sur fond sombre */
     --primary: 48 100% 55%;
     --primary-foreground: 220 30% 15%;
     
-    --secondary: 220 18% 12%;
-    --secondary-foreground: 0 0% 90%;
+    --secondary: 220 18% 26%;
+    --secondary-foreground: 0 0% 95%;
     
-    --muted: 220 18% 10%;
-    --muted-foreground: 220 10% 65%;
+    --muted: 220 18% 28%;
+    --muted-foreground: 220 10% 75%;
     
     /* AI-VC accent: jaune vif */
     --accent: 48 100% 50%;
