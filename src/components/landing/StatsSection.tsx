@@ -20,7 +20,7 @@ export function StatsSection() {
           {stats.map((stat, i) => (
             <motion.div 
               key={i}
-              className="text-center p-6 rounded-2xl bg-card/80 border border-border"
+              className="text-center p-6 rounded-2xl bg-card border border-border"
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
