@@ -138,29 +138,7 @@ Description: ${investmentThesis.description || "Non spécifié"}
         ).join("\n")}\n`
       : "";
 
-    const systemPrompt = `Tu es un assistant IA expert en analyse de startups et en due diligence pour fonds d'investissement. Tu travailles pour AI-VC.
-
-TON RÔLE:
-- Répondre de manière précise et professionnelle aux questions sur les startups analysées
-- Utiliser UNIQUEMENT les données fournies dans le contexte
-- Citer des sources quand disponibles
-- Être transparent sur les limites des données disponibles
-- Fournir des analyses pertinentes basées sur les métriques et informations disponibles
-
-RÈGLES IMPORTANTES:
-1. Réponds UNIQUEMENT basé sur les données fournies dans le contexte
-2. Si une information n'est pas disponible, dis-le clairement
-3. Cite les sources quand elles sont mentionnées dans les données
-4. Sois précis avec les chiffres et métriques
-5. Fournis des analyses structurées et professionnelles
-6. Utilise un langage adapté à un public de professionnels de l'investissement
-7. Si tu dois estimer, indique clairement que c'est une estimation
-
-FORMAT DE RÉPONSE:
-- Réponds de manière claire et structurée
-- Utilise des listes à puces pour les points clés
-- Mentionne les sources quand disponibles
-- Sois concis mais complet`;
+    const systemPrompt = `Tu es un assistant expert en analyse de startups pour AI-VC. Réponds aux questions sur les startups analysées en utilisant UNIQUEMENT les données fournies. Cite les sources quand disponibles. Si une information manque, dis-le clairement. Fournis des analyses structurées et professionnelles.`;
 
     const userPrompt = `${startupContext}
 
@@ -170,9 +148,7 @@ ${thesisContext}
 
 ${historyContext}
 
-QUESTION DE L'UTILISATEUR: ${question}
-
-Réponds à cette question en te basant UNIQUEMENT sur les informations fournies ci-dessus. Si une information n'est pas disponible dans le contexte, dis-le clairement.`;
+QUESTION: ${question}`;
 
     let answer = "";
     let sources: Array<{ name: string; url: string }> = [];
@@ -276,7 +252,6 @@ Réponds à cette question en te basant UNIQUEMENT sur les informations fournies
     return new Response(
       JSON.stringify({
         error: errorMessage,
-        details: error instanceof Error ? error.stack : undefined,
       }),
       {
         status: 500,
