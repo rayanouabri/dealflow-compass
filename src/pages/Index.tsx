@@ -711,7 +711,7 @@ export default function Index() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-border bg-card/30 mt-auto">
+      <footer className="border-t border-border bg-card mt-auto">
         <div className="container max-w-7xl mx-auto px-4 py-4">
           <p className="text-xs text-muted-foreground text-center">
             AI-VC • Outil de Sourcing et d'Analyse de Startups pour Fonds d'Investissement

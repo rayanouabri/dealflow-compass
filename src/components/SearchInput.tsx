@@ -62,7 +62,6 @@ export function SearchInput({ onSearch, isLoading, value, onChange }: SearchInpu
 
       <form onSubmit={handleSubmit} className="relative mb-6">
         <div className="relative group">
-          <div className="absolute inset-0 bg-gradient-to-r from-primary/20 via-accent/20 to-primary/20 rounded-xl blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
           <div className="relative flex gap-3 p-2 bg-card border border-border rounded-xl transition-all duration-300 group-hover:border-primary/30">
             <div className="relative flex-1">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
