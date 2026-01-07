@@ -1,0 +1,11 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="16" cy="16" r="16" fill="#1e3a5f"/>
+  
+  <!-- Chart bars representing VC/Analytics -->
+  <rect x="7" y="18" width="3" height="8" rx="1" fill="#facc15"/>
+  <rect x="12" y="14" width="3" height="12" rx="1" fill="#facc15"/>
+  <rect x="17" y="10" width="3" height="16" rx="1" fill="#facc15"/>
+  <rect x="22" y="12" width="3" height="14" rx="1" fill="#facc15"/>
+</svg>
+

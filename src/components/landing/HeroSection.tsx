@@ -14,7 +14,7 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
     <section className="relative overflow-hidden pt-20 pb-32 md:pt-32 md:pb-40">
       {/* Background effects */}
       <div className="absolute inset-0 terminal-grid opacity-20" />
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-primary/5 rounded-full blur-3xl" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-primary/5 rounded-full blur-2xl" />
       
       <div className="container max-w-7xl mx-auto px-4 relative">
         <div className="max-w-4xl mx-auto text-center">
@@ -26,7 +26,7 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
           >
             <Badge 
               variant="outline" 
-              className="mb-6 px-4 py-2 text-sm border-primary/30 bg-primary/5 backdrop-blur-sm"
+              className="mb-6 px-4 py-2 text-sm border-primary/30 bg-primary/10"
             >
               <Sparkles className="w-3.5 h-3.5 mr-2 text-primary animate-pulse" />
               Outil de sourcing et d'analyse de startups • Due diligence automatisée
