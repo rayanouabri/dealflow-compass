@@ -20,17 +20,22 @@ export function StatsSection() {
           {stats.map((stat, i) => (
             <motion.div 
               key={i}
-              className="text-center p-6 rounded-2xl bg-card border border-border"
+              className="text-center p-8 rounded-2xl bg-card/50 border border-primary/20 backdrop-blur-sm glow-ai-vc relative overflow-hidden"
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: i * 0.1 }}
-              whileHover={{ scale: 1.02, borderColor: "hsl(var(--primary) / 0.3)" }}
+              whileHover={{ scale: 1.03, borderColor: "hsl(var(--primary) / 0.5)", boxShadow: "0 0 30px rgba(48,100%,55%,0.3)" }}
             >
-              <stat.icon className="w-6 h-6 text-primary mx-auto mb-3" />
-              <p className="text-3xl md:text-4xl font-bold text-foreground mb-1">{stat.value}</p>
-              <p className="text-sm font-medium text-foreground/80 mb-1">{stat.label}</p>
-              <p className="text-xs text-muted-foreground">{stat.description}</p>
+              <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-50" />
+              <div className="relative z-10">
+                <stat.icon className="w-8 h-8 text-primary mx-auto mb-4 glow-ai-vc" />
+                <p className="text-4xl md:text-5xl font-bold text-foreground mb-2 bg-gradient-to-r from-foreground to-primary bg-clip-text text-transparent">
+                  {stat.value}+
+                </p>
+                <p className="text-base font-semibold text-foreground mb-2">{stat.label}</p>
+                <p className="text-xs text-muted-foreground">{stat.description}</p>
+              </div>
             </motion.div>
           ))}
         </div>

@@ -24,20 +24,19 @@ export function Header({ onStartTrial, onLogin }: HeaderProps) {
   };
 
   return (
-    <header className="border-b border-border bg-background sticky top-0 z-50">
+    <header className="border-b border-border/30 bg-background/80 backdrop-blur-md sticky top-0 z-50 shadow-sm">
       <div className="container max-w-7xl mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center glow-ai-vc border border-primary/30">
               <BarChart3 className="w-5 h-5 text-primary" />
             </div>
             <div>
               <h1 className="text-lg font-bold text-foreground">
-                <span className="text-[#2C3E50]">ai</span>
-                <span className="text-[#FFD700]">vc</span>
-                <span className="text-[#2C3E50]">.</span>
-                <span className="text-[#FFD700]">.</span>
+                <span className="text-foreground">ai</span>
+                <span className="text-primary">vc</span>
+                <span className="text-foreground">.</span>
               </h1>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
                 Sourcing & Analyse
@@ -60,10 +59,10 @@ export function Header({ onStartTrial, onLogin }: HeaderProps) {
 
           {/* CTAs */}
           <div className="hidden md:flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={onLogin}>
+            <Button variant="ghost" size="sm" onClick={onLogin} className="hover:bg-primary/10">
               Se connecter
             </Button>
-            <Button size="sm" onClick={onStartTrial} className="gap-2">
+            <Button size="sm" onClick={onStartTrial} className="gap-2 bg-primary hover:bg-primary/90 text-primary-foreground glow-ai-vc">
               <Zap className="w-4 h-4" />
               Essai gratuit
             </Button>

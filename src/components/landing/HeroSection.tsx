@@ -12,10 +12,36 @@ interface HeroSectionProps {
 export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroSectionProps) {
   return (
     <section className="relative overflow-hidden pt-20 pb-32 md:pt-32 md:pb-40">
-      {/* Background effects */}
-      <div className="absolute inset-0 terminal-grid opacity-20" />
+      {/* Animated background effects */}
+      <div className="absolute inset-0 terminal-grid opacity-[0.08]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(48,100%,55%,0.15),transparent_50%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_80%,rgba(220,50%,40%,0.1),transparent_50%)]" />
       
-      <div className="container max-w-7xl mx-auto px-4 relative">
+      {/* Floating particles effect */}
+      <div className="absolute inset-0 overflow-hidden">
+        {[...Array(6)].map((_, i) => (
+          <motion.div
+            key={i}
+            className="absolute w-2 h-2 rounded-full bg-primary/20"
+            style={{
+              left: `${20 + i * 15}%`,
+              top: `${30 + (i % 3) * 20}%`,
+            }}
+            animate={{
+              y: [0, -30, 0],
+              opacity: [0.2, 0.5, 0.2],
+              scale: [1, 1.5, 1],
+            }}
+            transition={{
+              duration: 3 + i * 0.5,
+              repeat: Infinity,
+              delay: i * 0.3,
+            }}
+          />
+        ))}
+      </div>
+      
+      <div className="container max-w-7xl mx-auto px-4 relative z-10">
         <div className="max-w-4xl mx-auto text-center">
           {/* Badge */}
           <motion.div
@@ -25,7 +51,7 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
           >
             <Badge 
               variant="outline" 
-              className="mb-6 px-4 py-2 text-sm border-primary/30 bg-primary/10"
+              className="mb-6 px-4 py-2 text-sm border-primary/40 bg-primary/20 backdrop-blur-sm glow-ai-vc"
             >
               <Sparkles className="w-3.5 h-3.5 mr-2 text-primary animate-pulse" />
               Outil de sourcing et d'analyse de startups • Due diligence automatisée
@@ -34,13 +60,15 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
           
           {/* Main heading */}
           <motion.h1 
-            className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-6 leading-[1.1]"
+            className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-6 leading-[1.1] text-foreground"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.1 }}
           >
             Sourcez les meilleures
-            <span className="block text-gradient-success mt-2">opportunités d'investissement</span>
+            <span className="block text-gradient-ai-vc mt-2 drop-shadow-[0_0_20px_rgba(48,100%,55%,0.3)]">
+              opportunités d'investissement
+            </span>
             <span className="block text-2xl md:text-3xl lg:text-4xl font-medium text-muted-foreground mt-4">
               en quelques minutes
             </span>
@@ -68,7 +96,7 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
             <Button 
               size="lg" 
               onClick={onStartTrial}
-              className="gap-2 px-8 h-14 text-base glow-success group"
+              className="gap-2 px-8 h-14 text-base bg-primary hover:bg-primary/90 text-primary-foreground glow-ai-vc group shadow-[0_0_30px_rgba(48,100%,55%,0.4)]"
             >
               <Zap className="w-5 h-5" />
               Démarrer le sourcing IA
@@ -78,7 +106,7 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
               variant="outline" 
               size="lg" 
               onClick={onWatchDemo}
-              className="gap-2 px-6 h-14 text-base border-border/50 hover:border-primary/50 hover:bg-primary/5"
+              className="gap-2 px-6 h-14 text-base border-primary/30 hover:border-primary/60 hover:bg-primary/10 backdrop-blur-sm"
             >
               <Play className="w-4 h-4" />
               Voir la démo (2 min)

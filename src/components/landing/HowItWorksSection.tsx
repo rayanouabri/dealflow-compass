@@ -43,12 +43,12 @@ export function HowItWorksSection() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
           >
-            <Badge variant="outline" className="mb-4 border-primary/30 bg-primary/5">
+            <Badge variant="outline" className="mb-4 border-primary/40 bg-primary/20 backdrop-blur-sm">
               Comment ça marche
             </Badge>
-            <h2 className="text-3xl md:text-5xl font-bold mb-4">
+            <h2 className="text-3xl md:text-5xl font-bold mb-4 text-foreground">
               Du sourcing à la décision
-              <span className="block text-gradient-success">en 4 étapes automatisées</span>
+              <span className="block text-gradient-ai-vc">en 4 étapes automatisées</span>
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
               Plus besoin de passer des semaines à rechercher et analyser des startups. Automatisez votre sourcing et due diligence.
@@ -71,19 +71,20 @@ export function HowItWorksSection() {
                 <div className="hidden lg:block absolute top-12 left-full w-full h-px bg-gradient-to-r from-border to-transparent z-0" />
               )}
               
-              <div className="relative p-6 rounded-2xl bg-card border border-border hover:border-primary/30 transition-all duration-300 h-full group-hover:shadow-lg group-hover:shadow-primary/5">
+              <div className="relative p-6 rounded-2xl bg-card/50 border border-primary/20 hover:border-primary/50 transition-all duration-300 h-full group-hover:shadow-lg group-hover:shadow-primary/20 backdrop-blur-sm overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                 {/* Step number */}
-                <div className="absolute -top-3 -left-3 w-8 h-8 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center">
+                <div className="absolute -top-3 -left-3 w-10 h-10 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center glow-ai-vc border-2 border-background">
                   {step.number}
                 </div>
                 
                 {/* Icon */}
-                <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                <div className="w-14 h-14 rounded-xl bg-primary/20 flex items-center justify-center mb-4 group-hover:bg-primary/30 transition-all group-hover:scale-110">
                   <step.icon className="w-7 h-7 text-primary" />
                 </div>
                 
-                <h3 className="text-lg font-semibold mb-2">{step.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{step.description}</p>
+                <h3 className="text-lg font-semibold mb-2 text-foreground relative z-10">{step.title}</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed relative z-10">{step.description}</p>
               </div>
             </motion.div>
           ))}

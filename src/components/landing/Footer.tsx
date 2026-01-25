@@ -5,8 +5,9 @@ const CONTACT_EMAIL = "rayan.ouabri@edhec.com";
 
 export function Footer() {
   return (
-    <footer className="border-t border-border bg-card/30 py-12">
-      <div className="container max-w-7xl mx-auto px-4">
+    <footer className="border-t border-primary/20 bg-card/30 backdrop-blur-sm py-12 relative">
+      <div className="absolute inset-0 bg-gradient-to-t from-primary/5 to-transparent" />
+      <div className="container max-w-7xl mx-auto px-4 relative z-10">
         <div className="grid md:grid-cols-4 gap-8 mb-8">
           {/* Brand */}
           <div className="md:col-span-2">
