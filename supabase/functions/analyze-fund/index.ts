@@ -1,11 +1,23 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Max-Age': '86400',
-};
+const ALLOWED_ORIGINS = [
+  "https://ai-vc-sourcing.vercel.app",
+  "http://localhost:8080",
+  "http://localhost:5173",
+  "http://127.0.0.1:8080",
+  "http://127.0.0.1:5173",
+];
+
+function corsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get("origin") ?? "";
+  const allow = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allow,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Max-Age": "86400",
+  };
+}
 
 interface AnalysisRequest {
   fundName?: string;
@@ -449,12 +461,78 @@ function inStringAt(json: string, pos: number): boolean {
   return inString;
 }
 
+/** Scores: 0-100 ou 1-10 uniquement. Montants: $/M/€. Ne jamais mélanger. */
+function sanitizeSlideMetrics(slide: { metrics?: Record<string, unknown> }): void {
+  const m = slide?.metrics as Record<string, unknown> | undefined;
+  if (!m || typeof m !== "object") return;
+
+  const looksLikeMoney = (v: unknown): boolean => {
+    if (v == null) return false;
+    const s = String(v).toLowerCase();
+    return /\$|€|million|millions|m\s*€|m\s*\$/i.test(s) || /\d+\s*[mk](\s|$)/i.test(s);
+  };
+
+  const score1To10 = ["fitScore"];
+  const score0To100 = ["pmfScore"];
+  const nonNegativeInt = ["patents"];
+
+  for (const key of score1To10) {
+    const v = m[key];
+    if (v == null) continue;
+    const s = String(v).trim();
+    if (looksLikeMoney(v)) {
+      delete m[key];
+      continue;
+    }
+    const n = parseFloat(s.replace(/[^\d.,]/g, "").replace(",", "."));
+    if (!Number.isFinite(n)) {
+      delete m[key];
+      continue;
+    }
+    const clamped = Math.round(Math.max(1, Math.min(10, n)));
+    m[key] = clamped;
+  }
+
+  for (const key of score0To100) {
+    const v = m[key];
+    if (v == null) continue;
+    const s = String(v).trim();
+    if (looksLikeMoney(v)) {
+      delete m[key];
+      continue;
+    }
+    const n = parseFloat(s.replace(/[^\d.,]/g, "").replace(",", "."));
+    if (!Number.isFinite(n)) {
+      delete m[key];
+      continue;
+    }
+    const clamped = Math.round(Math.max(0, Math.min(100, n)));
+    m[key] = clamped;
+  }
+
+  for (const key of nonNegativeInt) {
+    const v = m[key];
+    if (v == null) continue;
+    const s = String(v).trim();
+    if (looksLikeMoney(v)) {
+      delete m[key];
+      continue;
+    }
+    const n = parseFloat(s.replace(/[^\d.,]/g, "").replace(",", "."));
+    if (!Number.isFinite(n) || n < 0) {
+      delete m[key];
+      continue;
+    }
+    m[key] = Math.round(Math.min(9999, n));
+  }
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { 
       status: 204,
-      headers: corsHeaders 
+      headers: corsHeaders(req) 
     });
   }
 
@@ -467,7 +545,7 @@ serve(async (req) => {
           error: "Request body is empty. Please provide fundName or customThesis." 
         }), {
           status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
         });
       }
       requestData = JSON.parse(bodyText);
@@ -477,25 +555,34 @@ serve(async (req) => {
         error: `Invalid JSON in request body: ${parseError instanceof Error ? parseError.message : "Unknown parsing error"}` 
       }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...corsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
     const { fundName, customThesis, params = {} } = requestData;
     
-    // Support multiple AI providers: Groq (preferred) or Gemini
-    const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
+    // Gemini + Brave uniquement
     const GEMINI_API_KEY = Deno.env.get("GEMINI_KEY_2") || Deno.env.get("GEMINI_API_KEY");
-    const AI_PROVIDER = GROQ_API_KEY ? "groq" : (GEMINI_API_KEY ? "gemini" : null);
+    const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY");
     
-    if (!AI_PROVIDER) {
-      console.error("No AI provider configured");
+    if (!GEMINI_API_KEY) {
+      console.error("Gemini not configured");
       return new Response(JSON.stringify({ 
-        error: "No AI provider configured. Please add either GROQ_API_KEY or GEMINI_KEY_2 (or GEMINI_API_KEY) in Supabase Dashboard > Edge Functions > analyze-fund > Settings > Secrets.\n\n📖 Groq (Recommandé - GRATUIT) : https://console.groq.com\n📖 Gemini : https://makersuite.google.com/app/apikey",
+        error: "Gemini non configuré. Ajoutez GEMINI_KEY_2 ou GEMINI_API_KEY dans Supabase Dashboard > Edge Functions > analyze-fund > Settings > Secrets.\n\n📖 Clé gratuite : https://makersuite.google.com/app/apikey",
         setupRequired: true
       }), {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+      });
+    }
+    if (!BRAVE_API_KEY) {
+      console.error("Brave Search not configured");
+      return new Response(JSON.stringify({ 
+        error: "Brave Search non configuré. Ajoutez BRAVE_API_KEY dans Supabase Dashboard > Edge Functions > analyze-fund > Settings > Secrets.\n\n📖 https://brave.com/search/api/",
+        setupRequired: true
+      }), {
+        status: 500,
+        headers: { ...corsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -531,13 +618,12 @@ serve(async (req) => {
     // Step 3: Search for REAL startups matching the thesis (CRITICAL for sourcing)
     let startupSearchQueries: string[] = [];
     
-    // Extract criteria
-    const sectors = customThesis?.sectors || [];
+    // Extract criteria — secteurs par défaut si fund-only (pas de thèse personnalisée)
     const stage = customThesis?.stage || "seed";
     const geography = customThesis?.geography || "global";
+    const sectors = (customThesis?.sectors?.length ? customThesis.sectors : (fundName ? ["technology", "SaaS"] : ["technology"])) as string[];
     
     if (fundName && fundThesisContext) {
-      // Build targeted search queries for real startups
       sectors.forEach(sector => {
         startupSearchQueries.push(`${sector} startup ${stage} stage ${geography} 2024`);
         startupSearchQueries.push(`${sector} company funding ${stage} round 2024`);
@@ -548,65 +634,92 @@ serve(async (req) => {
       });
     }
     
-    // Execute searches for real startups (CLASSIC SOURCING)
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    
+    // COUCHE 1–2 : Classic sourcing
     let startupSearchResults: BraveSearchResult[] = [];
-    for (const query of startupSearchQueries.slice(0, 3)) {
+    for (const query of startupSearchQueries.slice(0, 4)) {
       const results = await braveSearch(query, 5);
       startupSearchResults.push(...results);
-      await new Promise(r => setTimeout(r, 500)); // Rate limit
+      await sleep(400);
     }
     
-    // NINJA SOURCING: Find companies BEFORE they're on Crunchbase/Pitchbook
-    let ninjaResults: BraveSearchResult[] = [];
-    
-    // 1. Talent Signals (companies hiring critical roles)
+    // COUCHE 3 : Ninja sourcing (talent, IP, spinoffs)
     const criticalRoles = ["Head of Photonics", "Quantum Lead", "CTO", "VP Engineering", "Head of AI"];
     for (const sector of sectors.slice(0, 2)) {
       for (const role of criticalRoles.slice(0, 3)) {
-        const talentQuery = `${role} ${sector} ${geography} hiring jobs 2024`;
-        const results = await braveSearch(talentQuery, 2);
-        ninjaResults.push(...results);
-        await new Promise(r => setTimeout(r, 500));
+        const results = await braveSearch(`${role} ${sector} ${geography} hiring jobs 2024`, 2);
+        startupSearchResults.push(...results);
+        await sleep(400);
       }
     }
-    
-    // 2. IP Sourcing (patents and citations)
     for (const sector of sectors.slice(0, 2)) {
-      const ipQueries = [
-        `${sector} patent filed ${geography} 2023 2024`,
-        `${sector} patent cited by Intel Tesla Google ${geography}`,
-      ];
-      for (const query of ipQueries) {
-        const results = await braveSearch(query, 2);
-        ninjaResults.push(...results);
-        await new Promise(r => setTimeout(r, 500));
+      for (const q of [`${sector} patent filed ${geography} 2023 2024`, `${sector} patent cited by Intel Tesla Google ${geography}`]) {
+        const results = await braveSearch(q, 2);
+        startupSearchResults.push(...results);
+        await sleep(400);
       }
     }
-    
-    // 3. University Spinoffs
-    const universities = geography === "europe" 
-      ? ["CNRS", "CEA", "INRIA", "Max Planck", "ETH Zurich"]
-      : ["MIT", "Stanford", "Harvard", "Berkeley"];
+    const universities = geography === "europe" ? ["CNRS", "CEA", "INRIA", "Max Planck", "ETH Zurich"] : ["MIT", "Stanford", "Harvard", "Berkeley"];
     for (const sector of sectors.slice(0, 2)) {
       for (const uni of universities.slice(0, 3)) {
-        const spinoffQuery = `${uni} ${sector} spin-off startup founded researcher`;
-        const results = await braveSearch(spinoffQuery, 2);
-        ninjaResults.push(...results);
-        await new Promise(r => setTimeout(r, 500));
+        const results = await braveSearch(`${uni} ${sector} spin-off startup founded researcher`, 2);
+        startupSearchResults.push(...results);
+        await sleep(400);
       }
     }
     
-    // Combine classic and ninja results
-    startupSearchResults = [...startupSearchResults, ...ninjaResults];
+    // COUCHE 4 : Deep dive — actualités secteur, concurrence, régulation
+    const deepQueries = [
+      `${primarySector} news 2024 2025 trends`,
+      `${primarySector} competitors landscape 2024`,
+      `${primarySector} regulation compliance 2024`,
+    ];
+    for (const q of deepQueries) {
+      const results = await braveSearch(q, 4);
+      startupSearchResults.push(...results);
+      await sleep(400);
+    }
+    
+    // COUCHE 5 : Reflection — Gemini suggère des requêtes Brave supplémentaires, on les exécute
+    let reflectionContext = "";
+    try {
+      const refPrompt = `Tu es un assistant. Fonds: "${fundName || "thèse personnalisée"}". Contexte thèse:\n${fundThesisContext.slice(0, 800)}\n\nContexte marché:\n${marketData.marketContext?.slice(0, 500) || ""}\n\nStartups déjà trouvées (extraits):\n${startupSearchResults.slice(0, 8).map(r => r.title + " " + r.description).join("\n")}\n\nPropose EXACTEMENT 3 à 5 requêtes de recherche web (en anglais, courtes) pour trouver d'autres startups ou données complémentaires. Réponds UNIQUEMENT avec un JSON: {"queries": ["query1", "query2", ...]}`;
+      const refRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: refPrompt }] }],
+          generationConfig: { temperature: 0.3, maxOutputTokens: 512, responseMimeType: "application/json" },
+        }),
+      });
+      if (refRes.ok) {
+        const refData = await refRes.json();
+        const refText = refData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        const refJson = refText.replace(/```json?\s*/g, "").trim();
+        const parsed = JSON.parse(refJson);
+        const queries: string[] = Array.isArray(parsed?.queries) ? parsed.queries.slice(0, 5) : [];
+        for (const q of queries) {
+          const results = await braveSearch(String(q).trim(), 3);
+          startupSearchResults.push(...results);
+          await sleep(400);
+        }
+        reflectionContext = queries.length ? `\n\n=== REQUÊTES ADDITIONNELLES (réflexion) ===\nRésultats des requêtes suggérées: ${queries.join("; ")}` : "";
+      }
+    } catch (e) {
+      console.warn("Reflection layer skipped:", e);
+    }
     
     const startupSearchContext = startupSearchResults
-      .slice(0, 15)
+      .slice(0, 25)
       .map(r => `${r.title}: ${r.description} | URL: ${r.url}`)
-      .join("\n");
+      .join("\n") + reflectionContext;
 
     const systemPrompt = `Tu es un analyste VC SENIOR avec 15+ ans d'expérience en sourcing de startups et due diligence approfondie pour les plus grands fonds (Sequoia, a16z, Accel, etc.).
 
 🎯 MISSION PRINCIPALE : SOURCING DE STARTUPS + DUE DILIGENCE PROFESSIONNELLE
+
+⚠️ RÉFLEXION : Réfléchis étape par étape avant de conclure. Utilise TOUTES les couches de recherche fournies (thèse fonds, marché, startups classiques, ninja sourcing, deep dive actualités/concurrence/régulation, requêtes additionnelles). Croise les données avant de produire ton analyse.
 
 ⚠️ ATTENTION : TU NE DOIS PAS ANALYSER LE FONDS, MAIS SOURCER DES STARTUPS QUI CORRESPONDENT À SA THÈSE ⚠️
 
@@ -691,6 +804,12 @@ HEALTHCARE IT :
 
 ⚠️ UTILISE CES MOYENNES pour faire des estimations intelligentes quand les données réelles ne sont pas disponibles.
 
+⚠️ RÈGLES DE TYPES — NE JAMAIS MÉLANGER ⚠️
+- SCORES (fitScore, pmfScore) : TOUJOURS un nombre. fitScore = 1–10, pmfScore = 0–100. JAMAIS de millions, $, M, €. Ex: fitScore 7 ✓ | fitScore "60 millions" ✗.
+- MONTANTS ($) : ARR, MRR, CAC, LTV, valuation, TAM, SAM, SOM, askAmount, burnRate — en $ ou M€. Ex: "$2.5M ARR".
+- POURCENTAGES (%) : NRR, churn, croissance, marge, CAGR — en %. Ex: "120% NRR", "5% churn/mois".
+- ENTIERS : brevets, nombre de clients, team size, runway (mois). Ex: 3 brevets, 12 mois runway.
+
 ${customThesis ? `
 THÈSE D'INVESTISSEMENT PERSONNALISÉE:
 - Secteurs: ${customThesis.sectors?.join(', ') || 'Non spécifié'}
@@ -760,9 +879,9 @@ Tu dois répondre avec un objet JSON valide contenant:
        "content": "Résumé détaillé avec données VÉRIFIÉES et sources citées (min 300 mots)",
        "keyPoints": ["Point 1 avec source", "Point 2 avec source", ...],
        "metrics": { 
-         "valuation": "Valorisation avec source", 
-         "askAmount": "Montant demandé", 
-         "fitScore": "Score 1-10",
+         "valuation": "Valorisation en $ avec source (ex: $15M)", 
+         "askAmount": "Montant demandé en $ (ex: $2M)", 
+         "fitScore": "Nombre ENTRE 1 ET 10 UNIQUEMENT (ex: 7). JAMAIS 60, 60M, millions, $",
          "sources": ["source1", "source2"]
        }
      },
@@ -782,7 +901,11 @@ Tu dois répondre avec un objet JSON valide contenant:
        "title": "Product & Technology",
        "content": "Analyse produit détaillée (min 250 mots)",
        "keyPoints": ["Force 1", ...],
-       "metrics": { "techStack": "Stack technique", "patents": "Brevets", "pmfScore": "Score PMF" }
+       "metrics": { 
+         "techStack": "Stack technique", 
+         "patents": "Nombre de brevets (entier, ex: 3)", 
+         "pmfScore": "Nombre ENTRE 0 ET 100 UNIQUEMENT (ex: 75). JAMAIS 60M, millions, $" 
+       }
      },
      {
        "title": "Business Metrics & Traction",
@@ -896,6 +1019,11 @@ FORMAT OBLIGATOIRE :
 - Estimation : "$1.8M ARR (estimation - stade Series A SaaS, moyenne marché $1-3M)"
 - Ne JAMAIS mettre "Non disponible" sans estimation
 
+COHÉRENCE DES TYPES :
+- fitScore = nombre 1–10 uniquement (ex: 7). JAMAIS "60 millions", "60M", "$60", etc.
+- pmfScore = nombre 0–100 uniquement (ex: 75). Mêmes règles.
+- Montants (ARR, MRR, valuation, etc.) en $ ou M€. Scores en nombres purs.
+
 OBLIGATOIRE - Analyse marché :
 - TAM/SAM/SOM en $ avec sources URL (ex: $50B TAM - Grand View Research 2024)
 - CAGR en % avec source
@@ -928,213 +1056,86 @@ Génère un rapport de due diligence PROFESSIONNEL de niveau senior VC avec TOUT
 
 IMPORTANT : Utilise UNIQUEMENT les données réelles trouvées dans les recherches web. Ne crée PAS de données fictives.`;
 
-    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-
     let response: Response | null = null;
     let lastErrorText = "";
 
-    // Use Groq if available, otherwise fallback to Gemini
-    if (AI_PROVIDER === "groq") {
-      const groqUrl = "https://api.groq.com/openai/v1/chat/completions";
-      const groqModel = Deno.env.get("GROQ_MODEL") || "llama-3.1-70b-versatile";
-      
-      const groqBody = {
-        model: groqModel,
-        messages: [
-          {
-            role: "system",
-            content: systemPrompt,
-          },
-          {
-            role: "user",
-            content: `${userPrompt}\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.`,
-          },
-        ],
-        temperature: 0.2,
-        max_tokens: 32768,
-        response_format: { type: "json_object" },
-      };
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+    const geminiBody = {
+      contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.` }] }],
+      generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens: 32768, responseMimeType: "application/json" as const },
+    };
 
-      for (let attempt = 0; attempt < 3; attempt++) {
-        if (attempt > 0) {
-          const backoffMs = Math.min(8000, 800 * Math.pow(2, attempt - 1));
-          const jitterMs = Math.floor(Math.random() * 400);
-          const waitMs = backoffMs + jitterMs;
-          console.log(`Groq rate-limited. Retrying in ${waitMs}ms (attempt ${attempt + 1}/3)`);
-          await sleep(waitMs);
-        }
-
-        response = await fetch(groqUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${GROQ_API_KEY}`,
-          },
-          body: JSON.stringify(groqBody),
-        });
-
-        if (response.ok) break;
-
-        lastErrorText = await response.text();
-        console.error("Groq API error:", response.status, lastErrorText);
-
-        if (response.status !== 429) break;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        const waitMs = Math.min(8000, 800 * Math.pow(2, attempt - 1)) + Math.floor(Math.random() * 400);
+        console.log(`Gemini rate-limited. Retrying in ${waitMs}ms (attempt ${attempt + 1}/3)`);
+        await sleep(waitMs);
       }
-    } else {
-      // Gemini fallback
-      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
-
-      const geminiBody = {
-        contents: [
-          {
-            parts: [
-              {
-                text: `${systemPrompt}\n\n${userPrompt}\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.`,
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.2,
-          maxOutputTokens: 32768,
-          responseMimeType: "application/json",
-        },
-      };
-
-      for (let attempt = 0; attempt < 3; attempt++) {
-        if (attempt > 0) {
-          const backoffMs = Math.min(8000, 800 * Math.pow(2, attempt - 1));
-          const jitterMs = Math.floor(Math.random() * 400);
-          const waitMs = backoffMs + jitterMs;
-          console.log(`Gemini rate-limited. Retrying in ${waitMs}ms (attempt ${attempt + 1}/3)`);
-          await sleep(waitMs);
-        }
-
-        response = await fetch(geminiUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(geminiBody),
-        });
-
-        if (response.ok) break;
-
-        lastErrorText = await response.text();
-        console.error("Gemini API error:", response.status, lastErrorText);
-
-        if (response.status !== 429) break;
-      }
+      response = await fetch(geminiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(geminiBody),
+      });
+      if (response.ok) break;
+      lastErrorText = await response.text();
+      console.error("Gemini API error:", response.status, lastErrorText);
+      if (response.status !== 429) break;
     }
 
     if (!response) {
-      return new Response(JSON.stringify({ error: `Failed to call ${AI_PROVIDER.toUpperCase()} API.` }), {
+      return new Response(JSON.stringify({ error: "Échec appel API Gemini." }), {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...corsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
     if (!response.ok) {
       const status = response.status;
       const errorText = lastErrorText || (await response.text());
-
       if (status === 429) {
-        return new Response(
-          JSON.stringify({
-            error: "Rate limit exceeded. Please wait ~30-60s and retry.",
-          }),
-          {
-            status: 429,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
-        );
-      }
-
-      if (status === 403) {
-        const providerName = AI_PROVIDER === "groq" ? "Groq" : "Gemini";
-        const keyName = AI_PROVIDER === "groq" ? "GROQ_API_KEY" : "GEMINI_KEY_2 (ou GEMINI_API_KEY)";
-        return new Response(
-          JSON.stringify({
-            error: `Invalid or expired ${providerName} API key. Please check your ${keyName}.`,
-          }),
-          {
-            status: 403,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
-        );
-      }
-
-      if (status === 400) {
-        const providerName = AI_PROVIDER === "groq" ? "Groq" : "Gemini";
-        let errorMessage = `Invalid request to ${providerName} API.`;
-        let setupInstructions = "";
-        try {
-          const errorData = JSON.parse(errorText);
-          if (errorData.error?.message) {
-            errorMessage = `${providerName} API: ${errorData.error.message}`;
-            // Détecter spécifiquement le problème de clé API manquante
-            if (errorData.error.message.toLowerCase().includes("api key") || 
-                errorData.error.message.toLowerCase().includes("key not found") ||
-                errorData.error.message.toLowerCase().includes("invalid api key") ||
-                errorData.error.message.toLowerCase().includes("unauthorized")) {
-              if (AI_PROVIDER === "groq") {
-                setupInstructions = "\n\n🔧 SOLUTION : Configurez GROQ_API_KEY dans Supabase Dashboard > Edge Functions > analyze-fund > Settings > Secrets.\n📖 Guide : https://console.groq.com (GRATUIT, pas de carte bancaire)";
-              } else {
-                setupInstructions = "\n\n🔧 SOLUTION : Configurez GEMINI_KEY_2 (ou GEMINI_API_KEY) dans Supabase Dashboard > Edge Functions > analyze-fund > Settings > Secrets.\n📖 Guide : https://makersuite.google.com/app/apikey";
-              }
-            }
-          }
-        } catch {
-          // ignore
-        }
-        return new Response(JSON.stringify({ 
-          error: errorMessage + setupInstructions,
-          setupRequired: setupInstructions.length > 0
-        }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        return new Response(JSON.stringify({ error: "Rate limit Gemini. Attendez ~30–60s puis réessayez." }), {
+          status: 429,
+          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
         });
       }
-
-      return new Response(
-        JSON.stringify({
-          error: `${AI_PROVIDER === "groq" ? "Groq" : "Gemini"} API error (${status})`,
-        }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+      if (status === 403) {
+        return new Response(JSON.stringify({
+          error: "Clé Gemini invalide ou expirée. Vérifiez GEMINI_KEY_2 ou GEMINI_API_KEY.",
+        }), {
+          status: 403,
+          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+        });
+      }
+      if (status === 400) {
+        let msg = "Erreur requête Gemini.";
+        try {
+          const d = JSON.parse(errorText);
+          if (d.error?.message) msg = `Gemini: ${d.error.message}`;
+        } catch { /* ignore */ }
+        return new Response(JSON.stringify({ error: msg }), {
+          status: 400,
+          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ error: `Gemini API error (${status})` }), {
+        status: 500,
+        headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+      });
     }
 
     const data = await response.json();
-    
-    // Handle different response formats: Groq vs Gemini
-    let content: string;
-    if (AI_PROVIDER === "groq") {
-      content = data.choices?.[0]?.message?.content || "";
-    } else {
-      content = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    }
+    const content: string = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
     if (!content) {
-      console.error(`No content in ${AI_PROVIDER} response:`, JSON.stringify(data));
-      
-      if (AI_PROVIDER === "gemini" && data.candidates?.[0]?.finishReason === "SAFETY") {
-        return new Response(JSON.stringify({ 
-          error: "Content was blocked by safety filters. Please try a different query." 
-        }), {
+      if (data.candidates?.[0]?.finishReason === "SAFETY") {
+        return new Response(JSON.stringify({ error: "Réponse bloquée par les filtres de sécurité. Essayez une autre requête." }), {
           status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
         });
       }
-      
-      return new Response(JSON.stringify({ 
-        error: `No content in ${AI_PROVIDER} response` 
-      }), {
+      return new Response(JSON.stringify({ error: "Réponse Gemini vide." }), {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...corsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -1143,7 +1144,7 @@ IMPORTANT : Utilise UNIQUEMENT les données réelles trouvées dans les recherch
     try {
       analysisResult = parseJSONResponse(content);
     } catch (parseError) {
-      console.error(`Failed to parse ${AI_PROVIDER} response:`, parseError);
+      console.error("Failed to parse Gemini response:", parseError);
       console.error("Content length:", content.length);
       console.error("Content preview (first 1000 chars):", content.substring(0, 1000));
       console.error("Content preview (last 500 chars):", content.substring(Math.max(0, content.length - 500)));
@@ -1163,7 +1164,7 @@ IMPORTANT : Utilise UNIQUEMENT les données réelles trouvées dans les recherch
         error: `Failed to parse AI response: ${parseError instanceof Error ? parseError.message : "Unknown error"}. The response may be too large or malformed. Please try with fewer startups.` 
       }), {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...corsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -1229,12 +1230,16 @@ IMPORTANT : Utilise UNIQUEMENT les données réelles trouvées dans les recherch
     }
 
     analysisResult.dueDiligenceReports = (analysisResult.dueDiligenceReports as any[]).map((r) =>
-      normalizeReportToSlides(r).map((s) => ({
-        title: String((s as any).title ?? ""),
-        content: String((s as any).content ?? ""),
-        keyPoints: Array.isArray((s as any).keyPoints) ? (s as any).keyPoints : [],
-        metrics: (s as any).metrics && typeof (s as any).metrics === "object" ? (s as any).metrics : undefined,
-      }))
+      normalizeReportToSlides(r).map((s) => {
+        const slide = {
+          title: String((s as any).title ?? ""),
+          content: String((s as any).content ?? ""),
+          keyPoints: Array.isArray((s as any).keyPoints) ? (s as any).keyPoints : [],
+          metrics: (s as any).metrics && typeof (s as any).metrics === "object" ? (s as any).metrics : undefined,
+        };
+        sanitizeSlideMetrics(slide);
+        return slide;
+      })
     );
 
     console.log("Analysis complete:", fundName || 'Custom Thesis');
@@ -1242,7 +1247,7 @@ IMPORTANT : Utilise UNIQUEMENT les données réelles trouvées dans les recherch
     console.log("Startups enriched with sources:", enrichedStartups.filter((s: any) => s.sources?.length > 0).length);
 
     return new Response(JSON.stringify(analysisResult), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders(req), "Content-Type": "application/json" },
     });
 
   } catch (error) {
@@ -1257,7 +1262,7 @@ IMPORTANT : Utilise UNIQUEMENT les données réelles trouvées dans les recherch
       error: errorMessage
     }), {
       status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders(req), "Content-Type": "application/json" },
     });
   }
 });
