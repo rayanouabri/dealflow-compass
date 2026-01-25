@@ -19,22 +19,23 @@ interface DashboardPreviewProps {
 
 export function DashboardPreview({ onStartTrial }: DashboardPreviewProps) {
   return (
-    <section className="py-24 md:py-32 bg-card/30 border-y border-border relative overflow-hidden">
-      <div className="absolute inset-0 terminal-grid opacity-10" />
+    <section className="py-24 md:py-32 relative overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-primary/3 to-transparent" />
+      <div className="absolute inset-0 terminal-grid opacity-[0.05]" />
       
-      <div className="container max-w-7xl mx-auto px-4 relative">
+      <div className="container max-w-7xl mx-auto px-4 relative z-10">
         <div className="text-center mb-16">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
           >
-            <Badge variant="outline" className="mb-4 border-accent/30 bg-accent/5">
+            <Badge variant="outline" className="mb-4 border-primary/40 bg-primary/20 backdrop-blur-sm">
               Aperçu du Dashboard
             </Badge>
-            <h2 className="text-3xl md:text-5xl font-bold mb-4">
+            <h2 className="text-3xl md:text-5xl font-bold mb-4 text-foreground">
               Tout votre sourcing
-              <span className="block text-gradient-accent">dans un seul endroit</span>
+              <span className="block text-gradient-ai-vc">dans un seul endroit</span>
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
               Suivez vos analyses de startups, gérez vos rapports de due diligence et mesurez votre pipeline de deals.
@@ -50,7 +51,7 @@ export function DashboardPreview({ onStartTrial }: DashboardPreviewProps) {
           viewport={{ once: true }}
           transition={{ duration: 0.6 }}
         >
-          <div className="rounded-2xl border border-border bg-card shadow-2xl shadow-primary/5 overflow-hidden">
+          <div className="rounded-2xl border border-primary/30 bg-card/50 backdrop-blur-sm shadow-2xl shadow-primary/20 overflow-hidden glow-ai-vc">
             {/* Browser header */}
             <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-muted/30">
               <div className="flex gap-1.5">

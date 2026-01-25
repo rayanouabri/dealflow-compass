@@ -145,14 +145,14 @@ export default function Analyser() {
         </Link>
 
         <div className="mb-8">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-medium mb-4">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/20 border border-primary/40 text-primary text-xs font-medium mb-4 glow-ai-vc backdrop-blur-sm">
             <Sparkles className="w-3.5 h-3.5" />
             Étape 1 — Configuration
           </div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-foreground tracking-tight">
+          <h1 className="text-3xl sm:text-4xl font-bold text-foreground tracking-tight mb-2 bg-gradient-to-r from-foreground to-primary bg-clip-text text-transparent">
             Sourcez des startups
           </h1>
-          <p className="text-muted-foreground mt-1.5">
+          <p className="text-muted-foreground mt-1.5 text-base">
             Analysez un fond VC ou définissez votre thèse pour trouver des startups correspondantes.
           </p>
         </div>
@@ -182,7 +182,7 @@ export default function Analyser() {
           </div>
 
           {!useCustomThesis ? (
-            <div className="rounded-xl border border-border bg-white shadow-sm p-5 space-y-4">
+            <div className="rounded-xl border border-primary/20 bg-card/50 backdrop-blur-sm shadow-lg p-6 space-y-4">
               <label className="text-sm font-medium text-foreground">Nom du fond</label>
               <Input
                 placeholder="ex. Accel, Sequoia, a16z…"
@@ -196,7 +196,7 @@ export default function Analyser() {
                     key={f}
                     type="button"
                     onClick={() => setFundName(f)}
-                    className="text-xs px-3 py-1.5 rounded-lg border border-border bg-muted/50 hover:bg-muted hover:border-primary/30 transition-colors"
+                    className="text-xs px-3 py-1.5 rounded-lg border border-primary/20 bg-card/30 hover:bg-primary/10 hover:border-primary/40 transition-all backdrop-blur-sm"
                   >
                     {f}
                   </button>
@@ -204,19 +204,19 @@ export default function Analyser() {
               </div>
             </div>
           ) : (
-            <div className="rounded-xl border border-border bg-white shadow-sm p-5">
+            <div className="rounded-xl border border-primary/20 bg-card/50 backdrop-blur-sm shadow-lg p-6">
               <CustomThesisInput thesis={customThesis} onChange={setCustomThesis} onClear={() => setCustomThesis({})} />
             </div>
           )}
 
-          <div className="rounded-xl border border-border bg-white shadow-sm p-5">
+          <div className="rounded-xl border border-primary/20 bg-card/50 backdrop-blur-sm shadow-lg p-6">
             <AnalysisParameters params={params} onChange={setParams} isPro={false} />
           </div>
 
           <Button
             type="button"
             size="lg"
-            className="w-full h-12 text-base font-medium"
+            className="w-full h-14 text-base font-medium bg-primary hover:bg-primary/90 text-primary-foreground glow-ai-vc shadow-[0_0_30px_rgba(48,100%,55%,0.4)]"
             onClick={handleSubmit}
             disabled={!hasTrialRemaining || (!useCustomThesis && !fundName.trim())}
           >

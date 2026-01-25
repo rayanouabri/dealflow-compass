@@ -315,14 +315,14 @@ export default function Analyse() {
         <aside className="lg:col-span-4 xl:col-span-3 space-y-5 lg:col-start-1 lg:row-start-2">
           <Link
             to="/analyser"
-            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors hover:bg-primary/10 px-3 py-1.5 rounded-lg"
           >
             <ArrowLeft className="w-4 h-4" />
             Nouvelle analyse
           </Link>
 
           {startups.length > 1 ? (
-            <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+            <div className="rounded-xl border border-primary/20 bg-card/50 backdrop-blur-sm p-5 space-y-3 shadow-lg">
               <h3 className="text-sm font-semibold text-foreground">Startups ({startups.length})</h3>
               <div className="space-y-2">
                 {startups.map((s, i) => (
@@ -330,7 +330,9 @@ export default function Analyse() {
                     key={i}
                     onClick={() => setSelectedStartupIndex(i)}
                     className={`w-full text-left p-3 rounded-lg border transition-all ${
-                      selectedStartupIndex === i ? "border-primary bg-primary/5" : "border-border hover:border-primary/30"
+                      selectedStartupIndex === i 
+                        ? "border-primary/50 bg-primary/20 glow-ai-vc" 
+                        : "border-primary/20 hover:border-primary/40 hover:bg-primary/10"
                     }`}
                   >
                     <div className="font-medium text-sm truncate">{s.name}</div>
@@ -358,14 +360,16 @@ export default function Analyse() {
         </aside>
 
         <div className="lg:col-span-8 xl:col-span-9 lg:row-start-2 min-w-0 max-w-full overflow-x-hidden">
-          <h1 className="text-xl font-bold text-foreground mb-4 break-words">Page d&apos;analyse — Résultats</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-foreground mb-6 break-words bg-gradient-to-r from-foreground to-primary bg-clip-text text-transparent">
+            Page d&apos;analyse — Résultats
+          </h1>
           {!currentStartup ? (
             <p className="text-muted-foreground">Aucune startup à afficher.</p>
           ) : (
             <Tabs defaultValue="report" className="w-full max-w-full overflow-x-hidden">
-              <TabsList className="grid w-full grid-cols-2 mb-4 h-11 rounded-xl bg-muted/50 p-1">
-                <TabsTrigger value="report" className="rounded-lg">Rapport</TabsTrigger>
-                <TabsTrigger value="qa" className="rounded-lg">Assistant IA</TabsTrigger>
+              <TabsList className="grid w-full grid-cols-2 mb-6 h-12 rounded-xl bg-card/50 backdrop-blur-sm border border-primary/20 p-1">
+                <TabsTrigger value="report" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground glow-ai-vc">Rapport</TabsTrigger>
+                <TabsTrigger value="qa" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground glow-ai-vc">Assistant IA</TabsTrigger>
               </TabsList>
               <TabsContent value="report" className="mt-0 max-w-full overflow-x-hidden">
                 <SlideCarousel
@@ -375,7 +379,7 @@ export default function Analyse() {
                 />
               </TabsContent>
               <TabsContent value="qa" className="mt-0 max-w-full overflow-x-hidden">
-                <div className="rounded-xl border border-border bg-card overflow-hidden max-w-full w-full">
+                <div className="rounded-xl border border-primary/20 bg-card/50 backdrop-blur-sm overflow-hidden max-w-full w-full shadow-lg">
                   <div className="h-[580px] overflow-hidden w-full">
                     <AIQAChat
                       startupData={{ ...currentStartup, dueDiligenceReport: currentReport }}

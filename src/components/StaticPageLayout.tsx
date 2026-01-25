@@ -9,23 +9,27 @@ interface StaticPageLayoutProps {
 
 export function StaticPageLayout({ children, title }: StaticPageLayoutProps) {
   return (
-    <div className="min-h-screen flex flex-col bg-background">
-      <header className="border-b border-border bg-card/50 sticky top-0 z-50">
+    <div className="min-h-screen flex flex-col bg-background dark">
+      <div className="fixed inset-0 bg-gradient-to-br from-black via-[#0a0a0f] to-black -z-10" />
+      <div className="fixed inset-0 terminal-grid opacity-[0.03] -z-10" />
+      <div className="fixed inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(48,100%,55%,0.05),transparent_50%)] -z-10" />
+      
+      <header className="border-b border-primary/20 bg-background/80 backdrop-blur-md sticky top-0 z-50 shadow-sm">
         <div className="container max-w-3xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            <Link to="/" className="flex items-center gap-3 hover:opacity-90 transition-opacity">
-              <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
+            <Link to="/" className="flex items-center gap-3 hover:opacity-90 transition-opacity group">
+              <div className="w-9 h-9 rounded-xl bg-primary/20 flex items-center justify-center glow-ai-vc border border-primary/30 group-hover:scale-110 transition-transform">
                 <BarChart3 className="w-5 h-5 text-primary" />
               </div>
               <span className="font-semibold text-foreground">
-                <span className="text-primary">ai</span>
-                <span className="text-amber-500">vc</span>
-                <span className="text-primary">.</span>
+                <span className="text-foreground">ai</span>
+                <span className="text-primary">vc</span>
+                <span className="text-foreground">.</span>
               </span>
             </Link>
             <Link
               to="/"
-              className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors hover:bg-primary/10 px-3 py-1.5 rounded-lg"
             >
               <ArrowLeft className="w-4 h-4" />
               Retour à l&apos;accueil
@@ -33,9 +37,11 @@ export function StaticPageLayout({ children, title }: StaticPageLayoutProps) {
           </div>
         </div>
       </header>
-      <main className="flex-1 container max-w-3xl mx-auto px-4 py-10">
-        <h1 className="text-2xl font-bold text-foreground mb-6">{title}</h1>
-        <div className="prose prose-neutral dark:prose-invert max-w-none text-muted-foreground">
+      <main className="flex-1 container max-w-3xl mx-auto px-4 py-10 relative z-10">
+        <h1 className="text-3xl md:text-4xl font-bold text-foreground mb-8 bg-gradient-to-r from-foreground to-primary bg-clip-text text-transparent">
+          {title}
+        </h1>
+        <div className="prose prose-neutral dark:prose-invert max-w-none text-muted-foreground prose-headings:text-foreground prose-a:text-primary prose-strong:text-foreground">
           {children}
         </div>
       </main>

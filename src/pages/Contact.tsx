@@ -13,16 +13,20 @@ export default function Contact() {
         <div className="flex flex-col gap-4 not-prose">
           <a
             href={`mailto:${CONTACT_EMAIL}`}
-            className="inline-flex items-center gap-3 p-4 rounded-xl border border-border bg-card hover:bg-muted/50 transition-colors"
+            className="inline-flex items-center gap-3 p-6 rounded-xl border border-primary/30 bg-card/50 hover:bg-primary/10 hover:border-primary/50 transition-all backdrop-blur-sm glow-ai-vc group"
           >
-            <Mail className="w-5 h-5 text-primary shrink-0" />
-            <span className="font-medium text-foreground">{CONTACT_EMAIL}</span>
+            <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors">
+              <Mail className="w-6 h-6 text-primary shrink-0" />
+            </div>
+            <span className="font-medium text-foreground text-lg">{CONTACT_EMAIL}</span>
           </a>
-          <div className="flex items-start gap-3 p-4 rounded-xl border border-border bg-card">
-            <MapPin className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+          <div className="flex items-start gap-3 p-6 rounded-xl border border-primary/20 bg-card/50 backdrop-blur-sm">
+            <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center">
+              <MapPin className="w-6 h-6 text-primary shrink-0" />
+            </div>
             <div>
-              <p className="font-medium text-foreground mb-1">Rayan Ouabri</p>
-              <p className="text-sm">{CONTACT_EMAIL}</p>
+              <p className="font-semibold text-foreground mb-1 text-lg">Rayan Ouabri</p>
+              <p className="text-sm text-muted-foreground">{CONTACT_EMAIL}</p>
             </div>
           </div>
         </div>
