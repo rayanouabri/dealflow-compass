@@ -156,18 +156,76 @@ export function SlideCarousel({ slides, startupName, onExport }: SlideCarouselPr
                       return true;
                     })
                     .map(([key, value]) => {
-                    // Formatage intelligent des valeurs
+                    // Formatage intelligent des valeurs avec validation par type de métrique
                     let formattedValue: string;
                     let isEstimation = false;
                     let sourceInfo = "";
                     
+                    const keyUpper = key.toUpperCase();
+                    
+                    // Détecter le type de métrique pour appliquer les bonnes règles
+                    const isTeamSize = keyUpper.includes('TEAM') && (keyUpper.includes('SIZE') || keyUpper.includes('EMPLOYEES') || keyUpper.includes('HEADCOUNT'));
+                    const isPercentage = keyUpper.includes('GROWTH') || keyUpper.includes('CHURN') || keyUpper.includes('MARGIN') || 
+                                        keyUpper.includes('NRR') || keyUpper.includes('CAGR') || keyUpper.includes('RATE') ||
+                                        keyUpper.includes('RETENTION') || keyUpper.includes('CONVERSION') ||
+                                        (keyUpper.includes('MRR') && keyUpper.includes('GROWTH')) ||
+                                        (keyUpper.includes('ARR') && keyUpper.includes('GROWTH')) ||
+                                        keyUpper.includes('MOM') || keyUpper.includes('YOY');
+                    const isRevenue = (keyUpper.includes('MRR') && !keyUpper.includes('GROWTH')) || 
+                                     (keyUpper.includes('ARR') && !keyUpper.includes('GROWTH')) || 
+                                     keyUpper.includes('REVENUE') || keyUpper.includes('REVENU');
+                    const isMarketSize = keyUpper.includes('TAM') || keyUpper.includes('SAM') || keyUpper.includes('SOM');
+                    
                     if (typeof value === "number") {
-                      if (value >= 1000000) {
-                        formattedValue = `$${(value / 1000000).toFixed(1)}M`;
-                      } else if (value >= 1000) {
-                        formattedValue = `$${(value / 1000).toFixed(1)}K`;
-                      } else {
-                        formattedValue = value.toLocaleString();
+                      // Team size - nombre d'employés (pas de $, pas de M/K)
+                      if (isTeamSize) {
+                        if (value > 0 && value <= 50000) {
+                          formattedValue = `${Math.round(value)}`;
+                        } else {
+                          formattedValue = "N/A";
+                        }
+                      }
+                      // Pourcentages
+                      else if (isPercentage) {
+                        if (value >= -100 && value <= 10000) {
+                          formattedValue = `${value.toFixed(1)}%`;
+                        } else {
+                          formattedValue = "N/A";
+                        }
+                      }
+                      // Revenus (MRR, ARR)
+                      else if (isRevenue) {
+                        if (value >= 1000000000) {
+                          formattedValue = `$${(value / 1000000000).toFixed(1)}B`;
+                        } else if (value >= 1000000) {
+                          formattedValue = `$${(value / 1000000).toFixed(1)}M`;
+                        } else if (value >= 1000) {
+                          formattedValue = `$${(value / 1000).toFixed(1)}K`;
+                        } else {
+                          formattedValue = `$${value.toLocaleString()}`;
+                        }
+                      }
+                      // Taille de marché
+                      else if (isMarketSize) {
+                        if (value >= 1000000000) {
+                          formattedValue = `$${(value / 1000000000).toFixed(1)}B`;
+                        } else if (value >= 1000000) {
+                          formattedValue = `$${(value / 1000000).toFixed(1)}M`;
+                        } else {
+                          formattedValue = `$${value.toLocaleString()}`;
+                        }
+                      }
+                      // Autres montants financiers
+                      else {
+                        if (value >= 1000000000) {
+                          formattedValue = `$${(value / 1000000000).toFixed(1)}B`;
+                        } else if (value >= 1000000) {
+                          formattedValue = `$${(value / 1000000).toFixed(1)}M`;
+                        } else if (value >= 1000) {
+                          formattedValue = `$${(value / 1000).toFixed(1)}K`;
+                        } else {
+                          formattedValue = value.toLocaleString();
+                        }
                       }
                     } else if (typeof value === "string") {
                       const valueStr = value.trim();
@@ -183,69 +241,74 @@ export function SlideCarousel({ slides, startupName, onExport }: SlideCarouselPr
                         sourceInfo = sourceMatch[0];
                       }
                       
-                      // Extraire le nombre principal avec support pour B (billions), M (millions), K (thousands)
-                      // Patterns: "$2.5M ARR (source: ...)" ou "$42.3B TAM" ou "42.3" (sans unité, à inférer)
-                      const numberMatch = valueStr.match(/\$?([\d,]+\.?\d*)\s*([BKMbkm]?)/);
-                      
-                      if (numberMatch) {
-                        let num = parseFloat(numberMatch[1].replace(/,/g, ''));
-                        const unit = numberMatch[2].toUpperCase();
-                        
-                        // Convertir en nombre brut
-                        if (unit === 'B' || unit === 'BILLION') {
-                          num = num * 1000000000;
-                        } else if (unit === 'M' || unit === 'MILLION') {
-                          num = num * 1000000;
-                        } else if (unit === 'K' || unit === 'THOUSAND') {
-                          num = num * 1000;
-                        } else if (!unit && num > 0) {
-                          // Pas d'unité spécifiée - inférer selon la clé de métrique
-                          const keyUpper = key.toUpperCase();
-                          if (keyUpper.includes('TAM') || keyUpper.includes('SAM') || keyUpper.includes('SOM')) {
-                            // TAM/SAM/SOM sont généralement en billions ou millions selon la taille
-                            if (num >= 1 && num < 1000) {
-                              // Probablement en billions
-                              num = num * 1000000000;
-                            } else if (num >= 1000) {
-                              // Probablement déjà en millions
-                              num = num * 1000000;
+                      // Team size - ne JAMAIS convertir en millions, rejeter si contient M/K/B
+                      if (isTeamSize) {
+                        // Rejeter si contient des unités monétaires
+                        if (/[MKm](\s|$)/.test(valueStr) || valueStr.includes('million') || valueStr.includes('M€') || valueStr.includes('M$')) {
+                          formattedValue = "N/A";
+                        } else {
+                          const numMatch = valueStr.match(/(\d+)/);
+                          if (numMatch) {
+                            const num = parseInt(numMatch[1], 10);
+                            if (num > 0 && num <= 50000) {
+                              formattedValue = `${num}`;
+                            } else {
+                              formattedValue = "N/A";
                             }
-                          } else if (keyUpper.includes('CAGR') || keyUpper.includes('GROWTH') || keyUpper.includes('CHURN') || keyUpper.includes('NRR') || keyUpper.includes('MARGIN')) {
-                            // Pourcentages - garder tel quel
+                          } else {
+                            formattedValue = "N/A";
+                          }
+                        }
+                      }
+                      // Pourcentages - toujours ajouter %, même si déjà présent
+                      else if (isPercentage) {
+                        // Extraire le nombre (peut avoir % déjà)
+                        const numMatch = valueStr.match(/(-?\d+\.?\d*)/);
+                        if (numMatch) {
+                          const num = parseFloat(numMatch[1]);
+                          if (num >= -100 && num <= 10000) {
                             formattedValue = `${num.toFixed(1)}%`;
                           } else {
-                            // Autres métriques - supposer millions si > 1, sinon thousands
-                            if (num >= 1 && num < 1000) {
-                              num = num * 1000000;
-                            } else if (num < 1) {
-                              num = num * 1000;
-                            }
+                            formattedValue = "N/A";
                           }
-                        }
-                        
-                        if (!isNaN(num) && num > 0) {
-                          // Formater le nombre avec unité appropriée
-                          if (num >= 1000000000) {
-                            formattedValue = `$${(num / 1000000000).toFixed(1)}B`;
-                          } else if (num >= 1000000) {
-                            formattedValue = `$${(num / 1000000).toFixed(1)}M`;
-                          } else if (num >= 1000) {
-                            formattedValue = `$${(num / 1000).toFixed(1)}K`;
-                          } else {
-                            formattedValue = `$${num.toLocaleString()}`;
-                          }
-                        } else if (key.toUpperCase().includes('CAGR') || key.toUpperCase().includes('GROWTH') || key.toUpperCase().includes('CHURN') || key.toUpperCase().includes('NRR') || key.toUpperCase().includes('MARGIN')) {
-                          // Pourcentages
-                          formattedValue = `${num.toFixed(1)}%`;
                         } else {
-                          formattedValue = valueStr;
+                          formattedValue = "N/A";
                         }
-                      } else {
-                        // Pas de nombre trouvé, garder la valeur originale mais nettoyer
-                        formattedValue = valueStr
-                          .replace(/\(source[^)]*\)/gi, '')
-                          .replace(/source:\s*[^,)]+/gi, '')
-                          .trim();
+                      }
+                      // Revenus et montants
+                      else {
+                        const numberMatch = valueStr.match(/\$?([\d,]+\.?\d*)\s*([BKMbkm]?)/);
+                        if (numberMatch) {
+                          let num = parseFloat(numberMatch[1].replace(/,/g, ''));
+                          const unit = numberMatch[2].toUpperCase();
+                          
+                          if (unit === 'B') num = num * 1e9;
+                          else if (unit === 'M') num = num * 1e6;
+                          else if (unit === 'K') num = num * 1e3;
+                          else if (!unit && isMarketSize && num > 0 && num < 1000) {
+                            // TAM/SAM/SOM sans unité = billions par défaut
+                            num = num * 1e9;
+                          } else if (!unit && isRevenue && num > 0 && num < 1000) {
+                            // MRR/ARR sans unité = millions par défaut
+                            num = num * 1e6;
+                          }
+                          
+                          if (!isNaN(num) && num > 0) {
+                            if (num >= 1e9) {
+                              formattedValue = `$${(num / 1e9).toFixed(1)}B`;
+                            } else if (num >= 1e6) {
+                              formattedValue = `$${(num / 1e6).toFixed(1)}M`;
+                            } else if (num >= 1e3) {
+                              formattedValue = `$${(num / 1e3).toFixed(1)}K`;
+                            } else {
+                              formattedValue = `$${num.toLocaleString()}`;
+                            }
+                          } else {
+                            formattedValue = valueStr.replace(/\(source[^)]*\)/gi, '').replace(/source:\s*[^,)]+/gi, '').trim();
+                          }
+                        } else {
+                          formattedValue = valueStr.replace(/\(source[^)]*\)/gi, '').replace(/source:\s*[^,)]+/gi, '').trim();
+                        }
                       }
                     } else {
                       formattedValue = String(value);
@@ -258,9 +321,8 @@ export function SlideCarousel({ slides, startupName, onExport }: SlideCarouselPr
                       .replace(/(arr|mrr|nrr|cac|ltv|tam|sam|som|cagr)/gi, (match) => match.toUpperCase())
                       .trim();
                     
-                    // Ajouter unité par défaut si manquante pour certaines métriques
-                    const keyUpper = key.toUpperCase();
-                    if ((keyUpper.includes('TAM') || keyUpper.includes('SAM') || keyUpper.includes('SOM')) && !formattedValue.includes('B') && !formattedValue.includes('M')) {
+                    // Ajouter unité par défaut si manquante pour certaines métriques (keyUpper déjà défini plus haut)
+                    if ((keyUpper.includes('TAM') || keyUpper.includes('SAM') || keyUpper.includes('SOM')) && formattedValue && !formattedValue.includes('B') && !formattedValue.includes('M')) {
                       // Si TAM/SAM/SOM sans unité visible, c'est probablement en billions
                       if (!formattedValue.match(/[BMK]/)) {
                         // Pas d'unité détectée, ajouter B par défaut pour TAM/SAM/SOM

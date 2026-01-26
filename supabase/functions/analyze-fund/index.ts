@@ -525,6 +525,111 @@ function sanitizeSlideMetrics(slide: { metrics?: Record<string, unknown> }): voi
     }
     m[key] = Math.round(Math.min(9999, n));
   }
+
+  // Validation spécifique pour chaque type de métrique
+  for (const [key, value] of Object.entries(m)) {
+    if (value == null) continue;
+    const keyUpper = key.toUpperCase();
+    const s = String(value).trim();
+    
+    // Team size - doit être un nombre entre 1 et 50000 (pas de millions!)
+    if (keyUpper.includes('TEAM') && (keyUpper.includes('SIZE') || keyUpper.includes('EMPLOYEES') || keyUpper.includes('HEADCOUNT'))) {
+      if (looksLikeMoney(value)) {
+        delete m[key];
+        continue;
+      }
+      // Rejeter explicitement si contient M/K/B dans la string
+      if (typeof value === "string" && (/[MKm](\s|$)/.test(s) || s.includes('million') || s.includes('M€') || s.includes('M$'))) {
+        delete m[key];
+        continue;
+      }
+      const n = parseFloat(s.replace(/[^\d.,]/g, "").replace(",", "."));
+      if (!Number.isFinite(n) || n <= 0 || n > 50000) {
+        delete m[key];
+        continue;
+      }
+      m[key] = Math.round(n);
+      continue;
+    }
+
+    // Pourcentages (growth, churn, margin, NRR, etc.) - entre -100% et 10000%
+    if (keyUpper.includes('GROWTH') || keyUpper.includes('CHURN') || keyUpper.includes('MARGIN') || 
+        keyUpper.includes('NRR') || keyUpper.includes('CAGR') || keyUpper.includes('RATE') ||
+        keyUpper.includes('RETENTION') || keyUpper.includes('CONVERSION') ||
+        (keyUpper.includes('MRR') && keyUpper.includes('GROWTH')) ||
+        (keyUpper.includes('ARR') && keyUpper.includes('GROWTH')) ||
+        keyUpper.includes('MOM') || keyUpper.includes('YOY')) {
+      if (looksLikeMoney(value)) {
+        delete m[key];
+        continue;
+      }
+      // Extraire le nombre (peut avoir % déjà)
+      const numStr = s.replace(/[^\d.,-]/g, "").replace(",", ".");
+      const n = parseFloat(numStr);
+      if (!Number.isFinite(n) || n < -100 || n > 10000) {
+        delete m[key];
+        continue;
+      }
+      // Stocker comme nombre (le formatage ajoutera %)
+      m[key] = Math.round(n * 10) / 10; // 1 décimale
+      continue;
+    }
+
+    // MRR, ARR - doivent être des montants en dollars
+    if (keyUpper.includes('MRR') || keyUpper.includes('ARR') || keyUpper.includes('REVENUE') || keyUpper.includes('REVENU')) {
+      // Si c'est déjà un nombre, le garder
+      if (typeof value === "number") {
+        if (value < 0 || value > 1e15) {
+          delete m[key];
+          continue;
+        }
+        m[key] = value;
+        continue;
+      }
+      // Si c'est une string, extraire le nombre
+      const numMatch = s.match(/\$?([\d,]+\.?\d*)\s*([BKMbkm]?)/);
+      if (numMatch) {
+        let num = parseFloat(numMatch[1].replace(/,/g, ''));
+        const unit = numMatch[2].toUpperCase();
+        if (unit === 'B') num = num * 1e9;
+        else if (unit === 'M') num = num * 1e6;
+        else if (unit === 'K') num = num * 1e3;
+        if (num > 0 && num <= 1e15) {
+          m[key] = num;
+          continue;
+        }
+      }
+      delete m[key];
+      continue;
+    }
+
+    // TAM, SAM, SOM - montants de marché
+    if (keyUpper.includes('TAM') || keyUpper.includes('SAM') || keyUpper.includes('SOM')) {
+      if (typeof value === "number") {
+        if (value < 0 || value > 1e15) {
+          delete m[key];
+          continue;
+        }
+        m[key] = value;
+        continue;
+      }
+      const numMatch = s.match(/\$?([\d,]+\.?\d*)\s*([BKMbkm]?)/);
+      if (numMatch) {
+        let num = parseFloat(numMatch[1].replace(/,/g, ''));
+        const unit = numMatch[2].toUpperCase();
+        if (unit === 'B') num = num * 1e9;
+        else if (unit === 'M') num = num * 1e6;
+        else if (unit === 'K') num = num * 1e3;
+        else if (num > 0 && num < 1000) num = num * 1e9; // Par défaut billions pour TAM/SAM/SOM
+        if (num > 0 && num <= 1e15) {
+          m[key] = num;
+          continue;
+        }
+      }
+      delete m[key];
+      continue;
+    }
+  }
 }
 
 serve(async (req) => {
@@ -805,10 +910,10 @@ HEALTHCARE IT :
 ⚠️ UTILISE CES MOYENNES pour faire des estimations intelligentes quand les données réelles ne sont pas disponibles.
 
 ⚠️ RÈGLES DE TYPES — NE JAMAIS MÉLANGER ⚠️
-- SCORES (fitScore, pmfScore) : TOUJOURS un nombre. fitScore = 1–10, pmfScore = 0–100. JAMAIS de millions, $, M, €. Ex: fitScore 7 ✓ | fitScore "60 millions" ✗.
-- MONTANTS ($) : ARR, MRR, CAC, LTV, valuation, TAM, SAM, SOM, askAmount, burnRate — en $ ou M€. Ex: "$2.5M ARR".
-- POURCENTAGES (%) : NRR, churn, croissance, marge, CAGR — en %. Ex: "120% NRR", "5% churn/mois".
-- ENTIERS : brevets, nombre de clients, team size, runway (mois). Ex: 3 brevets, 12 mois runway.
+- SCORES (fitScore, pmfScore) : TOUJOURS un nombre ENTRE 1-10 (fitScore) ou 0-100 (pmfScore). JAMAIS de millions, $, M, €, K. Ex: fitScore 7 ✓ | fitScore "60 millions" ✗ | fitScore "201M" ✗.
+- MONTANTS ($) : ARR, MRR, CAC, LTV, valuation, TAM, SAM, SOM, askAmount, burnRate — en $ avec unité (K/M/B). Ex: "$2.5M ARR", "$150K MRR". TOUJOURS inclure l'unité.
+- POURCENTAGES (%) : NRR, churn, croissance (growth), marge (margin), CAGR, MRR growth — TOUJOURS avec le symbole %. Ex: "120% NRR", "5% churn/mois", "8% MRR growth", "15% YoY growth". JAMAIS juste "8" sans %.
+- ENTIERS : brevets, nombre de clients (customers), team size, runway (mois) — TOUJOURS un nombre entier SANS unité M/K/B. Ex: teamSize 25 ✓ | teamSize "201M" ✗ | teamSize "201" ✓. Team size doit être entre 1 et 50000. Runway en mois (entier).
 
 ${customThesis ? `
 THÈSE D'INVESTISSEMENT PERSONNALISÉE:
@@ -850,7 +955,7 @@ Tu dois répondre avec un objet JSON valide contenant:
    - "metrics": {
        "arr": "ARR en $ avec source OU estimation (ex: '$2.5M ARR (source: techcrunch.com)' ou '$1.8M ARR (estimation basée sur stade Series A SaaS)')",
        "mrr": "MRR en $ avec source OU estimation (ex: '$200K MRR (source: ...)' ou '$150K MRR (estimation)')",
-       "growth": "Croissance MoM/YoY en % avec source OU estimation",
+       "growth": "Croissance MoM/YoY en % avec source OU estimation. FORMAT OBLIGATOIRE: 'X% MoM' ou 'X% YoY' avec le symbole %. Ex: '8% MoM', '120% YoY'. JAMAIS juste '8' sans %.",
        "customers": "Nombre de clients avec source OU estimation basée sur ARR/MRR et secteur",
        "nrr": "Net Revenue Retention en % avec source OU estimation (moyenne SaaS: 100-120%)",
        "cac": "Customer Acquisition Cost en $ avec source OU estimation (moyenne SaaS: $500-2000)",
@@ -864,7 +969,7 @@ Tu dois répondre avec un objet JSON valide contenant:
      }
    - "team": {
        "founders": [{"name": "Nom complet", "role": "CEO/CTO/etc", "linkedin": "URL", "background": "Expérience"}],
-       "teamSize": "Nombre d'employés",
+       "teamSize": "Nombre d'employés (ENTIER entre 1-50000, JAMAIS avec M/K/B. Ex: 25, 150, 500. PAS 201M, PAS 2.5K)",
        "keyHires": "Recrutements clés récents"
      }
    - "verificationStatus": "verified" | "partially_verified" | "unverified"
@@ -914,7 +1019,7 @@ Tu dois répondre avec un objet JSON valide contenant:
        "metrics": { 
          "arr": "ARR en $ avec source URL OU estimation. Format: '$2.5M ARR (source: ...)' ou '$1.2M ARR (estimation - Series A SaaS)'",
          "mrr": "MRR en $ avec source OU estimation. Si ARR disponible, MRR = ARR/12.",
-         "mrrGrowth": "Croissance MRR en % MoM/YoY avec source OU estimation. Estime basé sur stade si non disponible.", 
+         "mrrGrowth": "Croissance MRR en % MoM/YoY avec source OU estimation. FORMAT OBLIGATOIRE: 'X% MoM' ou 'X% YoY' avec le symbole %. Ex: '8% MoM', '120% YoY'. JAMAIS juste '8' sans %.", 
          "customers": "Nombre de clients avec source OU estimation. Calcule si ARR/MRR et ARPU disponibles.", 
          "nrr": "NRR en % avec source OU estimation (moyenne SaaS par stade: Seed 80-100%, Series A 100-120%, etc.)",
          "cac": "CAC en $ avec source OU estimation (moyenne SaaS par stade: Seed $500-1500, Series A $1000-2000, etc.)",
