@@ -110,7 +110,7 @@ serve(async (req) => {
     // Configuration AI : Gemini ou Vertex AI
     const AI_PROVIDER = (Deno.env.get("AI_PROVIDER") || "gemini").toLowerCase();
     const GEMINI_API_KEY = Deno.env.get("GEMINI_KEY_2") || Deno.env.get("GEMINI_API_KEY");
-    const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.0-flash";
+    const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-pro";
     const VERTEX_AI_PROJECT = Deno.env.get("VERTEX_AI_PROJECT_ID");
     const VERTEX_AI_LOCATION = Deno.env.get("VERTEX_AI_LOCATION") || "us-central1";
     const VERTEX_AI_MODEL = Deno.env.get("VERTEX_AI_MODEL") || "gemini-pro";

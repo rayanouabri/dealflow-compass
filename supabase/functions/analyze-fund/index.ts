@@ -669,7 +669,7 @@ serve(async (req) => {
     // Configuration AI : Gemini ou Vertex AI
     const AI_PROVIDER = (Deno.env.get("AI_PROVIDER") || "gemini").toLowerCase(); // "gemini" ou "vertex"
     const GEMINI_API_KEY = Deno.env.get("GEMINI_KEY_2") || Deno.env.get("GEMINI_API_KEY");
-    const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.0-flash"; // gemini-2.0-flash, gemini-pro, gemini-1.5-pro, gemini-1.5-flash
+    const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-pro"; // gemini-2.5-pro, gemini-2.0-flash, gemini-pro, gemini-1.5-pro, gemini-1.5-flash
     const VERTEX_AI_PROJECT = Deno.env.get("VERTEX_AI_PROJECT_ID");
     const VERTEX_AI_LOCATION = Deno.env.get("VERTEX_AI_LOCATION") || "us-central1";
     const VERTEX_AI_MODEL = Deno.env.get("VERTEX_AI_MODEL") || "gemini-pro"; // gemini-pro, gemini-1.5-pro, etc.
@@ -824,7 +824,7 @@ serve(async (req) => {
       const refPrompt = `Tu es un assistant. Fonds: "${fundName || "thèse personnalisée"}". Contexte thèse:\n${fundThesisContext.slice(0, 800)}\n\nContexte marché:\n${marketData.marketContext?.slice(0, 500) || ""}\n\nStartups déjà trouvées (extraits):\n${startupSearchResults.slice(0, 8).map(r => r.title + " " + r.description).join("\n")}\n\nPropose EXACTEMENT 3 à 5 requêtes de recherche web (en anglais, courtes) pour trouver d'autres startups ou données complémentaires. Réponds UNIQUEMENT avec un JSON: {"queries": ["query1", "query2", ...]}`;
       const reflectionModel = AI_PROVIDER === "vertex" 
         ? `projects/${VERTEX_AI_PROJECT}/locations/${VERTEX_AI_LOCATION}/publishers/google/models/gemini-pro`
-        : `gemini-2.0-flash`;
+        : `gemini-2.5-pro`;
       const refUrl = AI_PROVIDER === "vertex"
         ? `https://${VERTEX_AI_LOCATION}-aiplatform.googleapis.com/v1/${reflectionModel}:generateContent`
         : `https://generativelanguage.googleapis.com/v1beta/models/${reflectionModel}:generateContent?key=${GEMINI_API_KEY}`;

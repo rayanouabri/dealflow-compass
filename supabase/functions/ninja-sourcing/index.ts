@@ -283,7 +283,8 @@ Identifie ${numberOfStartups} startup(s) les plus prometteuses et structure-les 
         }
       }
     } else if (AI_PROVIDER === "gemini") {
-      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
+      const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-pro";
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
       
       const geminiResponse = await fetch(geminiUrl, {
         method: "POST",

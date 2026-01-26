@@ -24,11 +24,12 @@ Tous les secrets se configurent dans :
    - Obtention : https://makersuite.google.com/app/apikey (gratuit)
    - Exemple : `AIzaSyD...`
 3. **GEMINI_MODEL** (optionnel)
-   - Défaut : `gemini-2.0-flash`
+   - Défaut : `gemini-2.5-pro`
    - Options disponibles :
-     - `gemini-2.0-flash` ⚡ (rapide, recommandé)
-     - `gemini-pro` (plus puissant)
-     - `gemini-1.5-pro` (très puissant, meilleure qualité)
+     - `gemini-2.5-pro` ⭐ (recommandé - le plus puissant)
+     - `gemini-2.0-flash` ⚡ (rapide)
+     - `gemini-pro` (puissant)
+     - `gemini-1.5-pro` (très puissant)
      - `gemini-1.5-flash` (rapide et efficace)
 
 ### Exemple de configuration :
@@ -102,9 +103,10 @@ Pour passer de Gemini à Vertex AI (ou vice versa) :
 
 | Modèle | Vitesse | Qualité | Coût | Recommandation |
 |--------|---------|---------|------|----------------|
-| `gemini-2.0-flash` | ⚡⚡⚡ | ⭐⭐⭐ | Gratuit | **Recommandé** - Rapide et efficace |
+| `gemini-2.5-pro` | ⚡⚡ | ⭐⭐⭐⭐⭐ | Gratuit | **Recommandé** - Le plus puissant |
+| `gemini-2.0-flash` | ⚡⚡⚡ | ⭐⭐⭐ | Gratuit | Rapide et efficace |
 | `gemini-1.5-flash` | ⚡⚡⚡ | ⭐⭐⭐⭐ | Gratuit | Bon compromis |
-| `gemini-pro` | ⚡⚡ | ⭐⭐⭐⭐ | Gratuit | Plus puissant, un peu plus lent |
+| `gemini-pro` | ⚡⚡ | ⭐⭐⭐⭐ | Gratuit | Puissant, un peu plus lent |
 | `gemini-1.5-pro` | ⚡ | ⭐⭐⭐⭐⭐ | Payant (Vertex) | Meilleure qualité, plus lent |
 
 ---
@@ -140,8 +142,9 @@ Ou via le Dashboard Supabase → Edge Functions → Deploy
 - **Vertex AI** : Si vous avez déjà un compte GCP, meilleure intégration entre services
 
 **Q: Quel modèle Gemini choisir ?**
-- **gemini-2.0-flash** : Recommandé pour la plupart des cas (rapide et efficace)
-- **gemini-1.5-pro** : Si vous avez besoin de meilleure qualité (via Vertex AI)
+- **gemini-2.5-pro** : Recommandé - Le plus puissant et performant (par défaut)
+- **gemini-2.0-flash** : Si vous avez besoin de rapidité maximale
+- **gemini-1.5-pro** : Alternative puissante (via Vertex AI)
 
 **Q: Puis-je utiliser Vertex AI avec une clé API ?**
 - Non, Vertex AI nécessite un projet GCP et des credentials de service account
