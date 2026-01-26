@@ -187,12 +187,12 @@ export default function Analyser() {
 
           {!useCustomThesis ? (
             <div className="rounded-xl border border-primary/40 bg-card/80 backdrop-blur-sm shadow-lg p-6 space-y-4">
-              <label className="text-sm font-medium text-foreground">Nom du fond</label>
+              <label className="block text-sm font-medium text-gray-100">Nom du fond</label>
               <Input
                 placeholder="ex. Accel, Sequoia, a16z…"
                 value={fundName}
                 onChange={(e) => setFundName(e.target.value)}
-                className="h-11"
+                className="h-11 bg-gray-800/50 border border-gray-700 text-white placeholder:text-gray-500 rounded-lg focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/20"
               />
               <div className="flex flex-wrap gap-2">
                 {EXAMPLE_FUNDS.map((f) => (
@@ -200,7 +200,7 @@ export default function Analyser() {
                     key={f}
                     type="button"
                     onClick={() => setFundName(f)}
-                    className="text-xs px-3 py-1.5 rounded-lg border border-primary/20 bg-card/30 hover:bg-primary/10 hover:border-primary/40 transition-all backdrop-blur-sm"
+                    className="text-xs px-3 py-1.5 rounded-lg border border-gray-700 bg-gray-800 text-gray-300 hover:text-white hover:bg-gray-700 transition-all"
                   >
                     {f}
                   </button>

@@ -197,80 +197,82 @@ export function AnalysisParameters({ params, onChange, isPro = false }: Analysis
         </Button>
       </CollapsibleTrigger>
 
-      <CollapsibleContent className="mt-4 space-y-6 animate-slide-in-up">
+      <CollapsibleContent className="mt-4 space-y-6 animate-slide-in-up bg-gray-900/50 rounded-xl p-6">
         {/* Startup Profile */}
-        <div className="p-4 rounded-lg bg-card border border-border space-y-4">
-          <h4 className="text-sm font-medium flex items-center gap-2">
-            <Building2 className="w-4 h-4 text-primary" />
-            Startup Profile
-          </h4>
+        <div className="bg-gray-900/30 backdrop-blur-sm border border-gray-800 rounded-xl p-6 space-y-4">
+          <div className="flex items-center gap-2 mb-4">
+            <Building2 className="w-5 h-5 text-yellow-400" />
+            <h4 className="text-lg font-semibold text-yellow-400">
+              Startup Profile
+            </h4>
+          </div>
           
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label className="text-xs">Stage</Label>
+              <Label className="block text-sm font-medium text-gray-100">Stage</Label>
               <Select value={params.startupStage} onValueChange={(v) => updateParam("startupStage", v)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
+                <SelectTrigger className="h-10 bg-gray-800/50 border border-gray-700 text-white rounded-lg px-4 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/20">
+                  <SelectValue className="text-white" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-gray-800 border-gray-700">
                   {stages.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                    <SelectItem key={s.value} value={s.value} className="text-white hover:bg-gray-700 focus:bg-gray-700">{s.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs">Sector</Label>
+              <Label className="block text-sm font-medium text-gray-100">Sector</Label>
               <Select value={params.startupSector} onValueChange={(v) => updateParam("startupSector", v)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
+                <SelectTrigger className="h-10 bg-gray-800/50 border border-gray-700 text-white rounded-lg px-4 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/20">
+                  <SelectValue className="text-white" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-gray-800 border-gray-700">
                   {sectors.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                    <SelectItem key={s.value} value={s.value} className="text-white hover:bg-gray-700 focus:bg-gray-700">{s.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs">Business Model</Label>
+              <Label className="block text-sm font-medium text-gray-100">Business Model</Label>
               <Select value={params.businessModel} onValueChange={(v) => updateParam("businessModel", v)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
+                <SelectTrigger className="h-10 bg-gray-800/50 border border-gray-700 text-white rounded-lg px-4 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/20">
+                  <SelectValue className="text-white" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-gray-800 border-gray-700">
                   {businessModels.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                    <SelectItem key={s.value} value={s.value} className="text-white hover:bg-gray-700 focus:bg-gray-700">{s.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs">Target Market</Label>
+              <Label className="block text-sm font-medium text-gray-100">Target Market</Label>
               <Select value={params.targetMarket} onValueChange={(v) => updateParam("targetMarket", v)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
+                <SelectTrigger className="h-10 bg-gray-800/50 border border-gray-700 text-white rounded-lg px-4 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/20">
+                  <SelectValue className="text-white" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-gray-800 border-gray-700">
                   {targetMarkets.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                    <SelectItem key={s.value} value={s.value} className="text-white hover:bg-gray-700 focus:bg-gray-700">{s.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2 col-span-2">
-              <Label className="text-xs">Team Size</Label>
+              <Label className="block text-sm font-medium text-gray-100">Team Size</Label>
               <Select value={params.teamSize} onValueChange={(v) => updateParam("teamSize", v)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
+                <SelectTrigger className="h-10 bg-gray-800/50 border border-gray-700 text-white rounded-lg px-4 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/20">
+                  <SelectValue className="text-white" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-gray-800 border-gray-700">
                   {teamSizes.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                    <SelectItem key={s.value} value={s.value} className="text-white hover:bg-gray-700 focus:bg-gray-700">{s.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -279,50 +281,52 @@ export function AnalysisParameters({ params, onChange, isPro = false }: Analysis
         </div>
 
         {/* Funding Requirements */}
-        <div className="p-4 rounded-lg bg-card border border-border space-y-4">
-          <h4 className="text-sm font-medium flex items-center gap-2">
-            <DollarSign className="w-4 h-4 text-primary" />
-            Funding Requirements
-          </h4>
+        <div className="bg-gray-900/30 backdrop-blur-sm border border-gray-800 rounded-xl p-6 space-y-4">
+          <div className="flex items-center gap-2 mb-4">
+            <DollarSign className="w-5 h-5 text-yellow-400" />
+            <h4 className="text-lg font-semibold text-yellow-400">
+              Funding Requirements
+            </h4>
+          </div>
           
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label className="text-xs">Target Raise</Label>
+              <Label className="block text-sm font-medium text-gray-100">Target Raise</Label>
               <Select value={params.fundingAmount} onValueChange={(v) => updateParam("fundingAmount", v)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
+                <SelectTrigger className="h-10 bg-gray-800/50 border border-gray-700 text-white rounded-lg px-4 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/20">
+                  <SelectValue className="text-white" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-gray-800 border-gray-700">
                   {fundingAmounts.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                    <SelectItem key={s.value} value={s.value} className="text-white hover:bg-gray-700 focus:bg-gray-700">{s.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs">Round Type</Label>
+              <Label className="block text-sm font-medium text-gray-100">Round Type</Label>
               <Select value={params.fundingStage} onValueChange={(v) => updateParam("fundingStage", v)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
+                <SelectTrigger className="h-10 bg-gray-800/50 border border-gray-700 text-white rounded-lg px-4 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/20">
+                  <SelectValue className="text-white" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-gray-800 border-gray-700">
                   {stages.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                    <SelectItem key={s.value} value={s.value} className="text-white hover:bg-gray-700 focus:bg-gray-700">{s.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2 col-span-2">
-              <Label className="text-xs">Timeline</Label>
+              <Label className="block text-sm font-medium text-gray-100">Timeline</Label>
               <Select value={params.timeline} onValueChange={(v) => updateParam("timeline", v)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
+                <SelectTrigger className="h-10 bg-gray-800/50 border border-gray-700 text-white rounded-lg px-4 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/20">
+                  <SelectValue className="text-white" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-gray-800 border-gray-700">
                   {timelines.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                    <SelectItem key={s.value} value={s.value} className="text-white hover:bg-gray-700 focus:bg-gray-700">{s.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -331,36 +335,38 @@ export function AnalysisParameters({ params, onChange, isPro = false }: Analysis
         </div>
 
         {/* Geographic Preferences */}
-        <div className="p-4 rounded-lg bg-card border border-border space-y-4">
-          <h4 className="text-sm font-medium flex items-center gap-2">
-            <Globe className="w-4 h-4 text-primary" />
-            Geographic Preferences
-          </h4>
+        <div className="bg-gray-900/30 backdrop-blur-sm border border-gray-800 rounded-xl p-6 space-y-4">
+          <div className="flex items-center gap-2 mb-4">
+            <Globe className="w-5 h-5 text-yellow-400" />
+            <h4 className="text-lg font-semibold text-yellow-400">
+              Geographic Preferences
+            </h4>
+          </div>
           
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label className="text-xs">Your Location</Label>
+              <Label className="block text-sm font-medium text-gray-100">Your Location</Label>
               <Select value={params.headquartersRegion} onValueChange={(v) => updateParam("headquartersRegion", v)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
+                <SelectTrigger className="h-10 bg-gray-800/50 border border-gray-700 text-white rounded-lg px-4 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/20">
+                  <SelectValue className="text-white" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-gray-800 border-gray-700">
                   {regions.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                    <SelectItem key={s.value} value={s.value} className="text-white hover:bg-gray-700 focus:bg-gray-700">{s.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs">Target Geography</Label>
+              <Label className="block text-sm font-medium text-gray-100">Target Geography</Label>
               <Select value={params.targetGeography} onValueChange={(v) => updateParam("targetGeography", v)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
+                <SelectTrigger className="h-10 bg-gray-800/50 border border-gray-700 text-white rounded-lg px-4 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/20">
+                  <SelectValue className="text-white" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-gray-800 border-gray-700">
                   {regions.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                    <SelectItem key={s.value} value={s.value} className="text-white hover:bg-gray-700 focus:bg-gray-700">{s.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -369,31 +375,33 @@ export function AnalysisParameters({ params, onChange, isPro = false }: Analysis
         </div>
 
         {/* Analysis Options */}
-        <div className="p-4 rounded-lg bg-card border border-border space-y-4">
-          <h4 className="text-sm font-medium flex items-center gap-2">
-            <Layers className="w-4 h-4 text-primary" />
-            Analysis Options
-          </h4>
+        <div className="bg-gray-900/30 backdrop-blur-sm border border-gray-800 rounded-xl p-6 space-y-4">
+          <div className="flex items-center gap-2 mb-4">
+            <Layers className="w-5 h-5 text-yellow-400" />
+            <h4 className="text-lg font-semibold text-yellow-400">
+              Analysis Options
+            </h4>
+          </div>
           
           <div className="grid grid-cols-2 gap-4">
             <div className="flex items-center justify-between">
-              <Label className="text-xs">Competitor Analysis</Label>
+              <Label className="text-sm font-medium text-gray-100">Competitor Analysis</Label>
               <Switch 
                 checked={params.includeCompetitors} 
                 onCheckedChange={(v) => updateParam("includeCompetitors", v)}
               />
             </div>
             <div className="flex items-center justify-between">
-              <Label className="text-xs">Market Sizing</Label>
+              <Label className="text-sm font-medium text-gray-100">Market Sizing</Label>
               <Switch 
                 checked={params.includeMarketSize} 
                 onCheckedChange={(v) => updateParam("includeMarketSize", v)}
               />
             </div>
             <div className="flex items-center justify-between">
-              <Label className="text-xs flex items-center gap-1">
+              <Label className="text-sm font-medium text-gray-100 flex items-center gap-1">
                 Detailed Financials
-                {!isPro && <Badge variant="outline" className="text-[10px] px-1">PRO</Badge>}
+                {!isPro && <Badge variant="outline" className="text-[10px] px-1 border-gray-700 text-gray-300">PRO</Badge>}
               </Label>
               <Switch 
                 checked={params.detailedFinancials} 
@@ -402,7 +410,7 @@ export function AnalysisParameters({ params, onChange, isPro = false }: Analysis
               />
             </div>
             <div className="flex items-center justify-between">
-              <Label className="text-xs">Competitive Moat</Label>
+              <Label className="text-sm font-medium text-gray-100">Competitive Moat</Label>
               <Switch 
                 checked={params.includeMoat} 
                 onCheckedChange={(v) => updateParam("includeMoat", v)}
@@ -412,22 +420,24 @@ export function AnalysisParameters({ params, onChange, isPro = false }: Analysis
         </div>
 
         {/* Output Preferences */}
-        <div className="p-4 rounded-lg bg-card border border-border space-y-4">
-          <h4 className="text-sm font-medium flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-primary" />
-            Output Preferences
-          </h4>
+        <div className="bg-gray-900/30 backdrop-blur-sm border border-gray-800 rounded-xl p-6 space-y-4">
+          <div className="flex items-center gap-2 mb-4">
+            <TrendingUp className="w-5 h-5 text-yellow-400" />
+            <h4 className="text-lg font-semibold text-yellow-400">
+              Output Preferences
+            </h4>
+          </div>
           
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label className="text-xs">Deck Style</Label>
+              <Label className="block text-sm font-medium text-gray-100">Deck Style</Label>
               <Select value={params.deckStyle} onValueChange={(v) => updateParam("deckStyle", v)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
+                <SelectTrigger className="h-10 bg-gray-800/50 border border-gray-700 text-white rounded-lg px-4 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/20">
+                  <SelectValue className="text-white" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-gray-800 border-gray-700">
                   {deckStyles.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                    <SelectItem key={s.value} value={s.value} className="text-white hover:bg-gray-700 focus:bg-gray-700">{s.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -435,23 +445,29 @@ export function AnalysisParameters({ params, onChange, isPro = false }: Analysis
 
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label className="text-xs">Detail Level</Label>
-                <span className="text-xs text-muted-foreground">{params.detailLevel}%</span>
+                <Label className="text-sm font-medium text-gray-100">Detail Level</Label>
+                <span className="text-xl font-bold text-yellow-400">{params.detailLevel}%</span>
               </div>
-              <Slider
-                value={[params.detailLevel]}
-                onValueChange={([v]) => updateParam("detailLevel", v)}
-                min={30}
-                max={100}
-                step={10}
-                className="w-full"
-              />
+              <div className="relative">
+                <Slider
+                  value={[params.detailLevel]}
+                  onValueChange={([v]) => updateParam("detailLevel", v)}
+                  min={30}
+                  max={100}
+                  step={10}
+                  className="w-full [&>div:first-child]:!bg-gray-700 [&>div:first-child>div]:!bg-yellow-400 [&>button]:!bg-yellow-400 [&>button]:!border-yellow-500 [&>button]:!border-2"
+                />
+              </div>
+              <div className="flex justify-between text-xs text-gray-400">
+                <span>30%</span>
+                <span>100%</span>
+              </div>
             </div>
 
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label className="text-xs">Number of Startups</Label>
-                <span className="text-xs text-muted-foreground">{params.numberOfStartups} startup(s)</span>
+                <Label className="text-sm font-medium text-gray-100">Number of Startups</Label>
+                <span className="text-xl font-bold text-yellow-400">{params.numberOfStartups}</span>
               </div>
               <Slider
                 value={[params.numberOfStartups]}
@@ -459,26 +475,36 @@ export function AnalysisParameters({ params, onChange, isPro = false }: Analysis
                 min={1}
                 max={5}
                 step={1}
-                className="w-full"
+                className="w-full [&_[role=slider]]:bg-yellow-400 [&_[role=slider]]:border-2 [&_[role=slider]]:border-yellow-500 [&>div>div]:bg-gray-700"
               />
-              <p className="text-xs text-muted-foreground">
+              <div className="flex justify-between text-xs text-gray-400">
+                <span>1</span>
+                <span>5</span>
+              </div>
+              <p className="text-xs text-gray-400">
                 Génère plusieurs startups correspondant à votre thèse
               </p>
             </div>
             
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label className="text-xs">Slides per Report</Label>
-                <span className="text-xs text-muted-foreground">{params.slideCount} slides</span>
+                <Label className="text-sm font-medium text-gray-100">Slides per Report</Label>
+                <span className="text-xl font-bold text-yellow-400">{params.slideCount}</span>
               </div>
-              <Slider
-                value={[params.slideCount]}
-                onValueChange={([v]) => updateParam("slideCount", v)}
-                min={6}
-                max={15}
-                step={1}
-                className="w-full"
-              />
+              <div className="relative">
+                <Slider
+                  value={[params.slideCount]}
+                  onValueChange={([v]) => updateParam("slideCount", v)}
+                  min={6}
+                  max={15}
+                  step={1}
+                  className="w-full [&>div:first-child]:!bg-gray-700 [&>div:first-child>div]:!bg-yellow-400 [&>button]:!bg-yellow-400 [&>button]:!border-yellow-500 [&>button]:!border-2"
+                />
+              </div>
+              <div className="flex justify-between text-xs text-gray-400">
+                <span>6</span>
+                <span>15</span>
+              </div>
             </div>
           </div>
         </div>
