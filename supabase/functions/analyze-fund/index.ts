@@ -666,14 +666,46 @@ serve(async (req) => {
 
     const { fundName, customThesis, params = {} } = requestData;
     
-    // Gemini + Brave uniquement
+    // Configuration AI : Gemini ou Vertex AI
+    const AI_PROVIDER = (Deno.env.get("AI_PROVIDER") || "gemini").toLowerCase(); // "gemini" ou "vertex"
     const GEMINI_API_KEY = Deno.env.get("GEMINI_KEY_2") || Deno.env.get("GEMINI_API_KEY");
+    const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.0-flash"; // gemini-2.0-flash, gemini-pro, gemini-1.5-pro, gemini-1.5-flash
+    const VERTEX_AI_PROJECT = Deno.env.get("VERTEX_AI_PROJECT_ID");
+    const VERTEX_AI_LOCATION = Deno.env.get("VERTEX_AI_LOCATION") || "us-central1";
+    const VERTEX_AI_MODEL = Deno.env.get("VERTEX_AI_MODEL") || "gemini-pro"; // gemini-pro, gemini-1.5-pro, etc.
     const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY");
     
-    if (!GEMINI_API_KEY) {
-      console.error("Gemini not configured");
+    // Helper pour construire l'URL et les headers selon le provider
+    const getAIEndpoint = (model?: string) => {
+      const useModel = model || (AI_PROVIDER === "vertex" ? VERTEX_AI_MODEL : GEMINI_MODEL);
+      if (AI_PROVIDER === "vertex") {
+        if (!VERTEX_AI_PROJECT) {
+          throw new Error("VERTEX_AI_PROJECT_ID requis pour Vertex AI");
+        }
+        return {
+          url: `https://${VERTEX_AI_LOCATION}-aiplatform.googleapis.com/v1/projects/${VERTEX_AI_PROJECT}/locations/${VERTEX_AI_LOCATION}/publishers/google/models/${useModel}:generateContent`,
+          headers: { "Content-Type": "application/json" },
+          needsAuth: true
+        };
+      } else {
+        if (!GEMINI_API_KEY) {
+          throw new Error("GEMINI_API_KEY requis pour Gemini");
+        }
+        return {
+          url: `https://generativelanguage.googleapis.com/v1beta/models/${useModel}:generateContent?key=${GEMINI_API_KEY}`,
+          headers: { "Content-Type": "application/json" },
+          needsAuth: false
+        };
+      }
+    };
+    
+    // Vérification de la configuration
+    try {
+      getAIEndpoint(); // Test de la config
+    } catch (configError) {
+      const errorMsg = configError instanceof Error ? configError.message : String(configError);
       return new Response(JSON.stringify({ 
-        error: "Gemini non configuré. Ajoutez GEMINI_KEY_2 ou GEMINI_API_KEY dans Supabase Dashboard > Edge Functions > analyze-fund > Settings > Secrets.\n\n📖 Clé gratuite : https://makersuite.google.com/app/apikey",
+        error: `Configuration AI invalide: ${errorMsg}\n\nPour Gemini: Ajoutez GEMINI_KEY_2 ou GEMINI_API_KEY\nPour Vertex AI: Ajoutez VERTEX_AI_PROJECT_ID\n\nModèle Gemini actuel: ${GEMINI_MODEL} (changez via GEMINI_MODEL)\nProvider actuel: ${AI_PROVIDER} (changez via AI_PROVIDER=gemini|vertex)`,
         setupRequired: true
       }), {
         status: 500,
@@ -790,7 +822,18 @@ serve(async (req) => {
     let reflectionContext = "";
     try {
       const refPrompt = `Tu es un assistant. Fonds: "${fundName || "thèse personnalisée"}". Contexte thèse:\n${fundThesisContext.slice(0, 800)}\n\nContexte marché:\n${marketData.marketContext?.slice(0, 500) || ""}\n\nStartups déjà trouvées (extraits):\n${startupSearchResults.slice(0, 8).map(r => r.title + " " + r.description).join("\n")}\n\nPropose EXACTEMENT 3 à 5 requêtes de recherche web (en anglais, courtes) pour trouver d'autres startups ou données complémentaires. Réponds UNIQUEMENT avec un JSON: {"queries": ["query1", "query2", ...]}`;
-      const refRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`, {
+      const reflectionModel = AI_PROVIDER === "vertex" 
+        ? `projects/${VERTEX_AI_PROJECT}/locations/${VERTEX_AI_LOCATION}/publishers/google/models/gemini-pro`
+        : `gemini-2.0-flash`;
+      const refUrl = AI_PROVIDER === "vertex"
+        ? `https://${VERTEX_AI_LOCATION}-aiplatform.googleapis.com/v1/${reflectionModel}:generateContent`
+        : `https://generativelanguage.googleapis.com/v1beta/models/${reflectionModel}:generateContent?key=${GEMINI_API_KEY}`;
+      const refHeaders = AI_PROVIDER === "vertex"
+        ? { "Content-Type": "application/json", "Authorization": `Bearer ${JSON.parse(VERTEX_AI_CREDENTIALS).access_token || ""}` }
+        : { "Content-Type": "application/json" };
+      const refRes = await fetch(refUrl, {
+        method: "POST",
+        headers: refHeaders,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1164,8 +1207,8 @@ IMPORTANT : Utilise UNIQUEMENT les données réelles trouvées dans les recherch
     let response: Response | null = null;
     let lastErrorText = "";
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
-    const geminiBody = {
+    const aiEndpoint = getAIEndpoint(); // Utilise le modèle configuré
+    const aiBody = {
       contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.` }] }],
       generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens: 32768, responseMimeType: "application/json" as const },
     };
@@ -1173,22 +1216,22 @@ IMPORTANT : Utilise UNIQUEMENT les données réelles trouvées dans les recherch
     for (let attempt = 0; attempt < 3; attempt++) {
       if (attempt > 0) {
         const waitMs = Math.min(8000, 800 * Math.pow(2, attempt - 1)) + Math.floor(Math.random() * 400);
-        console.log(`Gemini rate-limited. Retrying in ${waitMs}ms (attempt ${attempt + 1}/3)`);
+        console.log(`${AI_PROVIDER === "vertex" ? "Vertex AI" : "Gemini"} rate-limited. Retrying in ${waitMs}ms (attempt ${attempt + 1}/3)`);
         await sleep(waitMs);
       }
-      response = await fetch(geminiUrl, {
+      response = await fetch(aiEndpoint.url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(geminiBody),
+        headers: aiEndpoint.headers,
+        body: JSON.stringify(aiBody),
       });
       if (response.ok) break;
       lastErrorText = await response.text();
-      console.error("Gemini API error:", response.status, lastErrorText);
+      console.error(`${AI_PROVIDER === "vertex" ? "Vertex AI" : "Gemini"} API error:`, response.status, lastErrorText);
       if (response.status !== 429) break;
     }
 
     if (!response) {
-      return new Response(JSON.stringify({ error: "Échec appel API Gemini." }), {
+      return new Response(JSON.stringify({ error: `Échec appel API ${AI_PROVIDER === "vertex" ? "Vertex AI" : "Gemini"}.` }), {
         status: 500,
         headers: { ...corsHeaders(req), "Content-Type": "application/json" },
       });
@@ -1197,32 +1240,35 @@ IMPORTANT : Utilise UNIQUEMENT les données réelles trouvées dans les recherch
     if (!response.ok) {
       const status = response.status;
       const errorText = lastErrorText || (await response.text());
+      const providerName = AI_PROVIDER === "vertex" ? "Vertex AI" : "Gemini";
       if (status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit Gemini. Attendez ~30–60s puis réessayez." }), {
+        return new Response(JSON.stringify({ error: `Rate limit ${providerName}. Attendez ~30–60s puis réessayez.` }), {
           status: 429,
           headers: { ...corsHeaders(req), "Content-Type": "application/json" },
         });
       }
       if (status === 403) {
         return new Response(JSON.stringify({
-          error: "Clé Gemini invalide ou expirée. Vérifiez GEMINI_KEY_2 ou GEMINI_API_KEY.",
+          error: AI_PROVIDER === "vertex" 
+            ? "Credentials Vertex AI invalides. Vérifiez VERTEX_AI_PROJECT_ID et VERTEX_AI_CREDENTIALS."
+            : "Clé Gemini invalide ou expirée. Vérifiez GEMINI_KEY_2 ou GEMINI_API_KEY.",
         }), {
           status: 403,
           headers: { ...corsHeaders(req), "Content-Type": "application/json" },
         });
       }
       if (status === 400) {
-        let msg = "Erreur requête Gemini.";
+        let msg = `Erreur requête ${providerName}.`;
         try {
           const d = JSON.parse(errorText);
-          if (d.error?.message) msg = `Gemini: ${d.error.message}`;
+          if (d.error?.message) msg = `${providerName}: ${d.error.message}`;
         } catch { /* ignore */ }
         return new Response(JSON.stringify({ error: msg }), {
           status: 400,
           headers: { ...corsHeaders(req), "Content-Type": "application/json" },
         });
       }
-      return new Response(JSON.stringify({ error: `Gemini API error (${status})` }), {
+      return new Response(JSON.stringify({ error: `${providerName} API error (${status})` }), {
         status: 500,
         headers: { ...corsHeaders(req), "Content-Type": "application/json" },
       });
@@ -1238,7 +1284,7 @@ IMPORTANT : Utilise UNIQUEMENT les données réelles trouvées dans les recherch
           headers: { ...corsHeaders(req), "Content-Type": "application/json" },
         });
       }
-      return new Response(JSON.stringify({ error: "Réponse Gemini vide." }), {
+      return new Response(JSON.stringify({ error: `Réponse ${AI_PROVIDER === "vertex" ? "Vertex AI" : "Gemini"} vide.` }), {
         status: 500,
         headers: { ...corsHeaders(req), "Content-Type": "application/json" },
       });

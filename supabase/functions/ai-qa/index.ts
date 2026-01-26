@@ -107,10 +107,40 @@ serve(async (req) => {
       });
     }
 
+    // Configuration AI : Gemini ou Vertex AI
+    const AI_PROVIDER = (Deno.env.get("AI_PROVIDER") || "gemini").toLowerCase();
     const GEMINI_API_KEY = Deno.env.get("GEMINI_KEY_2") || Deno.env.get("GEMINI_API_KEY");
-    if (!GEMINI_API_KEY) {
+    const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.0-flash";
+    const VERTEX_AI_PROJECT = Deno.env.get("VERTEX_AI_PROJECT_ID");
+    const VERTEX_AI_LOCATION = Deno.env.get("VERTEX_AI_LOCATION") || "us-central1";
+    const VERTEX_AI_MODEL = Deno.env.get("VERTEX_AI_MODEL") || "gemini-pro";
+    
+    const getAIEndpoint = () => {
+      if (AI_PROVIDER === "vertex") {
+        if (!VERTEX_AI_PROJECT) {
+          throw new Error("VERTEX_AI_PROJECT_ID requis pour Vertex AI");
+        }
+        return {
+          url: `https://${VERTEX_AI_LOCATION}-aiplatform.googleapis.com/v1/projects/${VERTEX_AI_PROJECT}/locations/${VERTEX_AI_LOCATION}/publishers/google/models/${VERTEX_AI_MODEL}:generateContent`,
+          headers: { "Content-Type": "application/json" },
+        };
+      } else {
+        if (!GEMINI_API_KEY) {
+          throw new Error("GEMINI_API_KEY requis pour Gemini");
+        }
+        return {
+          url: `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+          headers: { "Content-Type": "application/json" },
+        };
+      }
+    };
+    
+    try {
+      getAIEndpoint(); // Test config
+    } catch (configError) {
+      const errorMsg = configError instanceof Error ? configError.message : String(configError);
       return new Response(JSON.stringify({ 
-        error: "Gemini non configuré. Ajoutez GEMINI_KEY_2 ou GEMINI_API_KEY dans Supabase > Edge Functions > ai-qa > Settings > Secrets.",
+        error: `Configuration AI invalide: ${errorMsg}\n\nPour Gemini: GEMINI_KEY_2 ou GEMINI_API_KEY\nPour Vertex AI: VERTEX_AI_PROJECT_ID\nModèle: ${AI_PROVIDER === "vertex" ? VERTEX_AI_MODEL : GEMINI_MODEL}`,
         setupRequired: true
       }), {
         status: 500,
@@ -206,10 +236,10 @@ ${historyContext}
 
 QUESTION: ${question}`;
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
-    const geminiRes = await fetch(geminiUrl, {
+    const aiEndpoint = getAIEndpoint();
+    const aiRes = await fetch(aiEndpoint.url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: aiEndpoint.headers,
       body: JSON.stringify({
         contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
         generationConfig: {
@@ -221,13 +251,13 @@ QUESTION: ${question}`;
       }),
     });
 
-    if (!geminiRes.ok) {
-      const errText = await geminiRes.text();
-      throw new Error(`Gemini API error: ${geminiRes.status} - ${errText}`);
+    if (!aiRes.ok) {
+      const errText = await aiRes.text();
+      throw new Error(`${AI_PROVIDER === "vertex" ? "Vertex AI" : "Gemini"} API error: ${aiRes.status} - ${errText}`);
     }
 
-    const geminiData = await geminiRes.json();
-    let answer = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "Désolé, je n'ai pas pu générer de réponse.";
+    const aiData = await aiRes.json();
+    let answer = aiData.candidates?.[0]?.content?.parts?.[0]?.text || "Désolé, je n'ai pas pu générer de réponse.";
 
     const urlRegex = /(https?:\/\/[^\s)]+)/g;
     const urls = answer.match(urlRegex) || [];
