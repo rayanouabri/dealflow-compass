@@ -24,9 +24,10 @@ export function LandingPage({ onStartTrial, onLogin, trialRemaining }: LandingPa
 
   return (
     <div className="min-h-screen bg-background dark">
-      <div className="fixed inset-0 bg-gradient-to-br from-black via-[#0a0a0f] to-black -z-10" />
-      <div className="fixed inset-0 terminal-grid opacity-[0.03] -z-10" />
-      <div className="fixed inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(48,100%,55%,0.05),transparent_50%)] -z-10" />
+      <div className="fixed inset-0 bg-gradient-to-br from-[#1a1a2e] via-[#252540] to-[#1a1a2e] -z-10" />
+      <div className="fixed inset-0 terminal-grid opacity-[0.12] -z-10" />
+      <div className="fixed inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(48,100%,60%,0.25),transparent_50%)] -z-10" />
+      <div className="fixed inset-0 bg-[radial-gradient(circle_at_70%_80%,rgba(220,50%,50%,0.18),transparent_50%)] -z-10" />
       <Header onStartTrial={onStartTrial} onLogin={onLogin} />
       <HeroSection 
         onStartTrial={onStartTrial} 

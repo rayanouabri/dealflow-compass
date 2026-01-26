@@ -24,7 +24,7 @@ export function Header({ onStartTrial, onLogin }: HeaderProps) {
   };
 
   return (
-    <header className="border-b border-border/30 bg-background/80 backdrop-blur-md sticky top-0 z-50 shadow-sm">
+    <header className="border-b border-primary/30 bg-background/90 backdrop-blur-md sticky top-0 z-50 shadow-lg shadow-primary/10">
       <div className="container max-w-7xl mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}

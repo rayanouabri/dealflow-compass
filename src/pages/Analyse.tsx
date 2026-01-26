@@ -322,7 +322,7 @@ export default function Analyse() {
           </Link>
 
           {startups.length > 1 ? (
-            <div className="rounded-xl border border-primary/20 bg-card/50 backdrop-blur-sm p-5 space-y-3 shadow-lg">
+            <div className="rounded-xl border border-primary/40 bg-card/80 backdrop-blur-sm p-5 space-y-3 shadow-lg">
               <h3 className="text-sm font-semibold text-foreground">Startups ({startups.length})</h3>
               <div className="space-y-2">
                 {startups.map((s, i) => (
@@ -379,7 +379,7 @@ export default function Analyse() {
                 />
               </TabsContent>
               <TabsContent value="qa" className="mt-0 max-w-full overflow-x-hidden">
-                <div className="rounded-xl border border-primary/20 bg-card/50 backdrop-blur-sm overflow-hidden max-w-full w-full shadow-lg">
+                <div className="rounded-xl border border-primary/40 bg-card/80 backdrop-blur-sm overflow-hidden max-w-full w-full shadow-lg">
                   <div className="h-[580px] overflow-hidden w-full">
                     <AIQAChat
                       startupData={{ ...currentStartup, dueDiligenceReport: currentReport }}

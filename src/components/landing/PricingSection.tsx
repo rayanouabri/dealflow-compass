@@ -71,8 +71,8 @@ export function PricingSection({ onStartTrial }: PricingSectionProps) {
               key={i}
               className={`relative p-8 rounded-2xl border overflow-hidden backdrop-blur-sm ${
                 plan.popular 
-                  ? 'bg-card/50 border-primary/50 shadow-lg shadow-primary/20 glow-ai-vc' 
-                  : 'bg-card/50 border-primary/30'
+                  ? 'bg-card/80 border-primary/60 shadow-lg shadow-primary/30 glow-ai-vc' 
+                  : 'bg-card/70 border-primary/40'
               }`}
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}

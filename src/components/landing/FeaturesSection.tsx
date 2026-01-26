@@ -76,8 +76,8 @@ export function FeaturesSection() {
               key={i}
               className={`p-6 rounded-2xl border transition-all duration-300 group relative overflow-hidden backdrop-blur-sm ${
                 feature.highlight 
-                  ? 'bg-primary/10 border-primary/40 hover:border-primary/60 glow-ai-vc' 
-                  : 'bg-card/50 border-primary/20 hover:border-primary/40'
+                  ? 'bg-primary/15 border-primary/50 hover:border-primary/70 glow-ai-vc' 
+                  : 'bg-card/70 border-primary/30 hover:border-primary/50'
               }`}
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}

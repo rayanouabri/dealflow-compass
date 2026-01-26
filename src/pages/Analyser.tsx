@@ -182,7 +182,7 @@ export default function Analyser() {
           </div>
 
           {!useCustomThesis ? (
-            <div className="rounded-xl border border-primary/20 bg-card/50 backdrop-blur-sm shadow-lg p-6 space-y-4">
+            <div className="rounded-xl border border-primary/40 bg-card/80 backdrop-blur-sm shadow-lg p-6 space-y-4">
               <label className="text-sm font-medium text-foreground">Nom du fond</label>
               <Input
                 placeholder="ex. Accel, Sequoia, a16z…"
@@ -204,12 +204,12 @@ export default function Analyser() {
               </div>
             </div>
           ) : (
-            <div className="rounded-xl border border-primary/20 bg-card/50 backdrop-blur-sm shadow-lg p-6">
+            <div className="rounded-xl border border-primary/40 bg-card/80 backdrop-blur-sm shadow-lg p-6">
               <CustomThesisInput thesis={customThesis} onChange={setCustomThesis} onClear={() => setCustomThesis({})} />
             </div>
           )}
 
-          <div className="rounded-xl border border-primary/20 bg-card/50 backdrop-blur-sm shadow-lg p-6">
+          <div className="rounded-xl border border-primary/40 bg-card/80 backdrop-blur-sm shadow-lg p-6">
             <AnalysisParameters params={params} onChange={setParams} isPro={false} />
           </div>
 

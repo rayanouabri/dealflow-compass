@@ -20,7 +20,7 @@ export function StatsSection() {
           {stats.map((stat, i) => (
             <motion.div 
               key={i}
-              className="text-center p-8 rounded-2xl bg-card/50 border border-primary/20 backdrop-blur-sm glow-ai-vc relative overflow-hidden"
+              className="text-center p-8 rounded-2xl bg-card/80 border border-primary/40 backdrop-blur-sm glow-ai-vc relative overflow-hidden"
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}

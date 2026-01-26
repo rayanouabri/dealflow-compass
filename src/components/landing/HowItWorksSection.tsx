@@ -71,7 +71,7 @@ export function HowItWorksSection() {
                 <div className="hidden lg:block absolute top-12 left-full w-full h-px bg-gradient-to-r from-border to-transparent z-0" />
               )}
               
-              <div className="relative p-6 rounded-2xl bg-card/50 border border-primary/20 hover:border-primary/50 transition-all duration-300 h-full group-hover:shadow-lg group-hover:shadow-primary/20 backdrop-blur-sm overflow-hidden">
+              <div className="relative p-6 rounded-2xl bg-card/80 border border-primary/40 hover:border-primary/60 transition-all duration-300 h-full group-hover:shadow-lg group-hover:shadow-primary/30 backdrop-blur-sm overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                 {/* Step number */}
                 <div className="absolute -top-3 -left-3 w-10 h-10 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center glow-ai-vc border-2 border-background">
