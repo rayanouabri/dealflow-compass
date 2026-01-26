@@ -182,18 +182,18 @@ export function AnalysisParameters({ params, onChange, isPro = false }: Analysis
       <CollapsibleTrigger asChild>
         <Button 
           variant="outline" 
-          className="w-full justify-between h-11 px-4"
+          className="w-full justify-between h-11 px-4 bg-primary hover:bg-primary/90 text-primary-foreground border-primary/40"
         >
           <span className="flex items-center gap-2">
-            <Settings2 className="w-4 h-4" />
-            Analysis Parameters
+            <Settings2 className="w-4 h-4 text-primary-foreground" />
+            <span className="text-primary-foreground font-medium">Analysis Parameters</span>
             {!isOpen && (
-              <Badge variant="secondary" className="ml-2 text-xs">
+              <Badge variant="secondary" className="ml-2 text-xs bg-primary-foreground/20 text-primary-foreground border-primary-foreground/30">
                 {params.startupSector} • {params.fundingStage}
               </Badge>
             )}
           </span>
-          {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          {isOpen ? <ChevronUp className="w-4 h-4 text-primary-foreground" /> : <ChevronDown className="w-4 h-4 text-primary-foreground" />}
         </Button>
       </CollapsibleTrigger>
 
