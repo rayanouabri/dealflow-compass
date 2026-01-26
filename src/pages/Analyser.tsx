@@ -158,12 +158,14 @@ export default function Analyser() {
         </div>
 
         <div className="space-y-6">
-          <div className="flex rounded-xl border border-border bg-white shadow-sm overflow-hidden">
+          <div className="flex rounded-xl border border-primary/50 bg-card/70 backdrop-blur-sm overflow-hidden shadow-lg">
             <button
               type="button"
               onClick={() => setUseCustomThesis(false)}
-              className={`flex-1 flex items-center justify-center gap-2 py-3.5 px-4 text-sm font-medium transition-colors ${
-                !useCustomThesis ? "bg-primary text-primary-foreground" : "bg-muted/50 text-muted-foreground hover:bg-muted"
+              className={`flex-1 flex items-center justify-center gap-2 py-3.5 px-4 text-sm font-medium transition-all ${
+                !useCustomThesis 
+                  ? "bg-primary text-primary-foreground glow-ai-vc shadow-[0_0_20px_rgba(48,100%,60%,0.3)]" 
+                  : "bg-card/30 text-muted-foreground hover:bg-primary/10 hover:text-foreground"
               }`}
             >
               <Building2 className="w-4 h-4" />
@@ -172,8 +174,10 @@ export default function Analyser() {
             <button
               type="button"
               onClick={() => setUseCustomThesis(true)}
-              className={`flex-1 flex items-center justify-center gap-2 py-3.5 px-4 text-sm font-medium transition-colors ${
-                useCustomThesis ? "bg-primary text-primary-foreground" : "bg-muted/50 text-muted-foreground hover:bg-muted"
+              className={`flex-1 flex items-center justify-center gap-2 py-3.5 px-4 text-sm font-medium transition-all ${
+                useCustomThesis 
+                  ? "bg-primary text-primary-foreground glow-ai-vc shadow-[0_0_20px_rgba(48,100%,60%,0.3)]" 
+                  : "bg-card/30 text-muted-foreground hover:bg-primary/10 hover:text-foreground"
               }`}
             >
               <FileEdit className="w-4 h-4" />
