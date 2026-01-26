@@ -629,6 +629,46 @@ function sanitizeSlideMetrics(slide: { metrics?: Record<string, unknown> }): voi
       delete m[key];
       continue;
     }
+
+    // Market Share - DOIT être un pourcentage (0-100%)
+    if (keyUpper.includes('MARKET') && keyUpper.includes('SHARE')) {
+      if (looksLikeMoney(value)) {
+        delete m[key];
+        continue;
+      }
+      // Extraire le nombre (peut avoir % déjà)
+      const numStr = s.replace(/[^\d.,-]/g, "").replace(",", ".");
+      const n = parseFloat(numStr);
+      if (!Number.isFinite(n) || n < 0 || n > 100) {
+        delete m[key];
+        continue;
+      }
+      m[key] = Math.round(n * 10) / 10; // 1 décimale, stocké comme nombre
+      continue;
+    }
+
+    // Competitor Count - DOIT être un entier (nombre de concurrents)
+    if ((keyUpper.includes('COMPETITOR') && keyUpper.includes('COUNT')) || 
+        (keyUpper.includes('COMPETITOR') && keyUpper.includes('NUMBER')) ||
+        keyUpper === 'COMPETITORCOUNT') {
+      if (looksLikeMoney(value)) {
+        delete m[key];
+        continue;
+      }
+      // Rejeter si contient $ ou unités monétaires
+      if (s.includes('$') || s.includes('€') || s.includes('million') || s.includes('M€') || s.includes('M$')) {
+        delete m[key];
+        continue;
+      }
+      const numStr = s.replace(/[^\d]/g, "");
+      const n = parseInt(numStr, 10);
+      if (!Number.isFinite(n) || n < 0 || n > 1000) {
+        delete m[key];
+        continue;
+      }
+      m[key] = n; // Entier pur
+      continue;
+    }
   }
 }
 
@@ -762,12 +802,20 @@ serve(async (req) => {
     
     if (fundName && fundThesisContext) {
       sectors.forEach(sector => {
-        startupSearchQueries.push(`${sector} startup ${stage} stage ${geography} 2024`);
-        startupSearchQueries.push(`${sector} company funding ${stage} round 2024`);
+        // Recherches ciblées pour startups précoces et moins connues
+        startupSearchQueries.push(`${sector} pre-seed startup ${geography} 2024 2025 stealth`);
+        startupSearchQueries.push(`${sector} early stage startup ${geography} not on crunchbase 2024`);
+        startupSearchQueries.push(`${sector} ${stage} stage startup ${geography} new founded 2023 2024`);
+        startupSearchQueries.push(`${sector} startup ${stage} ${geography} under 50 employees 2024`);
+        startupSearchQueries.push(`${sector} startup ${stage} ${geography} less than 2 years old`);
       });
     } else if (customThesis) {
       sectors.forEach(sector => {
-        startupSearchQueries.push(`${sector} startup ${stage} ${geography} 2024`);
+        // Recherches ciblées pour startups précoces et moins connues
+        startupSearchQueries.push(`${sector} pre-seed startup ${geography} 2024 2025 stealth`);
+        startupSearchQueries.push(`${sector} early stage startup ${geography} not on crunchbase 2024`);
+        startupSearchQueries.push(`${sector} ${stage} startup ${geography} new founded 2023 2024`);
+        startupSearchQueries.push(`${sector} startup ${stage} ${geography} under 50 employees 2024`);
       });
     }
     
@@ -865,7 +913,15 @@ serve(async (req) => {
 
     const systemPrompt = `Tu es un analyste VC SENIOR avec 15+ ans d'expérience en sourcing de startups et due diligence approfondie pour les plus grands fonds (Sequoia, a16z, Accel, etc.).
 
-🎯 MISSION PRINCIPALE : SOURCING DE STARTUPS + DUE DILIGENCE PROFESSIONNELLE
+🎯 MISSION PRINCIPALE : SOURCING DE STARTUPS PRÉCOCES + DUE DILIGENCE PROFESSIONNELLE
+
+⚠️ RÈGLE CRITIQUE : SOURCING DE STARTUPS MOINS CONNUES
+- Tu dois trouver des startups PRÉCOCES (pre-seed, seed, très early stage)
+- ÉVITE les startups déjà très connues (pas de licornes, pas de startups avec >$50M de funding, pas de startups avec >200 employés)
+- PRIORITÉ aux startups qui ne sont PAS encore sur Crunchbase ou avec très peu d'informations publiques
+- Cherche des startups "stealth" ou très récentes (fondées < 2 ans)
+- Les startups doivent correspondre EXACTEMENT aux critères (secteurs, géographie, stade)
+- Si une startup est trop connue ou ne correspond pas, TROUVE-EN UNE AUTRE dans les résultats de recherche
 
 ⚠️ RÉFLEXION : Réfléchis étape par étape avant de conclure. Utilise TOUTES les couches de recherche fournies (thèse fonds, marché, startups classiques, ninja sourcing, deep dive actualités/concurrence/régulation, requêtes additionnelles). Croise les données avant de produire ton analyse.
 
@@ -1079,7 +1135,10 @@ Tu dois répondre avec un objet JSON valide contenant:
        "title": "Competitive Analysis",
        "content": "Analyse concurrentielle avec données marché (min 250 mots)",
        "keyPoints": ["Avantage 1", ...],
-       "metrics": { "marketShare": "Part de marché", "competitorCount": "Nb concurrents" }
+       "metrics": { 
+         "marketShare": "Part de marché en % (0-100%, ex: '5.2%' ou '5.2' - JAMAIS avec $, JAMAIS '1$' ou '$1')", 
+         "competitorCount": "Nombre de concurrents (entier, ex: 10, 25 - JAMAIS avec $, JAMAIS '10$' ou '$10')" 
+       }
      },
      {
        "title": "Team Assessment",

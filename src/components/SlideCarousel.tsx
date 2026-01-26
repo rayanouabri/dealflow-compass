@@ -165,12 +165,17 @@ export function SlideCarousel({ slides, startupName, onExport }: SlideCarouselPr
                     
                     // Détecter le type de métrique pour appliquer les bonnes règles
                     const isTeamSize = keyUpper.includes('TEAM') && (keyUpper.includes('SIZE') || keyUpper.includes('EMPLOYEES') || keyUpper.includes('HEADCOUNT'));
+                    const isMarketShare = keyUpper.includes('MARKET') && keyUpper.includes('SHARE');
+                    const isCompetitorCount = (keyUpper.includes('COMPETITOR') && keyUpper.includes('COUNT')) || 
+                        (keyUpper.includes('COMPETITOR') && keyUpper.includes('NUMBER')) ||
+                        keyUpper === 'COMPETITORCOUNT';
                     const isPercentage = keyUpper.includes('GROWTH') || keyUpper.includes('CHURN') || keyUpper.includes('MARGIN') || 
                                         keyUpper.includes('NRR') || keyUpper.includes('CAGR') || keyUpper.includes('RATE') ||
                                         keyUpper.includes('RETENTION') || keyUpper.includes('CONVERSION') ||
                                         (keyUpper.includes('MRR') && keyUpper.includes('GROWTH')) ||
                                         (keyUpper.includes('ARR') && keyUpper.includes('GROWTH')) ||
-                                        keyUpper.includes('MOM') || keyUpper.includes('YOY');
+                                        keyUpper.includes('MOM') || keyUpper.includes('YOY') ||
+                                        isMarketShare; // Market Share est aussi un pourcentage
                     const isRevenue = (keyUpper.includes('MRR') && !keyUpper.includes('GROWTH')) || 
                                      (keyUpper.includes('ARR') && !keyUpper.includes('GROWTH')) || 
                                      keyUpper.includes('REVENUE') || keyUpper.includes('REVENU');
@@ -185,7 +190,15 @@ export function SlideCarousel({ slides, startupName, onExport }: SlideCarouselPr
                           formattedValue = "N/A";
                         }
                       }
-                      // Pourcentages
+                      // Competitor Count - entier pur (pas de $)
+                      else if (isCompetitorCount) {
+                        if (value > 0 && value <= 1000) {
+                          formattedValue = `${Math.round(value)}`;
+                        } else {
+                          formattedValue = "N/A";
+                        }
+                      }
+                      // Pourcentages (inclut Market Share)
                       else if (isPercentage) {
                         if (value >= -100 && value <= 10000) {
                           formattedValue = `${value.toFixed(1)}%`;
@@ -252,6 +265,44 @@ export function SlideCarousel({ slides, startupName, onExport }: SlideCarouselPr
                             const num = parseInt(numMatch[1], 10);
                             if (num > 0 && num <= 50000) {
                               formattedValue = `${num}`;
+                            } else {
+                              formattedValue = "N/A";
+                            }
+                          } else {
+                            formattedValue = "N/A";
+                          }
+                        }
+                      }
+                      // Competitor Count - entier pur, rejeter si contient $ ou unités monétaires
+                      else if (isCompetitorCount) {
+                        // Rejeter si contient $, €, ou unités monétaires
+                        if (valueStr.includes('$') || valueStr.includes('€') || valueStr.includes('million') || valueStr.includes('M€') || valueStr.includes('M$')) {
+                          formattedValue = "N/A";
+                        } else {
+                          const numMatch = valueStr.match(/(\d+)/);
+                          if (numMatch) {
+                            const num = parseInt(numMatch[1], 10);
+                            if (num > 0 && num <= 1000) {
+                              formattedValue = `${num}`;
+                            } else {
+                              formattedValue = "N/A";
+                            }
+                          } else {
+                            formattedValue = "N/A";
+                          }
+                        }
+                      }
+                      // Market Share - pourcentage (0-100%), rejeter si contient $ ou montants
+                      else if (isMarketShare) {
+                        // Rejeter si contient $ ou unités monétaires
+                        if (valueStr.includes('$') || valueStr.includes('€') || valueStr.includes('million') || valueStr.includes('M€') || valueStr.includes('M$')) {
+                          formattedValue = "N/A";
+                        } else {
+                          const numMatch = valueStr.match(/(-?\d+\.?\d*)/);
+                          if (numMatch) {
+                            const num = parseFloat(numMatch[1]);
+                            if (num >= 0 && num <= 100) {
+                              formattedValue = `${num.toFixed(1)}%`;
                             } else {
                               formattedValue = "N/A";
                             }
