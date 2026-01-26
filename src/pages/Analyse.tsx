@@ -305,17 +305,17 @@ export default function Analyse() {
       onUpgrade={() => setShowPaywall(true)}
     >
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 max-w-full overflow-x-hidden" data-page="analyse">
-        <nav className="lg:col-span-12 flex items-center gap-2 text-sm text-muted-foreground mb-2 min-w-0 overflow-x-hidden">
-          <Link to="/" className="hover:text-foreground transition-colors flex-shrink-0">Accueil</Link>
-          <span className="flex-shrink-0">/</span>
-          <Link to="/analyser" className="hover:text-foreground transition-colors flex-shrink-0">Configuration</Link>
-          <span className="flex-shrink-0">/</span>
+        <nav className="lg:col-span-12 flex items-center gap-2 text-sm text-foreground/70 mb-4 min-w-0 overflow-x-hidden">
+          <Link to="/" className="hover:text-foreground transition-all duration-300 flex-shrink-0">Accueil</Link>
+          <span className="flex-shrink-0 text-foreground/50">/</span>
+          <Link to="/analyser" className="hover:text-foreground transition-all duration-300 flex-shrink-0">Configuration</Link>
+          <span className="flex-shrink-0 text-foreground/50">/</span>
           <span className="text-foreground font-medium truncate min-w-0">Résultats — {fundName || "Analyse"}</span>
         </nav>
         <aside className="lg:col-span-4 xl:col-span-3 space-y-5 lg:col-start-1 lg:row-start-2">
           <Link
             to="/analyser"
-            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors hover:bg-primary/10 px-3 py-1.5 rounded-lg"
+            className="inline-flex items-center gap-1.5 text-sm text-foreground/70 hover:text-primary transition-all duration-300 hover:bg-primary/10 px-3 py-1.5 rounded-lg border border-gray-700 hover:border-primary/40 backdrop-blur-sm"
           >
             <ArrowLeft className="w-4 h-4" />
             Nouvelle analyse
@@ -364,12 +364,22 @@ export default function Analyse() {
             Page d&apos;analyse — Résultats
           </h1>
           {!currentStartup ? (
-            <p className="text-muted-foreground">Aucune startup à afficher.</p>
+            <p className="text-foreground/70">Aucune startup à afficher.</p>
           ) : (
             <Tabs defaultValue="report" className="w-full max-w-full overflow-x-hidden">
-              <TabsList className="grid w-full grid-cols-2 mb-6 h-12 rounded-xl bg-card/50 backdrop-blur-sm border border-primary/20 p-1">
-                <TabsTrigger value="report" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground glow-ai-vc">Rapport</TabsTrigger>
-                <TabsTrigger value="qa" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground glow-ai-vc">Assistant IA</TabsTrigger>
+              <TabsList className="grid w-full grid-cols-2 mb-6 h-12 rounded-xl bg-gray-900/50 backdrop-blur-sm border border-gray-700 p-1 shadow-lg">
+                <TabsTrigger 
+                  value="report" 
+                  className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground glow-ai-vc transition-all duration-300 text-foreground/70 data-[state=active]:text-primary-foreground"
+                >
+                  Rapport
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="qa" 
+                  className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground glow-ai-vc transition-all duration-300 text-foreground/70 data-[state=active]:text-primary-foreground"
+                >
+                  Assistant IA
+                </TabsTrigger>
               </TabsList>
               <TabsContent value="report" className="mt-0 max-w-full overflow-x-hidden">
                 <SlideCarousel
