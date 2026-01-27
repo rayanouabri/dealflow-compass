@@ -193,7 +193,15 @@ export function AIQAChat({ startupData, investmentThesis, fundName }: AIQAChatPr
                     overflow: 'hidden'
                   }}
                 >
-                  {message.content}
+                  {message.content
+                    .replace(/\*\*(.*?)\*\*/g, '$1') // Enlever **bold**
+                    .replace(/\*(.*?)\*/g, '$1') // Enlever *italic*
+                    .replace(/__(.*?)__/g, '$1') // Enlever __bold__
+                    .replace(/_(.*?)_/g, '$1') // Enlever _italic_
+                    .replace(/~~(.*?)~~/g, '$1') // Enlever ~~strikethrough~~
+                    .replace(/`(.*?)`/g, '$1') // Enlever `code`
+                    .replace(/```[\s\S]*?```/g, '') // Enlever blocs de code
+                  }
                 </p>
               </div>
               {message.sources && message.sources.length > 0 && (

@@ -34,6 +34,51 @@ interface BraveSearchResult {
   extra_snippets?: string[];
 }
 
+// Fonction pour valider et nettoyer une URL
+function validateAndCleanUrl(url: string): string | null {
+  if (!url || typeof url !== 'string') return null;
+  let cleanUrl = url.trim();
+  
+  // Enlever les caractères de fin de phrase et de ponctuation
+  cleanUrl = cleanUrl.replace(/[.,;:!?)\]\}]+$/, '');
+  
+  // Enlever les caractères de début de phrase
+  cleanUrl = cleanUrl.replace(/^[(\[\{]+/, '');
+  
+  // S'assurer que l'URL commence par http:// ou https://
+  if (!cleanUrl.match(/^https?:\/\//i)) {
+    if (cleanUrl.startsWith('www.')) {
+      cleanUrl = 'https://' + cleanUrl;
+    } else if (cleanUrl.includes('.') && !cleanUrl.includes(' ')) {
+      cleanUrl = 'https://' + cleanUrl;
+    } else {
+      return null; // URL invalide
+    }
+  }
+  
+  // Valider le format d'URL
+  try {
+    const urlObj = new URL(cleanUrl);
+    // S'assurer que c'est un domaine valide (pas juste un chemin)
+    if (!urlObj.hostname || urlObj.hostname.length < 3) return null;
+    // Rejeter les URLs locales ou invalides
+    if (urlObj.hostname === 'localhost' || 
+        urlObj.hostname.startsWith('127.') || 
+        urlObj.hostname.startsWith('192.') ||
+        urlObj.hostname.startsWith('10.') ||
+        urlObj.hostname === '0.0.0.0') {
+      return null;
+    }
+    // Rejeter les URLs avec des caractères invalides
+    if (cleanUrl.includes(' ') || cleanUrl.includes('\n') || cleanUrl.includes('\t')) {
+      return null;
+    }
+    return cleanUrl;
+  } catch {
+    return null;
+  }
+}
+
 async function braveSearch(query: string, count: number = 4): Promise<BraveSearchResult[]> {
   const key = Deno.env.get("BRAVE_API_KEY");
   if (!key) return [];
@@ -226,7 +271,14 @@ Description: ${investmentThesis.description || "Non spécifié"}
 1. Les données d'analyse fournies (métriques, thèse, due diligence).
 2. Les résultats de recherche web (Brave) quand présents — cite les URLs quand tu t'en sers.
 
-Règles : Réfléchis avant de répondre. Structure ta réponse (titres, listes si pertinent). Cite les sources (URLs) quand tu utilises des données web. Si une info manque, dis-le clairement. Reste professionnel et factuel.`;
+RÈGLES IMPORTANTES :
+- Réfléchis avant de répondre. Structure ta réponse clairement.
+- Cite TOUJOURS les sources (URLs complètes) quand tu utilises des données web.
+- Inclus au moins 3-5 sources URL valides dans ta réponse quand tu utilises des données web.
+- N'utilise JAMAIS de formatage markdown (**bold**, *italic*, etc.) - écris en texte brut.
+- Si une info manque, dis-le clairement.
+- Reste professionnel et factuel.
+- Les URLs doivent être complètes (https://...) et valides.`;
 
     const userPrompt = `${startupContext}
 ${metricsContext}
@@ -259,19 +311,84 @@ QUESTION: ${question}`;
     const aiData = await aiRes.json();
     let answer = aiData.candidates?.[0]?.content?.parts?.[0]?.text || "Désolé, je n'ai pas pu générer de réponse.";
 
-    const urlRegex = /(https?:\/\/[^\s)]+)/g;
-    const urls = answer.match(urlRegex) || [];
-    const sources: Array<{ name: string; url: string }> = urls.map((url, idx) => ({
-      name: `Source ${idx + 1}`,
-      url: url,
-    }));
-    const uniqueUrls = [...new Set(urls)];
-    if (uniqueUrls.length < 3 && allBraveResults.length > 0) {
-      for (const r of allBraveResults.slice(0, 5)) {
-        if (r.url && !uniqueUrls.includes(r.url)) {
-          sources.push({ name: r.title?.slice(0, 50) || "Brave", url: r.url });
-          uniqueUrls.push(r.url);
-          if (uniqueUrls.length >= 5) break;
+    // Nettoyer le markdown de la réponse
+    answer = answer
+      .replace(/\*\*(.*?)\*\*/g, '$1') // Enlever **bold**
+      .replace(/\*(.*?)\*/g, '$1') // Enlever *italic*
+      .replace(/__(.*?)__/g, '$1') // Enlever __bold__
+      .replace(/_(.*?)_/g, '$1') // Enlever _italic_
+      .replace(/~~(.*?)~~/g, '$1') // Enlever ~~strikethrough~~
+      .replace(/`([^`]+)`/g, '$1') // Enlever `code inline`
+      .replace(/```[\s\S]*?```/g, '') // Enlever blocs de code
+      .trim();
+
+    // Extraire les URLs de la réponse avec regex amélioré
+    const urlRegex = /(https?:\/\/[^\s)\],;:!?<>\n\r\t]+)/gi;
+    const foundUrls = answer.match(urlRegex) || [];
+    const validUrls: string[] = [];
+    const sources: Array<{ name: string; url: string }> = [];
+    
+    // Valider et nettoyer les URLs trouvées dans la réponse
+    for (const url of foundUrls) {
+      const cleanUrl = validateAndCleanUrl(url);
+      if (cleanUrl && !validUrls.includes(cleanUrl)) {
+        validUrls.push(cleanUrl);
+        // Extraire un nom de domaine lisible
+        try {
+          const urlObj = new URL(cleanUrl);
+          const domain = urlObj.hostname.replace('www.', '').split('.')[0];
+          const domainName = domain.charAt(0).toUpperCase() + domain.slice(1);
+          sources.push({ 
+            name: domainName || `Source ${sources.length + 1}`, 
+            url: cleanUrl 
+          });
+        } catch {
+          sources.push({ name: `Source ${sources.length + 1}`, url: cleanUrl });
+        }
+      }
+    }
+
+    // PRIORITÉ : Ajouter des sources Brave valides (au moins 5-8 sources)
+    if (allBraveResults.length > 0) {
+      for (const r of allBraveResults.slice(0, 10)) {
+        if (r.url && sources.length < 10) {
+          const cleanUrl = validateAndCleanUrl(r.url);
+          if (cleanUrl && !validUrls.includes(cleanUrl)) {
+            validUrls.push(cleanUrl);
+            // Utiliser le titre si disponible, sinon le domaine
+            let sourceName = r.title?.slice(0, 60).trim();
+            if (!sourceName || sourceName.length < 3) {
+              try {
+                const urlObj = new URL(cleanUrl);
+                sourceName = urlObj.hostname.replace('www.', '').split('.')[0];
+                sourceName = sourceName.charAt(0).toUpperCase() + sourceName.slice(1);
+              } catch {
+                sourceName = `Source web ${sources.length + 1}`;
+              }
+            }
+            sources.push({ 
+              name: sourceName || "Source web", 
+              url: cleanUrl 
+            });
+          }
+        }
+      }
+    }
+
+    // Si toujours pas assez de sources, compléter avec plus de résultats Brave
+    if (sources.length < 5 && allBraveResults.length > 0) {
+      for (const r of allBraveResults.slice(5)) {
+        if (r.url && sources.length < 10) {
+          const cleanUrl = validateAndCleanUrl(r.url);
+          if (cleanUrl && !validUrls.includes(cleanUrl)) {
+            validUrls.push(cleanUrl);
+            const title = r.title?.slice(0, 60).trim() || 
+              cleanUrl.replace(/^https?:\/\/(www\.)?/, '').split('/')[0].replace(/\./g, ' ');
+            sources.push({ 
+              name: title || `Source ${sources.length + 1}`, 
+              url: cleanUrl 
+            });
+          }
         }
       }
     }
