@@ -130,6 +130,40 @@ async function braveSearch(query: string, count: number = 5): Promise<BraveSearc
   }
 }
 
+// Validate startup reliability - check if startup has enough verifiable data
+function validateStartupReliability(startup: any): { reliable: boolean; score: number; missing: string[] } {
+  let score = 0;
+  const missing: string[] = [];
+  
+  // Check for essential data
+  if (startup.name && startup.name.length > 2) score += 2;
+  else missing.push("name");
+  
+  if (startup.website && validateAndCleanUrl(startup.website)) score += 3;
+  else missing.push("website");
+  
+  if (startup.linkedinUrl && validateAndCleanUrl(startup.linkedinUrl)) score += 2;
+  else if (startup.linkedin && validateAndCleanUrl(startup.linkedin)) score += 2;
+  else missing.push("linkedin");
+  
+  if (startup.crunchbaseUrl && validateAndCleanUrl(startup.crunchbaseUrl)) score += 2;
+  else missing.push("crunchbase");
+  
+  if (startup.sources && Array.isArray(startup.sources) && startup.sources.length >= 2) score += 2;
+  else missing.push("sources");
+  
+  if (startup.fundingHistory && Array.isArray(startup.fundingHistory) && startup.fundingHistory.length > 0) score += 2;
+  else missing.push("funding_history");
+  
+  if (startup.team?.founders && Array.isArray(startup.team.founders) && startup.team.founders.length > 0) score += 1;
+  else missing.push("founders");
+  
+  // Minimum score for reliability: 8/14
+  const reliable = score >= 8;
+  
+  return { reliable, score, missing };
+}
+
 // Enrich startup data with real web sources
 async function enrichStartupData(startup: any): Promise<any> {
   const name = startup.name || "";
@@ -787,7 +821,7 @@ serve(async (req) => {
     // Configuration AI : Gemini ou Vertex AI
     const AI_PROVIDER = (Deno.env.get("AI_PROVIDER") || "gemini").toLowerCase(); // "gemini" ou "vertex"
     const GEMINI_API_KEY = Deno.env.get("GEMINI_KEY_2") || Deno.env.get("GEMINI_API_KEY");
-    const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-pro"; // gemini-2.5-pro, gemini-2.0-flash, gemini-pro, gemini-1.5-pro, gemini-1.5-flash
+    const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-3.0-pro"; // gemini-3.0-pro, gemini-2.5-pro, gemini-2.0-flash, gemini-pro, gemini-1.5-pro, gemini-1.5-flash
     const VERTEX_AI_PROJECT = Deno.env.get("VERTEX_AI_PROJECT_ID");
     const VERTEX_AI_LOCATION = Deno.env.get("VERTEX_AI_LOCATION") || "us-central1";
     const VERTEX_AI_MODEL = Deno.env.get("VERTEX_AI_MODEL") || "gemini-pro"; // gemini-pro, gemini-1.5-pro, etc.
@@ -949,8 +983,8 @@ serve(async (req) => {
     try {
       const refPrompt = `Tu es un assistant. Fonds: "${fundName || "thèse personnalisée"}". Contexte thèse:\n${fundThesisContext.slice(0, 800)}\n\nContexte marché:\n${marketData.marketContext?.slice(0, 500) || ""}\n\nStartups déjà trouvées (extraits):\n${startupSearchResults.slice(0, 8).map(r => r.title + " " + r.description).join("\n")}\n\nPropose EXACTEMENT 3 à 5 requêtes de recherche web (en anglais, courtes) pour trouver d'autres startups ou données complémentaires. Réponds UNIQUEMENT avec un JSON: {"queries": ["query1", "query2", ...]}`;
       const reflectionModel = AI_PROVIDER === "vertex" 
-        ? `projects/${VERTEX_AI_PROJECT}/locations/${VERTEX_AI_LOCATION}/publishers/google/models/gemini-pro`
-        : `gemini-2.5-pro`;
+        ? `projects/${VERTEX_AI_PROJECT}/locations/${VERTEX_AI_LOCATION}/publishers/google/models/gemini-3.0-pro`
+        : `gemini-3.0-pro`;
       const refUrl = AI_PROVIDER === "vertex"
         ? `https://${VERTEX_AI_LOCATION}-aiplatform.googleapis.com/v1/${reflectionModel}:generateContent`
         : `https://generativelanguage.googleapis.com/v1beta/models/${reflectionModel}:generateContent?key=${GEMINI_API_KEY}`;
@@ -993,13 +1027,13 @@ serve(async (req) => {
 
 🎯 MISSION PRINCIPALE : SOURCING DE STARTUPS PRÉCOCES + DUE DILIGENCE PROFESSIONNELLE
 
-⚠️ RÈGLE CRITIQUE : SOURCING DE STARTUPS MOINS CONNUES
-- Tu dois trouver des startups PRÉCOCES (pre-seed, seed, très early stage)
-- ÉVITE les startups déjà très connues (pas de licornes, pas de startups avec >$50M de funding, pas de startups avec >200 employés)
-- PRIORITÉ aux startups qui ne sont PAS encore sur Crunchbase ou avec très peu d'informations publiques
-- Cherche des startups "stealth" ou très récentes (fondées < 2 ans)
+⚠️ RÈGLE CRITIQUE : SOURCING DE STARTUPS FIABLES AVEC DONNÉES VÉRIFIABLES
+- Tu dois trouver des startups RÉELLES avec des DONNÉES VÉRIFIABLES (site web, LinkedIn, sources)
+- PRIORITÉ aux startups avec au moins 2 sources vérifiables (site web + LinkedIn/Crunchbase)
+- Si une startup n'a PAS de site web vérifiable, de LinkedIn, ou de sources → NE L'UTILISE PAS, TROUVE-EN UNE AUTRE
 - Les startups doivent correspondre EXACTEMENT aux critères (secteurs, géographie, stade)
-- Si une startup est trop connue ou ne correspond pas, TROUVE-EN UNE AUTRE dans les résultats de recherche
+- Si une startup n'a pas assez de données vérifiables, TROUVE-EN UNE AUTRE dans les résultats de recherche
+- NE JAMAIS utiliser une startup si tu ne peux pas vérifier son existence réelle avec au moins 2 sources
 
 ⚠️ RÉFLEXION : Réfléchis étape par étape avant de conclure. Utilise TOUTES les couches de recherche fournies (thèse fonds, marché, startups classiques, ninja sourcing, deep dive actualités/concurrence/régulation, requêtes additionnelles). Croise les données avant de produire ton analyse.
 
@@ -1266,17 +1300,20 @@ Analyse rapidement la thèse d'investissement du fonds "${fundName}" pour identi
 - La géographie cible
 - La taille de ticket moyenne
 
-ÉTAPE 2 - SOURCING DE STARTUPS RÉELLES (PRIORITÉ ABSOLUE) :
+ÉTAPE 2 - SOURCING DE STARTUPS RÉELLES ET FIABLES (PRIORITÉ ABSOLUE) :
 Identifie ${numberOfStartups} startup(s) RÉELLE(S) et VÉRIFIÉES qui correspondent PARFAITEMENT à la thèse du fonds "${fundName}".
 
-Chaque startup doit être :
+CRITÈRES OBLIGATOIRES pour chaque startup :
 - Une entreprise RÉELLE et EXISTANTE (pas inventée)
 - Correspondre aux critères du fonds (secteur, stade, géographie, ticket)
-- Avoir un site web RÉEL, LinkedIn, et idéalement Crunchbase
+- Avoir un site web RÉEL vérifiable (URL trouvée dans les recherches web)
+- Avoir un LinkedIn ou Crunchbase vérifiable (URL trouvée dans les recherches web)
+- Avoir au moins 2 sources vérifiables (site web + LinkedIn/Crunchbase/article)
 - Avoir des données vérifiables (funding, métriques, équipe)
 
-⚠️ UTILISE les résultats de recherche web fournis ci-dessus pour identifier des startups RÉELLES.
-⚠️ Ne crée PAS de startups fictives. Si tu ne trouves pas assez de startups réelles, dis-le clairement.
+⚠️ UTILISE UNIQUEMENT les résultats de recherche web fournis ci-dessus pour identifier des startups RÉELLES.
+⚠️ Si une startup n'a PAS de site web vérifiable OU pas de LinkedIn/Crunchbase → NE L'UTILISE PAS, TROUVE-EN UNE AUTRE
+⚠️ Ne crée PAS de startups fictives. Si tu ne trouves pas assez de startups réelles avec données vérifiables, cherche plus profondément dans les résultats de recherche.
 
 🚫 RÈGLE ABSOLUE SUR LES URLs :
 - N'utilise UNIQUEMENT que les URLs trouvées dans les résultats de recherche web fournis ci-dessus
@@ -1346,6 +1383,39 @@ IMPORTANT :
 - Si une donnée n'est pas disponible, marque "Non disponible" au lieu d'inventer
 - 🚫 NE JAMAIS inventer d'URLs (website, LinkedIn, Crunchbase, sources) - utilise uniquement celles trouvées dans les recherches web`
       : `🎯 MISSION : SOURCER ET ANALYSER DES STARTUPS POUR THÈSE PERSONNALISÉE
+
+⚠️ ATTENTION : TU DOIS SOURCER DES STARTUPS RÉELLES AVEC DONNÉES VÉRIFIABLES.
+
+ÉTAPE 1 - COMPRENDRE LA THÈSE (rapide, max 100 mots) :
+Analyse rapidement la thèse personnalisée pour identifier :
+- Les secteurs cibles
+- Le stade d'investissement préféré (Seed, Series A, etc.)
+- La géographie cible
+- La taille de ticket moyenne
+
+ÉTAPE 2 - SOURCING DE STARTUPS RÉELLES ET FIABLES (PRIORITÉ ABSOLUE) :
+Identifie ${numberOfStartups} startup(s) RÉELLE(S) et VÉRIFIÉES qui correspondent PARFAITEMENT à la thèse personnalisée.
+
+CRITÈRES OBLIGATOIRES pour chaque startup :
+- Une entreprise RÉELLE et EXISTANTE (pas inventée)
+- Correspondre aux critères de la thèse (secteur, stade, géographie, ticket)
+- Avoir un site web RÉEL vérifiable (URL trouvée dans les recherches web)
+- Avoir un LinkedIn ou Crunchbase vérifiable (URL trouvée dans les recherches web)
+- Avoir au moins 2 sources vérifiables (site web + LinkedIn/Crunchbase/article)
+- Avoir des données vérifiables (funding, métriques, équipe)
+
+⚠️ UTILISE UNIQUEMENT les résultats de recherche web fournis ci-dessus pour identifier des startups RÉELLES.
+⚠️ Si une startup n'a PAS de site web vérifiable OU pas de LinkedIn/Crunchbase → NE L'UTILISE PAS, TROUVE-EN UNE AUTRE
+⚠️ Ne crée PAS de startups fictives. Si tu ne trouves pas assez de startups réelles avec données vérifiables, cherche plus profondément dans les résultats de recherche.
+
+🚫 RÈGLE ABSOLUE SUR LES URLs :
+- N'utilise UNIQUEMENT que les URLs trouvées dans les résultats de recherche web fournis ci-dessus
+- NE JAMAIS inventer, créer ou deviner des URLs (website, LinkedIn, Crunchbase, sources)
+- Si une URL n'est pas dans les résultats de recherche, laisse le champ vide ou null
+- Les URLs doivent être exactement telles que trouvées dans les résultats (sans modification)
+- Ne génère PAS d'URLs fictives même si elles semblent logiques (ex: ne pas créer "https://linkedin.com/company/nom-startup" si non trouvé)
+
+ÉTAPE 3 - DUE DILIGENCE COMPLÈTE (niveau senior VC) :
 
 ÉTAPE 1 - SOURCING :
 Identifie ${numberOfStartups} startup(s) RÉELLE(S) et VÉRIFIÉES correspondant à la thèse personnalisée fournie.
@@ -1547,7 +1617,34 @@ IMPORTANT :
     const enrichedStartups = await Promise.all(
       analysisResult.startups.map((s: any) => enrichStartupData(s))
     );
-    analysisResult.startups = enrichedStartups;
+    
+    // Step 4.5: Validate startup reliability and filter out unreliable ones
+    console.log("Validating startup reliability...");
+    const validatedStartups = enrichedStartups.map((s: any) => {
+      const validation = validateStartupReliability(s);
+      return {
+        ...s,
+        reliabilityScore: validation.score,
+        reliabilityStatus: validation.reliable ? "reliable" : "unreliable",
+        missingData: validation.missing,
+      };
+    });
+    
+    // Filter out unreliable startups (score < 8) and log warnings
+    const reliableStartups = validatedStartups.filter((s: any) => {
+      if (!s.reliabilityStatus || s.reliabilityStatus === "unreliable") {
+        console.warn(`Startup "${s.name}" filtered out - insufficient verifiable data. Score: ${s.reliabilityScore}, Missing: ${s.missingData?.join(", ")}`);
+        return false;
+      }
+      return true;
+    });
+    
+    // If we lost startups, log a warning but keep what we have
+    if (reliableStartups.length < enrichedStartups.length) {
+      console.warn(`Filtered out ${enrichedStartups.length - reliableStartups.length} unreliable startup(s). Keeping ${reliableStartups.length} reliable startup(s).`);
+    }
+    
+    analysisResult.startups = reliableStartups.length > 0 ? reliableStartups : validatedStartups; // Fallback to all if none are reliable
 
     // Add fund sources
     if (fundSources.length > 0) {

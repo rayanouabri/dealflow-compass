@@ -77,7 +77,7 @@ export default function Analyser() {
 
     const requestBody: any = {
       params: {
-        ...params,
+        // Ne pas envoyer les paramètres redondants si on utilise une thèse personnalisée
         numberOfStartups: params.numberOfStartups || 1,
         includeCompetitors: params.includeCompetitors,
         includeMarketSize: params.includeMarketSize,
@@ -85,6 +85,19 @@ export default function Analyser() {
         includeMoat: params.includeMoat,
         detailLevel: params.detailLevel,
         slideCount: params.slideCount || 8,
+        // Ne pas inclure startupStage, startupSector, etc. si customThesis est utilisé
+        ...(useCustomThesis ? {} : {
+          startupStage: params.startupStage,
+          startupSector: params.startupSector,
+          businessModel: params.businessModel,
+          targetMarket: params.targetMarket,
+          teamSize: params.teamSize,
+          fundingAmount: params.fundingAmount,
+          fundingStage: params.fundingStage,
+          timeline: params.timeline,
+          headquartersRegion: params.headquartersRegion,
+          targetGeography: params.targetGeography,
+        }),
       },
     };
     if (useCustomThesis) requestBody.customThesis = customThesis;
