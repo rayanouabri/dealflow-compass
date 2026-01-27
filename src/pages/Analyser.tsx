@@ -214,7 +214,12 @@ export default function Analyser() {
           )}
 
           <div className="rounded-xl border border-primary/40 bg-card/80 backdrop-blur-sm shadow-lg p-6">
-            <AnalysisParameters params={params} onChange={setParams} isPro={false} />
+            <AnalysisParameters 
+              params={params} 
+              onChange={setParams} 
+              isPro={false}
+              useCustomThesis={useCustomThesis}
+            />
           </div>
 
           <Button

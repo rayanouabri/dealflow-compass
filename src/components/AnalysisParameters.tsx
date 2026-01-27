@@ -65,6 +65,7 @@ interface AnalysisParametersProps {
   params: AnalysisParams;
   onChange: (params: AnalysisParams) => void;
   isPro?: boolean;
+  useCustomThesis?: boolean;
 }
 
 export const defaultParams: AnalysisParams = {
@@ -88,7 +89,7 @@ export const defaultParams: AnalysisParams = {
   numberOfStartups: 1,
 };
 
-export function AnalysisParameters({ params, onChange, isPro = false }: AnalysisParametersProps) {
+export function AnalysisParameters({ params, onChange, isPro = false, useCustomThesis = false }: AnalysisParametersProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   const updateParam = <K extends keyof AnalysisParams>(key: K, value: AnalysisParams[K]) => {
@@ -199,6 +200,7 @@ export function AnalysisParameters({ params, onChange, isPro = false }: Analysis
 
       <CollapsibleContent className="mt-4 space-y-6 animate-slide-in-up bg-gray-900/50 rounded-xl p-6">
         {/* Startup Profile */}
+        {!useCustomThesis && (
         <div className="bg-gray-900/30 backdrop-blur-sm border border-gray-800 rounded-xl p-6 space-y-4">
           <div className="flex items-center gap-2 mb-4">
             <Building2 className="w-5 h-5 text-yellow-400" />
@@ -279,8 +281,10 @@ export function AnalysisParameters({ params, onChange, isPro = false }: Analysis
             </div>
           </div>
         </div>
+        )}
 
         {/* Funding Requirements */}
+        {!useCustomThesis && (
         <div className="bg-gray-900/30 backdrop-blur-sm border border-gray-800 rounded-xl p-6 space-y-4">
           <div className="flex items-center gap-2 mb-4">
             <DollarSign className="w-5 h-5 text-yellow-400" />
@@ -333,8 +337,10 @@ export function AnalysisParameters({ params, onChange, isPro = false }: Analysis
             </div>
           </div>
         </div>
+        )}
 
         {/* Geographic Preferences */}
+        {!useCustomThesis && (
         <div className="bg-gray-900/30 backdrop-blur-sm border border-gray-800 rounded-xl p-6 space-y-4">
           <div className="flex items-center gap-2 mb-4">
             <Globe className="w-5 h-5 text-yellow-400" />
@@ -373,6 +379,7 @@ export function AnalysisParameters({ params, onChange, isPro = false }: Analysis
             </div>
           </div>
         </div>
+        )}
 
         {/* Analysis Options */}
         <div className="bg-gray-900/30 backdrop-blur-sm border border-gray-800 rounded-xl p-6 space-y-4">
@@ -399,14 +406,12 @@ export function AnalysisParameters({ params, onChange, isPro = false }: Analysis
               />
             </div>
             <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium text-gray-100 flex items-center gap-1">
+              <Label className="text-sm font-medium text-gray-100">
                 Detailed Financials
-                {!isPro && <Badge variant="outline" className="text-[10px] px-1 border-gray-700 text-gray-300">PRO</Badge>}
               </Label>
               <Switch 
                 checked={params.detailedFinancials} 
-                onCheckedChange={(v) => isPro && updateParam("detailedFinancials", v)}
-                disabled={!isPro}
+                onCheckedChange={(v) => updateParam("detailedFinancials", v)}
               />
             </div>
             <div className="flex items-center justify-between">

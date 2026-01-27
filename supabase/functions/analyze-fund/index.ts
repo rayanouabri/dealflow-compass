@@ -47,6 +47,53 @@ interface BraveSearchResult {
   extra_snippets?: string[];
 }
 
+// Fonction pour valider et nettoyer une URL
+function validateAndCleanUrl(url: string): string | null {
+  if (!url || typeof url !== 'string') return null;
+  let cleanUrl = url.trim();
+  
+  // Enlever la ponctuation finale qui pourrait être collée
+  cleanUrl = cleanUrl.replace(/[.,;:!?)\]\}]+$/, '');
+  
+  // Enlever les parenthèses/braces initiales
+  cleanUrl = cleanUrl.replace(/^[(\[\{]+/, '');
+  
+  // S'assurer que l'URL commence par http:// ou https://
+  if (!cleanUrl.match(/^https?:\/\//i)) {
+    if (cleanUrl.startsWith('www.')) {
+      cleanUrl = 'https://' + cleanUrl;
+    } else if (cleanUrl.includes('.') && !cleanUrl.includes(' ')) {
+      cleanUrl = 'https://' + cleanUrl;
+    } else {
+      return null; // URL invalide
+    }
+  }
+  
+  // Valider le format d'URL
+  try {
+    const urlObj = new URL(cleanUrl);
+    
+    if (!urlObj.hostname || urlObj.hostname.length < 3) return null;
+    // Rejeter les URLs locales ou invalides
+    if (urlObj.hostname === 'localhost' || 
+        urlObj.hostname.startsWith('127.') || 
+        urlObj.hostname.startsWith('192.') ||
+        urlObj.hostname.startsWith('10.') ||
+        urlObj.hostname === '0.0.0.0') {
+      return null;
+    }
+    
+    // Rejeter les URLs avec des caractères invalides
+    if (cleanUrl.includes(' ') || cleanUrl.includes('\n') || cleanUrl.includes('\t')) {
+      return null;
+    }
+    
+    return cleanUrl;
+  } catch {
+    return null;
+  }
+}
+
 // Search using Brave Search API
 async function braveSearch(query: string, count: number = 5): Promise<BraveSearchResult[]> {
   const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY");
@@ -116,15 +163,43 @@ async function enrichStartupData(startup: any): Promise<any> {
     ...crunchbaseResults
   ];
   
-  const websiteUrl = generalResults.find(r => 
-    !r.url.includes("linkedin") && 
-    !r.url.includes("crunchbase") && 
-    !r.url.includes("techcrunch") &&
-    !r.url.includes("wikipedia")
-  )?.url || startup.website;
+  // Valider les URLs avant de les utiliser
+  const websiteUrl = (() => {
+    const found = generalResults.find(r => 
+      !r.url.includes("linkedin") && 
+      !r.url.includes("crunchbase") && 
+      !r.url.includes("techcrunch") &&
+      !r.url.includes("wikipedia")
+    )?.url;
+    if (found) {
+      const validated = validateAndCleanUrl(found);
+      if (validated) return validated;
+    }
+    // Valider aussi l'URL existante de la startup si elle existe
+    if (startup.website) {
+      const validated = validateAndCleanUrl(startup.website);
+      if (validated) return validated;
+    }
+    return null;
+  })();
 
-  const linkedinUrl = linkedinResults.find(r => r.url.includes("linkedin.com/company"))?.url;
-  const crunchbaseUrl = allResults.find(r => r.url.includes("crunchbase.com"))?.url;
+  const linkedinUrl = (() => {
+    const found = linkedinResults.find(r => r.url.includes("linkedin.com/company"))?.url;
+    if (found) {
+      const validated = validateAndCleanUrl(found);
+      if (validated) return validated;
+    }
+    return null;
+  })();
+
+  const crunchbaseUrl = (() => {
+    const found = allResults.find(r => r.url.includes("crunchbase.com"))?.url;
+    if (found) {
+      const validated = validateAndCleanUrl(found);
+      if (validated) return validated;
+    }
+    return null;
+  })();
 
   // Extract snippets for context - prioritize metrics and financial data
   const metricsSnippets = [...metricsResults, ...financialResults, ...fundingResults]
@@ -141,13 +216,16 @@ async function enrichStartupData(startup: any): Promise<any> {
   if (linkedinUrl) sources.push({ name: "LinkedIn", url: linkedinUrl, type: "linkedin" });
   if (crunchbaseUrl) sources.push({ name: "Crunchbase", url: crunchbaseUrl, type: "crunchbase" });
   
-  // Add other relevant sources
+  // Add other relevant sources - VALIDER LES URLs
   allResults.slice(0, 5).forEach(r => {
     if (!sources.find(s => s.url === r.url)) {
-      let type = "article";
-      if (r.url.includes("techcrunch")) type = "press";
-      else if (r.url.includes("pitchbook")) type = "data";
-      sources.push({ name: r.title.substring(0, 50), url: r.url, type });
+      const validatedUrl = validateAndCleanUrl(r.url);
+      if (validatedUrl) {
+        let type = "article";
+        if (r.url.includes("techcrunch")) type = "press";
+        else if (r.url.includes("pitchbook")) type = "data";
+        sources.push({ name: r.title.substring(0, 50), url: validatedUrl, type });
+      }
     }
   });
 
@@ -972,6 +1050,13 @@ ${startupSearchContext}
 ⚠️ UTILISE CES RÉSULTATS pour identifier des startups RÉELLES à analyser.
 Chaque startup doit être une entreprise EXISTANTE avec un site web, des données vérifiables.
 
+🚫 RÈGLE ABSOLUE SUR LES URLs :
+- N'utilise UNIQUEMENT que les URLs trouvées dans les résultats de recherche web fournis ci-dessus
+- NE JAMAIS inventer, créer ou deviner des URLs
+- Si une URL n'est pas dans les résultats de recherche, ne l'inclus PAS dans ta réponse
+- Les URLs doivent être exactement telles que trouvées dans les résultats (sans modification)
+- Si aucune URL n'est trouvée pour un site web/LinkedIn/Crunchbase, laisse le champ vide ou null
+
 🎯 SOURCING NINJA : Ces résultats incluent des entreprises trouvées AVANT qu'elles ne soient sur Crunchbase/Pitchbook via :
 - Signaux RH (recrutement massif de postes critiques)
 - Propriété Intellectuelle (brevets et citations par géants tech)
@@ -1048,9 +1133,9 @@ Tu dois répondre avec un objet JSON valide contenant:
    - "competitors": Concurrents principaux avec leurs données (nom, funding, taille)
    - "moat": Avantage compétitif détaillé
    - "fundingHistory": Historique COMPLET de levées avec montants, dates, investisseurs, sources URL
-   - "website": Site web RÉEL (URL complète)
-   - "linkedin": URL LinkedIn de la startup
-   - "crunchbaseUrl": URL Crunchbase si disponible
+   - "website": Site web RÉEL (URL complète) - UNIQUEMENT si trouvé dans les recherches web. NE PAS inventer d'URLs.
+   - "linkedin": URL LinkedIn de la startup - UNIQUEMENT si trouvé dans les recherches web. NE PAS inventer d'URLs.
+   - "crunchbaseUrl": URL Crunchbase si disponible - UNIQUEMENT si trouvé dans les recherches web. NE PAS inventer d'URLs.
    - "metrics": {
        "arr": "ARR en $ avec source OU estimation (ex: '$2.5M ARR (source: techcrunch.com)' ou '$1.8M ARR (estimation basée sur stade Series A SaaS)')",
        "mrr": "MRR en $ avec source OU estimation (ex: '$200K MRR (source: ...)' ou '$150K MRR (estimation)')",
@@ -1067,12 +1152,12 @@ Tu dois répondre avec un objet JSON valide contenant:
        "valuation": "Valorisation actuelle en $ avec source URL OU estimation basée sur dernière levée"
      }
    - "team": {
-       "founders": [{"name": "Nom complet", "role": "CEO/CTO/etc", "linkedin": "URL", "background": "Expérience"}],
+       "founders": [{"name": "Nom complet", "role": "CEO/CTO/etc", "linkedin": "URL - UNIQUEMENT si trouvée dans les recherches web, sinon null", "background": "Expérience"}],
        "teamSize": "Nombre d'employés (ENTIER entre 1-50000, JAMAIS avec M/K/B. Ex: 25, 150, 500. PAS 201M, PAS 2.5K)",
        "keyHires": "Recrutements clés récents"
      }
    - "verificationStatus": "verified" | "partially_verified" | "unverified"
-   - "sources": Array de toutes les sources utilisées { "name": "Nom", "url": "URL", "type": "article/crunchbase/linkedin/etc" }
+   - "sources": Array de toutes les sources utilisées { "name": "Nom", "url": "URL", "type": "article/crunchbase/linkedin/etc" } - UNIQUEMENT des URLs trouvées dans les recherches web. NE JAMAIS inventer d'URLs fictives.
 
 4. "dueDiligenceReports": Array de ${numberOfStartups} rapport(s):
    Chaque rapport est un Array de slides:
@@ -1145,7 +1230,7 @@ Tu dois répondre avec un objet JSON valide contenant:
        "content": "Évaluation équipe avec liens LinkedIn (min 250 mots)",
        "keyPoints": ["Point 1", ...],
        "metrics": { 
-         "founders": [{ "name": "Nom", "role": "Rôle", "linkedin": "URL LinkedIn" }],
+         "founders": [{ "name": "Nom", "role": "Rôle", "linkedin": "URL LinkedIn - UNIQUEMENT si trouvée dans les recherches web, sinon null" }],
          "teamSize": "Taille équipe",
          "advisors": ["Advisor 1", ...]
        }
@@ -1193,6 +1278,13 @@ Chaque startup doit être :
 ⚠️ UTILISE les résultats de recherche web fournis ci-dessus pour identifier des startups RÉELLES.
 ⚠️ Ne crée PAS de startups fictives. Si tu ne trouves pas assez de startups réelles, dis-le clairement.
 
+🚫 RÈGLE ABSOLUE SUR LES URLs :
+- N'utilise UNIQUEMENT que les URLs trouvées dans les résultats de recherche web fournis ci-dessus
+- NE JAMAIS inventer, créer ou deviner des URLs (website, LinkedIn, Crunchbase, sources)
+- Si une URL n'est pas dans les résultats de recherche, laisse le champ vide ou null
+- Les URLs doivent être exactement telles que trouvées dans les résultats (sans modification)
+- Ne génère PAS d'URLs fictives même si elles semblent logiques (ex: ne pas créer "https://linkedin.com/company/nom-startup" si non trouvé)
+
 ÉTAPE 3 - DUE DILIGENCE COMPLÈTE (niveau senior VC) :
 Pour chaque startup sourcée, génère un rapport de due diligence PROFESSIONNEL avec TOUTES les métriques chiffrées :
 
@@ -1232,9 +1324,9 @@ COHÉRENCE DES TYPES :
 - Montants (ARR, MRR, valuation, etc.) en $ ou M€. Scores en nombres purs.
 
 OBLIGATOIRE - Analyse marché :
-- TAM/SAM/SOM en $ avec sources URL (ex: $50B TAM - Grand View Research 2024)
-- CAGR en % avec source
-- Tendances du marché avec sources
+- TAM/SAM/SOM en $ avec sources URL (ex: $50B TAM - Grand View Research 2024) - UNIQUEMENT si trouvé dans les recherches web
+- CAGR en % avec source - UNIQUEMENT si trouvé dans les recherches web
+- Tendances du marché avec sources - UNIQUEMENT si trouvées dans les recherches web
 
 OBLIGATOIRE - Équipe :
 - Founders avec LinkedIn, background, expérience
@@ -1250,8 +1342,9 @@ OBLIGATOIRE - Recommandation :
 IMPORTANT : 
 - Utilise UNIQUEMENT les données réelles trouvées dans les recherches web
 - Ne crée PAS de données fictives
-- Pour chaque chiffre, indique la source avec URL
-- Si une donnée n'est pas disponible, marque "Non disponible" au lieu d'inventer`
+- Pour chaque chiffre, indique la source avec URL - UNIQUEMENT si l'URL est dans les résultats de recherche
+- Si une donnée n'est pas disponible, marque "Non disponible" au lieu d'inventer
+- 🚫 NE JAMAIS inventer d'URLs (website, LinkedIn, Crunchbase, sources) - utilise uniquement celles trouvées dans les recherches web`
       : `🎯 MISSION : SOURCER ET ANALYSER DES STARTUPS POUR THÈSE PERSONNALISÉE
 
 ÉTAPE 1 - SOURCING :
@@ -1261,7 +1354,11 @@ Chaque startup doit être une entreprise RÉELLE avec des données vérifiables 
 ÉTAPE 2 - DUE DILIGENCE COMPLÈTE :
 Génère un rapport de due diligence PROFESSIONNEL de niveau senior VC avec TOUTES les métriques chiffrées (ARR, MRR, CAC, LTV, churn, burn rate, etc.) avec sources URL pour chaque donnée.
 
-IMPORTANT : Utilise UNIQUEMENT les données réelles trouvées dans les recherches web. Ne crée PAS de données fictives.`;
+IMPORTANT : 
+- Utilise UNIQUEMENT les données réelles trouvées dans les recherches web
+- Ne crée PAS de données fictives
+- 🚫 NE JAMAIS inventer d'URLs (website, LinkedIn, Crunchbase, sources) - utilise uniquement celles trouvées dans les recherches web
+- Si une URL n'est pas dans les résultats de recherche, laisse le champ vide ou null`;
 
     let response: Response | null = null;
     let lastErrorText = "";
@@ -1388,7 +1485,64 @@ IMPORTANT : Utilise UNIQUEMENT les données réelles trouvées dans les recherch
       }
     }
 
-    // Step 3: Enrich each startup with real web data
+    // Helper function to clean URLs in startup data
+    const cleanStartupUrls = (startup: any): any => {
+      if (!startup) return startup;
+      
+      // Clean website, linkedin, crunchbaseUrl
+      if (startup.website) {
+        const cleaned = validateAndCleanUrl(startup.website);
+        startup.website = cleaned || null;
+      }
+      if (startup.linkedin) {
+        const cleaned = validateAndCleanUrl(startup.linkedin);
+        startup.linkedin = cleaned || null;
+      }
+      if (startup.linkedinUrl) {
+        const cleaned = validateAndCleanUrl(startup.linkedinUrl);
+        startup.linkedinUrl = cleaned || null;
+      }
+      if (startup.crunchbaseUrl) {
+        const cleaned = validateAndCleanUrl(startup.crunchbaseUrl);
+        startup.crunchbaseUrl = cleaned || null;
+      }
+      
+      // Clean URLs in sources array
+      if (Array.isArray(startup.sources)) {
+        startup.sources = startup.sources
+          .map((source: any) => {
+            if (typeof source === 'string') {
+              const cleaned = validateAndCleanUrl(source);
+              return cleaned || null;
+            }
+            if (source && typeof source === 'object' && source.url) {
+              const cleaned = validateAndCleanUrl(source.url);
+              if (!cleaned) return null;
+              return { ...source, url: cleaned };
+            }
+            return source;
+          })
+          .filter((s: any) => s !== null);
+      }
+      
+      // Clean LinkedIn URLs in founders
+      if (Array.isArray(startup.team?.founders)) {
+        startup.team.founders = startup.team.founders.map((founder: any) => {
+          if (founder && founder.linkedin) {
+            const cleaned = validateAndCleanUrl(founder.linkedin);
+            return { ...founder, linkedin: cleaned || null };
+          }
+          return founder;
+        });
+      }
+      
+      return startup;
+    };
+
+    // Step 3: Clean URLs in AI response before enrichment
+    analysisResult.startups = analysisResult.startups.map((s: any) => cleanStartupUrls(s));
+
+    // Step 4: Enrich each startup with real web data
     console.log("Enriching startup data with Brave Search...");
     const enrichedStartups = await Promise.all(
       analysisResult.startups.map((s: any) => enrichStartupData(s))
