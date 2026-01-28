@@ -1010,29 +1010,69 @@ serve(async (req) => {
     // Step 3: Search for REAL startups matching the thesis (CRITICAL for sourcing)
     let startupSearchQueries: string[] = [];
     
-    // Extract criteria — secteurs par défaut si fund-only (pas de thèse personnalisée)
-    const stage = customThesis?.stage || "seed";
-    const geography = customThesis?.geography || "global";
-    const sectors = (customThesis?.sectors?.length ? customThesis.sectors : (fundName ? ["technology", "SaaS"] : ["technology"])) as string[];
+    // Extract criteria — secteurs spécifiques depuis params ou customThesis
+    const stage = params.fundingStage || customThesis?.stage || "seed";
+    const geography = params.headquartersRegion || customThesis?.geography || "global";
+    const paramsStartupSector = params.startupSector || "";
+    const sectors = (customThesis?.sectors?.length 
+      ? customThesis.sectors 
+      : (paramsStartupSector ? [paramsStartupSector] : (fundName ? ["technology"] : ["technology"]))
+    ) as string[];
     
-    if (fundName && fundThesisContext) {
-      sectors.forEach(sector => {
-        // Recherches ciblées pour startups précoces et moins connues
-        startupSearchQueries.push(`${sector} pre-seed startup ${geography} 2024 2025 stealth`);
-        startupSearchQueries.push(`${sector} early stage startup ${geography} not on crunchbase 2024`);
-        startupSearchQueries.push(`${sector} ${stage} stage startup ${geography} new founded 2023 2024`);
-        startupSearchQueries.push(`${sector} startup ${stage} ${geography} under 50 employees 2024`);
-        startupSearchQueries.push(`${sector} startup ${stage} ${geography} less than 2 years old`);
-      });
-    } else if (customThesis) {
-      sectors.forEach(sector => {
-        // Recherches ciblées pour startups précoces et moins connues
-        startupSearchQueries.push(`${sector} pre-seed startup ${geography} 2024 2025 stealth`);
-        startupSearchQueries.push(`${sector} early stage startup ${geography} not on crunchbase 2024`);
-        startupSearchQueries.push(`${sector} ${stage} startup ${geography} new founded 2023 2024`);
-        startupSearchQueries.push(`${sector} startup ${stage} ${geography} under 50 employees 2024`);
-      });
-    }
+    // Mapping secteurs vers mots-clés de recherche plus spécifiques
+    const sectorKeywords: Record<string, string[]> = {
+      "defense": ["defense technology", "military tech", "aerospace defense", "govtech defense", "defense contractor startup"],
+      "aerospace": ["aerospace startup", "space technology", "aviation tech", "drone technology", "satellite"],
+      "logistics": ["logistics technology", "supply chain startup", "freight tech", "warehouse automation", "last mile delivery"],
+      "proptech": ["real estate technology", "property tech", "construction tech", "building management"],
+      "agritech": ["agricultural technology", "farming tech", "food technology", "precision agriculture", "vertical farming"],
+      "mobility": ["mobility startup", "transportation technology", "EV", "autonomous vehicles", "micromobility"],
+      "construction": ["construction technology", "building tech", "infrastructure startup", "contech"],
+      "manufacturing": ["industrial technology", "manufacturing startup", "factory automation", "industry 4.0"],
+      "cybersecurity": ["cybersecurity startup", "security technology", "infosec", "data protection"],
+      "spacetech": ["space technology", "satellite startup", "space exploration", "orbital"],
+      "govtech": ["government technology", "civic tech", "public sector startup"],
+      "cleantech": ["clean technology", "renewable energy", "sustainability startup", "green tech"],
+      "biotech": ["biotechnology startup", "life sciences", "pharmaceutical", "drug discovery"],
+      "healthtech": ["healthcare technology", "medtech", "digital health", "health startup"],
+      "fintech": ["financial technology", "fintech startup", "banking technology", "payments"],
+      "saas": ["SaaS startup", "software as a service", "B2B software", "cloud software"],
+      "ai-ml": ["artificial intelligence startup", "machine learning", "AI company", "deep learning"],
+      "gaming": ["gaming startup", "esports", "video game company", "game technology"],
+      "media": ["media technology", "entertainment startup", "content platform", "streaming"],
+      "any": ["technology startup", "innovative company", "emerging startup"],
+    };
+    
+    // Fonction pour obtenir les mots-clés de recherche selon le secteur
+    const getSearchKeywords = (sector: string): string[] => {
+      const normalized = sector.toLowerCase().replace(/[^a-z]/g, "");
+      for (const [key, keywords] of Object.entries(sectorKeywords)) {
+        if (normalized.includes(key) || key.includes(normalized)) {
+          return keywords;
+        }
+      }
+      // Secteur inconnu → utiliser le secteur tel quel
+      return [sector, `${sector} startup`, `${sector} company`];
+    };
+    
+    // Générer les requêtes avec les mots-clés spécifiques au secteur
+    sectors.forEach(sector => {
+      const keywords = getSearchKeywords(sector);
+      const mainKeyword = keywords[0];
+      const altKeyword = keywords[1] || mainKeyword;
+      
+      // Recherches ciblées pour startups précoces et moins connues
+      startupSearchQueries.push(`${mainKeyword} ${stage} startup ${geography} 2024 2025`);
+      startupSearchQueries.push(`${altKeyword} early stage company ${geography} founded 2023 2024`);
+      startupSearchQueries.push(`${mainKeyword} pre-seed funding ${geography} new company`);
+      startupSearchQueries.push(`${mainKeyword} emerging startup ${geography} innovative 2024`);
+      startupSearchQueries.push(`best ${mainKeyword} startups ${geography} 2024`);
+      
+      // Recherches spécifiques au secteur
+      if (keywords.length > 2) {
+        startupSearchQueries.push(`${keywords[2]} startup ${geography} ${stage} 2024`);
+      }
+    });
     
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     
@@ -1044,26 +1084,70 @@ serve(async (req) => {
       await sleep(400);
     }
     
-    // COUCHE 3 : Ninja sourcing (talent, IP, spinoffs)
-    const criticalRoles = ["Head of Photonics", "Quantum Lead", "CTO", "VP Engineering", "Head of AI"];
+    // COUCHE 3 : Ninja sourcing (talent, IP, spinoffs) - adapté au secteur
+    const sectorRoles: Record<string, string[]> = {
+      "defense": ["Defense Program Manager", "Systems Engineer", "Government Contracts Lead"],
+      "aerospace": ["Chief Engineer Aerospace", "Flight Systems Lead", "Propulsion Engineer"],
+      "logistics": ["VP Supply Chain", "Head of Operations", "Logistics Director"],
+      "manufacturing": ["Plant Director", "VP Manufacturing", "Production Lead"],
+      "cybersecurity": ["CISO", "Security Architect", "Threat Intelligence Lead"],
+      "default": ["CTO", "VP Engineering", "Head of Product", "Technical Lead"],
+    };
+    
+    const getSectorRoles = (sector: string): string[] => {
+      const normalized = sector.toLowerCase();
+      for (const [key, roles] of Object.entries(sectorRoles)) {
+        if (normalized.includes(key)) return roles;
+      }
+      return sectorRoles["default"];
+    };
+    
     for (const sector of sectors.slice(0, 2)) {
-      for (const role of criticalRoles.slice(0, 3)) {
-        const results = await braveSearch(`${role} ${sector} ${geography} hiring jobs 2024`, 2);
+      const keywords = getSearchKeywords(sector);
+      const mainKeyword = keywords[0];
+      const roles = getSectorRoles(sector);
+      
+      for (const role of roles.slice(0, 2)) {
+        const results = await braveSearch(`${role} ${mainKeyword} ${geography} hiring 2024`, 2);
         startupSearchResults.push(...results);
         await sleep(400);
       }
     }
+    
+    // Recherche brevets/IP spécifique au secteur
     for (const sector of sectors.slice(0, 2)) {
-      for (const q of [`${sector} patent filed ${geography} 2023 2024`, `${sector} patent cited by Intel Tesla Google ${geography}`]) {
+      const keywords = getSearchKeywords(sector);
+      const mainKeyword = keywords[0];
+      const patentQueries = [
+        `${mainKeyword} patent filed ${geography} 2023 2024`,
+        `${mainKeyword} innovation award ${geography} 2024`,
+      ];
+      for (const q of patentQueries) {
         const results = await braveSearch(q, 2);
         startupSearchResults.push(...results);
         await sleep(400);
       }
     }
-    const universities = geography === "europe" ? ["CNRS", "CEA", "INRIA", "Max Planck", "ETH Zurich"] : ["MIT", "Stanford", "Harvard", "Berkeley"];
+    
+    // Universities et incubateurs adaptés au secteur et à la géographie
+    const getRelevantInstitutions = (sector: string, geo: string): string[] => {
+      if (geo.includes("europe") || geo.includes("france")) {
+        if (sector.includes("defense") || sector.includes("aerospace")) {
+          return ["DGA", "ONERA", "Safran", "Airbus Defence"];
+        }
+        return ["CNRS", "CEA", "INRIA", "Max Planck", "ETH Zurich"];
+      }
+      if (sector.includes("defense") || sector.includes("aerospace")) {
+        return ["DARPA", "Lockheed Martin Ventures", "Boeing", "NASA JPL"];
+      }
+      return ["MIT", "Stanford", "Harvard", "Berkeley", "Y Combinator"];
+    };
+    
+    const institutions = getRelevantInstitutions(sectors[0] || "", geography);
     for (const sector of sectors.slice(0, 2)) {
-      for (const uni of universities.slice(0, 3)) {
-        const results = await braveSearch(`${uni} ${sector} spin-off startup founded researcher`, 2);
+      const keywords = getSearchKeywords(sector);
+      for (const inst of institutions.slice(0, 3)) {
+        const results = await braveSearch(`${inst} ${keywords[0]} spin-off startup 2024`, 2);
         startupSearchResults.push(...results);
         await sleep(400);
       }
@@ -1081,28 +1165,35 @@ serve(async (req) => {
       await sleep(400);
     }
     
-    // COUCHE 5 : Reflection — Gemini suggère des requêtes Brave supplémentaires, on les exécute
+    // COUCHE 5 : Reflection — L'IA suggère des requêtes Brave supplémentaires, on les exécute
     let reflectionContext = "";
     try {
-      const refPrompt = `Tu es un assistant. Fonds: "${fundName || "thèse personnalisée"}". Contexte thèse:\n${fundThesisContext.slice(0, 800)}\n\nContexte marché:\n${marketData.marketContext?.slice(0, 500) || ""}\n\nStartups déjà trouvées (extraits):\n${startupSearchResults.slice(0, 8).map(r => r.title + " " + r.description).join("\n")}\n\nPropose EXACTEMENT 3 à 5 requêtes de recherche web (en anglais, courtes) pour trouver d'autres startups ou données complémentaires. Réponds UNIQUEMENT avec un JSON: {"queries": ["query1", "query2", ...]}`;
-      const reflectionModel = AI_PROVIDER === "vertex" 
-        ? `projects/${VERTEX_AI_PROJECT}/locations/${VERTEX_AI_LOCATION}/publishers/google/models/gemini-2.5-pro`
-        : `gemini-2.5-pro`;
-      const refUrl = AI_PROVIDER === "vertex"
-        ? `https://${VERTEX_AI_LOCATION}-aiplatform.googleapis.com/v1/${reflectionModel}:generateContent`
-        : `https://generativelanguage.googleapis.com/v1beta/models/${reflectionModel}:generateContent?key=${GEMINI_API_KEY}`;
-      const refHeaders = AI_PROVIDER === "vertex"
-        ? { "Content-Type": "application/json", "Authorization": `Bearer ${JSON.parse(VERTEX_AI_CREDENTIALS).access_token || ""}` }
-        : { "Content-Type": "application/json" };
-      const refRes = await fetch(refUrl, {
+      const refPrompt = `Tu es un assistant VC spécialisé dans le sourcing. Fonds: "${fundName || "thèse personnalisée"}". 
+Secteurs recherchés: ${sectors.join(", ")}
+Géographie: ${geography}
+Stade: ${stage}
+
+Contexte thèse:\n${fundThesisContext.slice(0, 800)}\n\nContexte marché:\n${marketData.marketContext?.slice(0, 500) || ""}\n\nStartups déjà trouvées (extraits):\n${startupSearchResults.slice(0, 8).map(r => r.title + " " + r.description).join("\n")}
+
+Propose EXACTEMENT 5 requêtes de recherche web (en anglais, courtes, spécifiques au secteur "${sectors[0] || "technology"}") pour trouver d'AUTRES startups ou données complémentaires. 
+Ces requêtes doivent cibler des VRAIES startups dans le secteur demandé (pas de SaaS générique si le secteur est différent).
+Réponds UNIQUEMENT avec un JSON: {"queries": ["query1", "query2", ...]}`;
+      
+      const refEndpoint = await getAIEndpoint();
+      const refBody = AI_PROVIDER === "vertex"
+        ? {
+            contents: [{ role: "user", parts: [{ text: refPrompt }] }],
+            generationConfig: { temperature: 0.3, maxOutputTokens: 512 },
+          }
+        : {
+            contents: [{ parts: [{ text: refPrompt }] }],
+            generationConfig: { temperature: 0.3, maxOutputTokens: 512, responseMimeType: "application/json" },
+          };
+      
+      const refRes = await fetch(refEndpoint.url, {
         method: "POST",
-        headers: refHeaders,
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: refPrompt }] }],
-          generationConfig: { temperature: 0.3, maxOutputTokens: 512, responseMimeType: "application/json" },
-        }),
+        headers: refEndpoint.headers,
+        body: JSON.stringify(refBody),
       });
       if (refRes.ok) {
         const refData = await refRes.json();
@@ -1228,7 +1319,39 @@ HEALTHCARE IT :
 - Series A: ARR $800K-3M, CAC $2000-5000, Churn 1-4%/mois
 - Series B+: ARR $3M+, CAC $3000-8000, Churn 1-3%/mois
 
+DEFENSE / AEROSPACE / GOVTECH :
+- Seed: Revenus $0-2M (contrats pilotes), Cycles de vente 12-24 mois, Marges brutes 30-50%
+- Series A: Revenus $2M-10M, Contrats gouvernementaux, Cycles 18-36 mois
+- Series B+: Revenus $10M+, Contrats majeurs (>$1M), Marge brute 40-60%
+- Spécificités: Long cycle de vente, certifications requises (FedRAMP, NATO, etc.), contrats récurrents multi-années
+
+LOGISTICS / SUPPLY CHAIN :
+- Seed: Volume traité $0-5M/an, Marge par transaction 5-15%
+- Series A: Volume $5M-50M/an, Clients enterprise, Marge 8-20%
+- Series B+: Volume $50M+/an, Contrats multi-régions, Marge 10-25%
+
+CLEANTECH / ENERGY :
+- Seed: Revenus $0-500K, Projets pilotes, Subventions R&D
+- Series A: Revenus $500K-5M, Premiers clients industriels, PPA (Power Purchase Agreements)
+- Series B+: Revenus $5M+, Déploiement à l'échelle, Contrats long-terme 10-20 ans
+
+MANUFACTURING / INDUSTRIAL :
+- Seed: Revenus $0-1M, Prototypes et POC avec industriels
+- Series A: Revenus $1M-5M, Production pilote, Partenariats industriels
+- Series B+: Revenus $5M+, Production à l'échelle, Certifications industrielles
+
+PROPTECH / REAL ESTATE :
+- Seed: ARR $0-300K, GMV $0-10M
+- Series A: ARR $300K-2M, GMV $10M-100M
+- Series B+: ARR $2M+, GMV $100M+, Marge 15-30%
+
+AGRITECH / FOODTECH :
+- Seed: Revenus $0-500K, Surfaces pilotes <1000 ha ou volumes <1000 tonnes
+- Series A: Revenus $500K-3M, Expansion régionale, Partenariats distributeurs
+- Series B+: Revenus $3M+, Couverture nationale/internationale
+
 ⚠️ UTILISE CES MOYENNES pour faire des estimations intelligentes quand les données réelles ne sont pas disponibles.
+⚠️ ADAPTE les métriques au secteur demandé (pas de ARR/MRR pour les secteurs industriels, utilise plutôt les revenus récurrents ou les contrats)
 
 ⚠️ RÈGLES DE TYPES — NE JAMAIS MÉLANGER ⚠️
 - SCORES (fitScore, pmfScore) : TOUJOURS un nombre ENTRE 1-10 (fitScore) ou 0-100 (pmfScore). JAMAIS de millions, $, M, €, K. Ex: fitScore 7 ✓ | fitScore "60 millions" ✗ | fitScore "201M" ✗.
