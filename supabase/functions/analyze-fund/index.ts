@@ -828,36 +828,144 @@ serve(async (req) => {
     const VERTEX_AI_CREDENTIALS = Deno.env.get("VERTEX_AI_CREDENTIALS");
     const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY");
     
-    // Helper pour construire l'URL et les headers selon le provider
-    // Note: Vertex AI nécessite une authentification OAuth2 complexe
-    // Pour l'instant, on utilise uniquement Gemini API (plus simple et fiable)
-    const getAIEndpoint = (model?: string) => {
-      const useModel = model || GEMINI_MODEL;
+    // Helper pour encoder en base64url (sans padding)
+    function base64url(data: Uint8Array | string): string {
+      const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data;
+      const base64 = btoa(String.fromCharCode(...bytes));
+      return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+    }
+    
+    // Helper pour générer un JWT signé avec la clé privée RSA
+    async function generateSignedJWT(credentials: any): Promise<string> {
+      const header = { alg: "RS256", typ: "JWT" };
+      const now = Math.floor(Date.now() / 1000);
+      const payload = {
+        iss: credentials.client_email,
+        sub: credentials.client_email,
+        aud: "https://oauth2.googleapis.com/token",
+        iat: now,
+        exp: now + 3600,
+        scope: "https://www.googleapis.com/auth/cloud-platform"
+      };
       
-      // Forcer l'utilisation de Gemini API (plus simple et plus fiable)
-      if (!GEMINI_API_KEY) {
-        throw new Error("GEMINI_API_KEY requis. Ajoutez GEMINI_KEY_2 ou GEMINI_API_KEY dans les secrets Supabase.");
+      const headerB64 = base64url(JSON.stringify(header));
+      const payloadB64 = base64url(JSON.stringify(payload));
+      const message = `${headerB64}.${payloadB64}`;
+      
+      // Parser la clé privée PEM
+      const pemKey = credentials.private_key.replace(/\\n/g, '\n');
+      const pemContents = pemKey
+        .replace(/-----BEGIN PRIVATE KEY-----/, '')
+        .replace(/-----END PRIVATE KEY-----/, '')
+        .replace(/\s/g, '');
+      const keyBuffer = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
+      
+      // Importer la clé privée
+      const privateKey = await crypto.subtle.importKey(
+        "pkcs8",
+        keyBuffer,
+        { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+        false,
+        ["sign"]
+      );
+      
+      // Signer le message
+      const signature = await crypto.subtle.sign(
+        "RSASSA-PKCS1-v1_5",
+        privateKey,
+        new TextEncoder().encode(message)
+      );
+      
+      const signatureB64 = base64url(new Uint8Array(signature));
+      return `${message}.${signatureB64}`;
+    }
+    
+    // Helper pour obtenir un token OAuth2 pour Vertex AI
+    async function getVertexAIToken(): Promise<string> {
+      if (!VERTEX_AI_CREDENTIALS) {
+        throw new Error("VERTEX_AI_CREDENTIALS requis pour Vertex AI");
       }
       
-      return {
-        url: `https://generativelanguage.googleapis.com/v1beta/models/${useModel}:generateContent?key=${GEMINI_API_KEY}`,
-        headers: { "Content-Type": "application/json" },
-        needsAuth: false
-      };
+      const credentials = typeof VERTEX_AI_CREDENTIALS === 'string' 
+        ? JSON.parse(VERTEX_AI_CREDENTIALS) 
+        : VERTEX_AI_CREDENTIALS;
+      
+      const jwt = await generateSignedJWT(credentials);
+      
+      const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+          assertion: jwt
+        })
+      });
+      
+      if (!tokenResponse.ok) {
+        const errorText = await tokenResponse.text();
+        throw new Error(`Erreur OAuth2 Vertex AI: ${tokenResponse.status} - ${errorText}`);
+      }
+      
+      const tokenData = await tokenResponse.json();
+      return tokenData.access_token;
+    }
+    
+    // Helper pour construire l'URL et les headers selon le provider
+    const getAIEndpoint = async (model?: string) => {
+      const useModel = model || (AI_PROVIDER === "vertex" ? VERTEX_AI_MODEL : GEMINI_MODEL);
+      
+      if (AI_PROVIDER === "vertex") {
+        if (!VERTEX_AI_PROJECT) {
+          throw new Error("VERTEX_AI_PROJECT_ID requis pour Vertex AI");
+        }
+        if (!VERTEX_AI_CREDENTIALS) {
+          throw new Error("VERTEX_AI_CREDENTIALS requis pour Vertex AI");
+        }
+        
+        const accessToken = await getVertexAIToken();
+        
+        return {
+          url: `https://${VERTEX_AI_LOCATION}-aiplatform.googleapis.com/v1/projects/${VERTEX_AI_PROJECT}/locations/${VERTEX_AI_LOCATION}/publishers/google/models/${useModel}:generateContent`,
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${accessToken}`
+          },
+          needsAuth: false
+        };
+      } else {
+        if (!GEMINI_API_KEY) {
+          throw new Error("GEMINI_API_KEY requis. Ajoutez GEMINI_KEY_2 ou GEMINI_API_KEY dans les secrets Supabase.");
+        }
+        
+        return {
+          url: `https://generativelanguage.googleapis.com/v1beta/models/${useModel}:generateContent?key=${GEMINI_API_KEY}`,
+          headers: { "Content-Type": "application/json" },
+          needsAuth: false
+        };
+      }
     };
     
     // Vérification de la configuration
-    try {
-      getAIEndpoint(); // Test de la config
-    } catch (configError) {
-      const errorMsg = configError instanceof Error ? configError.message : String(configError);
-      return new Response(JSON.stringify({ 
-        error: `Configuration AI invalide: ${errorMsg}\n\nPour Gemini: Ajoutez GEMINI_KEY_2 ou GEMINI_API_KEY\nPour Vertex AI: Ajoutez VERTEX_AI_PROJECT_ID\n\nModèle Gemini actuel: ${GEMINI_MODEL} (changez via GEMINI_MODEL)\nProvider actuel: ${AI_PROVIDER} (changez via AI_PROVIDER=gemini|vertex)`,
-        setupRequired: true
-      }), {
-        status: 500,
-        headers: { ...corsHeaders(req), "Content-Type": "application/json" },
-      });
+    if (AI_PROVIDER === "vertex") {
+      if (!VERTEX_AI_PROJECT || !VERTEX_AI_CREDENTIALS) {
+        return new Response(JSON.stringify({ 
+          error: `Configuration Vertex AI invalide.\n\nSecrets requis:\n- VERTEX_AI_PROJECT_ID: ${VERTEX_AI_PROJECT ? '✓' : '✗'}\n- VERTEX_AI_CREDENTIALS: ${VERTEX_AI_CREDENTIALS ? '✓' : '✗'}\n\nVoir le guide SETUP_VERTEX_AI_SIMPLE.md`,
+          setupRequired: true
+        }), {
+          status: 500,
+          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+        });
+      }
+    } else {
+      if (!GEMINI_API_KEY) {
+        return new Response(JSON.stringify({ 
+          error: `Configuration Gemini invalide.\n\nAjoutez GEMINI_KEY_2 ou GEMINI_API_KEY dans les secrets Supabase.\n\nObtenir une clé: https://makersuite.google.com/app/apikey`,
+          setupRequired: true
+        }), {
+          status: 500,
+          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+        });
+      }
     }
     if (!BRAVE_API_KEY) {
       console.error("Brave Search not configured");
@@ -1428,7 +1536,7 @@ IMPORTANT :
     let response: Response | null = null;
     let lastErrorText = "";
 
-    const aiEndpoint = getAIEndpoint(); // Utilise le modèle configuré
+    const aiEndpoint = await getAIEndpoint(); // Utilise le modèle configuré
     const aiBody = {
       contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.` }] }],
       generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens: 32768, responseMimeType: "application/json" as const },
