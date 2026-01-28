@@ -61,11 +61,9 @@ VERTEX_AI_CREDENTIALS = {copiez tout le JSON ici}
 - Copiez **TOUT** le contenu (de `{` à `}`)
 - Collez dans le secret (sur une seule ligne)
 
-### Étape 5 : Répéter pour ai-qa
+### ✅ C'est tout !
 
-Même chose pour **ai-qa** :
-- **Edge Functions** → **ai-qa** → **Settings** → **Secrets**
-- Ajoutez les mêmes 5 secrets
+**Note importante** : Les secrets sont partagés au niveau du projet, donc une seule configuration suffit pour toutes vos Edge Functions (`analyze-fund`, `ai-qa`, `ninja-sourcing`, etc.). Pas besoin de les configurer plusieurs fois !
 
 ## ✅ C'est tout !
 
