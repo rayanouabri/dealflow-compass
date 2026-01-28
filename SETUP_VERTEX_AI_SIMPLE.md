@@ -20,7 +20,20 @@
 6. Onglet **KEYS** → **ADD KEY** → **Create new key** → **JSON**
 7. Le fichier JSON se télécharge automatiquement
 
-### Étape 3 : Supabase Secrets
+### Étape 3 : Trouver le PROJECT_ID
+
+**Méthode la plus simple** :
+1. Dans Google Cloud Console, en haut à gauche, cliquez sur le **nom de votre projet**
+2. Un menu s'ouvre → Le **Project ID** est affiché (ex: `my-project-123456`)
+3. **Copiez ce Project ID** (pas le nom, mais l'ID)
+
+**Alternative** :
+- Menu ☰ → **IAM & Admin** → **Settings**
+- Le **Project ID** est affiché en haut
+
+📖 **Guide détaillé** : Voir `TROUVER_PROJECT_ID.md`
+
+### Étape 4 : Supabase Secrets
 
 1. https://supabase.com/dashboard → Votre projet
 2. **Edge Functions** → **analyze-fund** → **Settings** → **Secrets**
@@ -28,15 +41,24 @@
 
 ```
 AI_PROVIDER = vertex
-VERTEX_AI_PROJECT_ID = votre-project-id
+VERTEX_AI_PROJECT_ID = votre-project-id (ex: my-project-123456)
 VERTEX_AI_LOCATION = us-central1
-VERTEX_AI_MODEL = gemini-1.5-pro
+VERTEX_AI_MODEL = gemini-2.5-pro
 VERTEX_AI_CREDENTIALS = {copiez tout le JSON ici}
 ```
 
+**Pour VERTEX_AI_PROJECT_ID** :
+- C'est l'ID du projet trouvé à l'Étape 3 (pas le nom du projet)
+- Exemple : `dealflow-ai-789012`
+
+**Pour VERTEX_AI_MODEL** :
+- `gemini-2.5-pro` ⭐ (recommandé - très puissant)
+- `gemini-3.0-pro` (essayez si disponible - peut ne pas être accessible partout)
+- `gemini-1.5-pro` (alternative stable)
+
 **Pour VERTEX_AI_CREDENTIALS** :
-- Ouvrez le fichier JSON téléchargé
-- Copiez **TOUT** (de `{` à `}`)
+- Ouvrez le fichier JSON téléchargé à l'Étape 2
+- Copiez **TOUT** le contenu (de `{` à `}`)
 - Collez dans le secret (sur une seule ligne)
 
 ### Étape 5 : Répéter pour ai-qa
