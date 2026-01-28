@@ -1537,10 +1537,17 @@ IMPORTANT :
     let lastErrorText = "";
 
     const aiEndpoint = await getAIEndpoint(); // Utilise le modèle configuré
-    const aiBody = {
-      contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.` }] }],
-      generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens: 32768, responseMimeType: "application/json" as const },
-    };
+    
+    // Format du corps différent pour Vertex AI (nécessite role: "user")
+    const aiBody = AI_PROVIDER === "vertex" 
+      ? {
+          contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\n${userPrompt}\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.` }] }],
+          generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens: 32768 },
+        }
+      : {
+          contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.` }] }],
+          generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens: 32768, responseMimeType: "application/json" as const },
+        };
 
     for (let attempt = 0; attempt < 3; attempt++) {
       if (attempt > 0) {
