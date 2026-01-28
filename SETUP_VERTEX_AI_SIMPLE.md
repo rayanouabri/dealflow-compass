@@ -52,7 +52,7 @@ Vertex AI est maintenant configuré. Les analyses utiliseront automatiquement Ve
 ## 🎯 Avantages
 
 - ✅ Recherche Google intégrée (Grounding)
-- ✅ Modèles plus récents (gemini-1.5-pro)
+- ✅ Modèles plus récents (gemini-2.5-pro, gemini-3.0-pro)
 - ✅ Meilleures performances
 - ✅ Quotas plus élevés
 
