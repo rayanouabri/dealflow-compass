@@ -39,7 +39,7 @@ VERTEX_AI_CREDENTIALS = {copiez tout le JSON ici}
 - Copiez **TOUT** (de `{` à `}`)
 - Collez dans le secret (sur une seule ligne)
 
-### Étape 4 : Répéter pour ai-qa
+### Étape 5 : Répéter pour ai-qa
 
 Même chose pour **ai-qa** :
 - **Edge Functions** → **ai-qa** → **Settings** → **Secrets**

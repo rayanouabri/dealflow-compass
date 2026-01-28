@@ -825,7 +825,7 @@ serve(async (req) => {
     const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-pro"; // gemini-2.5-pro, gemini-2.0-flash, gemini-pro, gemini-1.5-pro, gemini-1.5-flash (gemini-3.0-pro pas encore disponible)
     const VERTEX_AI_PROJECT = Deno.env.get("VERTEX_AI_PROJECT_ID");
     const VERTEX_AI_LOCATION = Deno.env.get("VERTEX_AI_LOCATION") || "us-central1";
-    const VERTEX_AI_MODEL = Deno.env.get("VERTEX_AI_MODEL") || "gemini-1.5-pro"; // gemini-1.5-pro, gemini-1.5-flash, gemini-pro
+    const VERTEX_AI_MODEL = Deno.env.get("VERTEX_AI_MODEL") || "gemini-2.5-pro"; // gemini-2.5-pro, gemini-3.0-pro, gemini-1.5-pro, gemini-1.5-flash, gemini-pro
     const VERTEX_AI_CREDENTIALS = Deno.env.get("VERTEX_AI_CREDENTIALS");
     const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY");
     
