@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { create } from "https://deno.land/x/djwt@v2.8/mod.ts";
 
 const ALLOWED_ORIGINS = [
   "https://ai-vc-sourcing.vercel.app",
@@ -824,20 +825,109 @@ serve(async (req) => {
     const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-pro"; // gemini-2.5-pro, gemini-2.0-flash, gemini-pro, gemini-1.5-pro, gemini-1.5-flash (gemini-3.0-pro pas encore disponible)
     const VERTEX_AI_PROJECT = Deno.env.get("VERTEX_AI_PROJECT_ID");
     const VERTEX_AI_LOCATION = Deno.env.get("VERTEX_AI_LOCATION") || "us-central1";
-    const VERTEX_AI_MODEL = Deno.env.get("VERTEX_AI_MODEL") || "gemini-pro"; // gemini-pro, gemini-1.5-pro, etc.
+    const VERTEX_AI_MODEL = Deno.env.get("VERTEX_AI_MODEL") || "gemini-1.5-pro"; // gemini-1.5-pro, gemini-1.5-flash, gemini-pro
+    const VERTEX_AI_CREDENTIALS = Deno.env.get("VERTEX_AI_CREDENTIALS");
     const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY");
     
+    // Helper pour générer un token OAuth2 depuis les credentials Vertex AI (méthode simplifiée)
+    async function getVertexAIToken(): Promise<string> {
+      if (!VERTEX_AI_CREDENTIALS) {
+        throw new Error("VERTEX_AI_CREDENTIALS requis pour Vertex AI");
+      }
+      
+      try {
+        const credentials = typeof VERTEX_AI_CREDENTIALS === 'string' 
+          ? JSON.parse(VERTEX_AI_CREDENTIALS) 
+          : VERTEX_AI_CREDENTIALS;
+        
+        // Utiliser google-auth-library via import map ou fetch direct
+        // Pour simplifier, on utilise l'API Google OAuth2 directement
+        const jwt = await generateJWT(credentials);
+        
+        // Échanger le JWT contre un access token
+        const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            assertion: jwt
+          })
+        });
+        
+        if (!tokenResponse.ok) {
+          const errorText = await tokenResponse.text();
+          throw new Error(`Erreur OAuth2: ${tokenResponse.status} - ${errorText}`);
+        }
+        
+        const tokenData = await tokenResponse.json();
+        return tokenData.access_token;
+      } catch (error) {
+        console.error("Erreur génération token Vertex AI:", error);
+        throw new Error(`Impossible de générer le token Vertex AI: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    
+    // Helper pour générer un JWT avec djwt
+    async function generateJWT(credentials: any): Promise<string> {
+      const now = Math.floor(Date.now() / 1000);
+      const payload = {
+        iss: credentials.client_email,
+        sub: credentials.client_email,
+        aud: "https://oauth2.googleapis.com/token",
+        iat: now,
+        exp: now + 3600,
+        scope: "https://www.googleapis.com/auth/cloud-platform"
+      };
+      
+      // Importer la clé privée
+      const privateKeyPem = credentials.private_key.replace(/\\n/g, '\n');
+      const key = await crypto.subtle.importKey(
+        "pkcs8",
+        new TextEncoder().encode(privateKeyPem),
+        {
+          name: "RSASSA-PKCS1-v1_5",
+          hash: "SHA-256",
+        },
+        false,
+        ["sign"]
+      );
+      
+      // Créer le JWT avec djwt
+      const jwt = await create({ alg: "RS256", typ: "JWT" }, payload, key);
+      return jwt;
+    }
+    
     // Helper pour construire l'URL et les headers selon le provider
-    const getAIEndpoint = (model?: string) => {
+    const getAIEndpoint = async (model?: string) => {
       const useModel = model || (AI_PROVIDER === "vertex" ? VERTEX_AI_MODEL : GEMINI_MODEL);
       if (AI_PROVIDER === "vertex") {
         if (!VERTEX_AI_PROJECT) {
           throw new Error("VERTEX_AI_PROJECT_ID requis pour Vertex AI");
         }
+        if (!VERTEX_AI_CREDENTIALS) {
+          throw new Error("VERTEX_AI_CREDENTIALS requis pour Vertex AI");
+        }
+        // Pour Vertex AI, on doit générer un token OAuth2
+        // Note: Cette implémentation nécessite une bibliothèque JWT
+        // Solution temporaire: utiliser l'API Gemini directement avec les credentials
+        // ou utiliser une bibliothèque comme google-auth-library
+        const accessToken = await getVertexAIToken().catch(() => {
+          // Fallback: utiliser directement les credentials si possible
+          console.warn("Impossible de générer token OAuth2, vérifiez VERTEX_AI_CREDENTIALS");
+          return null;
+        });
+        
+        if (!accessToken) {
+          throw new Error("Impossible d'obtenir un token d'accès Vertex AI. Vérifiez VERTEX_AI_CREDENTIALS.");
+        }
+        
         return {
           url: `https://${VERTEX_AI_LOCATION}-aiplatform.googleapis.com/v1/projects/${VERTEX_AI_PROJECT}/locations/${VERTEX_AI_LOCATION}/publishers/google/models/${useModel}:generateContent`,
-          headers: { "Content-Type": "application/json" },
-          needsAuth: true
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${accessToken}`
+          },
+          needsAuth: false
         };
       } else {
         if (!GEMINI_API_KEY) {
