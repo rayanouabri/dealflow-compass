@@ -188,7 +188,7 @@ export default function DueDiligenceResult() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, loading: authLoading, signOut } = useAuth();
-  const { trialRemaining, hasTrialRemaining, decrementTrial } = useTrial();
+  const { trialRemaining, hasTrialRemaining, useTrialCredit } = useTrial();
   const { toast } = useToast();
 
   const [loading, setLoading] = useState(true);
@@ -269,7 +269,7 @@ export default function DueDiligenceResult() {
       setStatusMessage("Rapport terminé !");
       
       // Decrement trial
-      decrementTrial();
+      useTrialCredit();
 
     } catch (err) {
       clearInterval(progressInterval);
