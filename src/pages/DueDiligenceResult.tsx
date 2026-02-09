@@ -269,7 +269,9 @@ export default function DueDiligenceResult() {
       setStatusMessage("Rapport terminé !");
       
       // Decrement trial
-      useTrialCredit();
+      if (typeof useTrialCredit === 'function') {
+        useTrialCredit();
+      }
 
     } catch (err) {
       clearInterval(progressInterval);
