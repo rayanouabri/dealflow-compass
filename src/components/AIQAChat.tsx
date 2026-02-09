@@ -35,18 +35,41 @@ interface AIQAChatProps {
 }
 
 export function AIQAChat({ startupData, investmentThesis, fundName }: AIQAChatProps) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "1",
-      role: "assistant",
-      content: `Bonjour ! Je suis votre assistant IA spécialisé dans l'analyse de startups. Je peux répondre à vos questions sur ${startupData.name} en me basant sur les données d'analyse disponibles. Que souhaitez-vous savoir ?`,
-      timestamp: new Date(),
-    },
-  ]);
+  // Clé unique pour cet assistant basée sur le nom de la startup
+  const storageKey = `ai-qa-history-${startupData.name}`;
+  
+  // Fonction pour charger l'historique depuis sessionStorage
+  const loadHistory = (): Message[] => {
+    try {
+      const saved = sessionStorage.getItem(storageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Reconvertir les timestamps en Date
+        return parsed.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }));
+      }
+    } catch (_) {}
+    return [
+      {
+        id: "1",
+        role: "assistant",
+        content: `Bonjour ! Je suis votre assistant IA spécialisé dans l'analyse de startups. Je peux répondre à vos questions sur ${startupData.name} en me basant sur les données d'analyse disponibles. Que souhaitez-vous savoir ?`,
+        timestamp: new Date(),
+      },
+    ];
+  };
+  
+  const [messages, setMessages] = useState<Message[]>(loadHistory);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+  
+  // Sauvegarder l'historique à chaque changement
+  useEffect(() => {
+    if (messages.length > 1) { // Ne pas sauvegarder juste le message initial
+      sessionStorage.setItem(storageKey, JSON.stringify(messages));
+    }
+  }, [messages, storageKey]);
 
   useEffect(() => {
     // Auto-scroll to bottom when new messages arrive
@@ -127,171 +150,165 @@ export function AIQAChat({ startupData, investmentThesis, fundName }: AIQAChatPr
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
       console.error("Erreur Q&A:", error);
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: `Désolé, une erreur s'est produite: ${error instanceof Error ? error.message : "Erreur inconnue"}`,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
+      const errorMsg = error instanceof Error ? error.message : "Erreur inconnue";
 
       toast({
         title: "Erreur",
-        description: "Impossible d'obtenir une réponse. Veuillez réessayer.",
+        description: errorMsg,
         variant: "destructive",
       });
+
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: `Désolé, une erreur s'est produite: ${errorMsg}`,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handleQuickQuestion = (question: string) => {
+    setInput(question);
+  };
+
+  const quickQuestions = [
+    "Stratégie",
+    "Métriques",
+    "Concurrence",
+    "Risques",
+  ];
+
+  const formatTime = (date: Date) => {
+    return new Intl.DateTimeFormat("fr-FR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).format(date);
+  };
+
   return (
-    <div className="flex flex-col h-full bg-gray-950 max-w-full overflow-hidden">
-      {/* Header */}
-      <div className="bg-gray-800 border-b border-gray-700 p-4 overflow-hidden" style={{ maxWidth: '100%', overflowX: 'hidden' }}>
-        <h2 className="text-white font-semibold flex items-center gap-2 min-w-0">
-          <span className="text-xl">🤖</span>
-          <span className="truncate">Assistant IA - Questions sur {startupData.name}</span>
-        </h2>
-        <p className="text-sm text-gray-400 mt-1 break-words" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
-          Posez des questions sur l'entreprise, son marché, sa stratégie, ses métriques, etc.
-        </p>
+    <div className="flex flex-col h-full overflow-hidden w-full max-w-full">
+      <div className="p-4 border-b border-primary/20 flex-shrink-0 overflow-hidden">
+        <div className="flex items-center gap-3 overflow-hidden">
+          <Bot className="w-6 h-6 text-primary flex-shrink-0" />
+          <div className="min-w-0 overflow-hidden flex-1">
+            <h3 className="font-semibold text-foreground truncate">
+              Assistant IA - Questions sur {startupData.name}
+            </h3>
+            <p className="text-sm text-muted-foreground break-words line-clamp-2">
+              Posez des questions sur l'entreprise, son marché, sa stratégie, ses métriques, etc.
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* Zone de messages */}
-      <ScrollArea 
-        className="flex-1 overflow-y-auto p-4 bg-gray-900 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-gray-900" 
+      <ScrollArea
+        className="flex-1 p-4 overflow-x-hidden w-full max-w-full"
         ref={scrollAreaRef}
-        style={{ maxWidth: '100%', overflowX: 'hidden' }}
+        style={{ overflowX: 'hidden' }}
       >
-        <div className="space-y-3 min-w-0 w-full" style={{ overflowX: 'hidden', maxWidth: '100%', width: '100%' }}>
+        <div className="space-y-4 max-w-full overflow-hidden">
           {messages.map((message) => (
             <div
               key={message.id}
-              className={`${
-                message.role === "user"
-                  ? "bg-yellow-400/10 border-l-4 border-yellow-400"
-                  : "bg-gray-800 border-l-4 border-gray-600"
-              } p-4 rounded-lg mb-3 overflow-hidden`}
-              style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', maxWidth: '100%' }}
+              className={`flex gap-3 ${
+                message.role === "user" ? "justify-end" : "justify-start"
+              } max-w-full overflow-hidden`}
             >
-              <div className="flex items-start gap-2 mb-2 min-w-0" style={{ minWidth: 0, maxWidth: '100%' }}>
-                {message.role === "user" ? (
-                  <User className="w-4 h-4 mt-0.5 flex-shrink-0 text-yellow-400" />
-                ) : (
-                  <Bot className="w-4 h-4 mt-0.5 flex-shrink-0 text-yellow-400" />
-                )}
-                <p 
-                  className={`text-sm whitespace-pre-wrap break-words min-w-0 ${
-                    message.role === "user" ? "text-white" : "text-gray-100"
-                  }`} 
-                  style={{ 
-                    wordBreak: 'break-word', 
-                    overflowWrap: 'anywhere', 
-                    minWidth: 0, 
-                    maxWidth: '100%',
-                    overflow: 'hidden'
-                  }}
-                >
-                  {message.content
-                    .replace(/\*\*(.*?)\*\*/g, '$1') // Enlever **bold**
-                    .replace(/\*(.*?)\*/g, '$1') // Enlever *italic*
-                    .replace(/__(.*?)__/g, '$1') // Enlever __bold__
-                    .replace(/_(.*?)_/g, '$1') // Enlever _italic_
-                    .replace(/~~(.*?)~~/g, '$1') // Enlever ~~strikethrough~~
-                    .replace(/`(.*?)`/g, '$1') // Enlever `code`
-                    .replace(/```[\s\S]*?```/g, '') // Enlever blocs de code
-                  }
-                </p>
-              </div>
-              {message.sources && message.sources.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-gray-700">
-                  <p className="text-xs font-medium mb-2 text-gray-400">
-                    Sources :
-                  </p>
-                  <div className="flex flex-wrap gap-2 min-w-0">
-                    {message.sources.map((source, idx) => (
-                      <a
-                        key={idx}
-                        href={source.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs hover:underline break-all max-w-full text-yellow-400 hover:text-yellow-300"
-                      >
-                        <ExternalLink className="w-3 h-3 flex-shrink-0" />
-                        <span className="break-all" style={{ overflowWrap: 'anywhere' }}>{source.name}</span>
-                      </a>
-                    ))}
+              <div
+                className={`rounded-lg p-3 ${
+                  message.role === "user"
+                    ? "bg-primary text-primary-foreground ml-12"
+                    : "bg-muted text-foreground mr-4"
+                } overflow-hidden flex-1 min-w-0`}
+                style={{
+                  wordBreak: 'break-word',
+                  overflowWrap: 'break-word',
+                  maxWidth: message.role === "user" ? "85%" : "90%",
+                }}
+              >
+                <div className="flex items-start gap-2 overflow-hidden">
+                  {message.role === "assistant" && (
+                    <Bot className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
+                  )}
+                  {message.role === "user" && (
+                    <User className="w-5 h-5 text-primary-foreground mt-0.5 flex-shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0 overflow-hidden">
+                    <p className="text-sm whitespace-pre-wrap break-words"
+                       style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
+                      {message.content}
+                    </p>
+                    {message.sources && message.sources.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-border/50 overflow-hidden">
+                        <p className="text-xs text-muted-foreground mb-1">Sources:</p>
+                        <div className="flex flex-wrap gap-1 overflow-hidden">
+                          {message.sources.map((source, idx) => (
+                            <a
+                              key={idx}
+                              href={source.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-xs text-primary hover:underline max-w-full"
+                            >
+                              <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                              <span className="truncate max-w-[200px]">{source.name}</span>
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-1 flex-shrink-0">
+                      {formatTime(message.timestamp)}
+                    </p>
                   </div>
                 </div>
-              )}
-              <span className="text-gray-500 text-xs mt-2 block">
-                {message.timestamp.toLocaleTimeString()}
-              </span>
+              </div>
             </div>
           ))}
           {isLoading && (
-            <div className="bg-gray-800 border-l-4 border-gray-600 p-4 rounded-lg mb-3">
-              <div className="flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-yellow-400" />
-                <span className="text-sm text-gray-100">Réflexion en cours...</span>
+            <div className="flex gap-3 justify-start overflow-hidden">
+              <div className="rounded-lg p-3 bg-muted">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-primary flex-shrink-0" />
+                  <span className="text-sm text-muted-foreground">Réflexion en cours...</span>
+                </div>
               </div>
             </div>
           )}
         </div>
       </ScrollArea>
 
-      {/* Zone d'input */}
-      <div className="border-t border-gray-800 p-4 bg-gray-950">
-        <div className="flex gap-2 mb-3">
-          <Badge
-            variant="outline"
-            className="cursor-pointer text-xs bg-gray-800 border border-gray-700 text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
-            onClick={() => setInput("Quelle est la stratégie de croissance de cette entreprise ?")}
-          >
-            Stratégie
-          </Badge>
-          <Badge
-            variant="outline"
-            className="cursor-pointer text-xs bg-gray-800 border border-gray-700 text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
-            onClick={() => setInput("Quelles sont les métriques financières clés ?")}
-          >
-            Métriques
-          </Badge>
-          <Badge
-            variant="outline"
-            className="cursor-pointer text-xs bg-gray-800 border border-gray-700 text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
-            onClick={() => setInput("Qui sont les principaux concurrents ?")}
-          >
-            Concurrence
-          </Badge>
-          <Badge
-            variant="outline"
-            className="cursor-pointer text-xs bg-gray-800 border border-gray-700 text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
-            onClick={() => setInput("Quels sont les risques principaux ?")}
-          >
-            Risques
-          </Badge>
+      <div className="p-4 border-t border-primary/20 flex-shrink-0 overflow-hidden">
+        <div className="flex flex-wrap gap-2 mb-3 overflow-hidden">
+          {quickQuestions.map((q) => (
+            <Badge
+              key={q}
+              variant="secondary"
+              className="cursor-pointer hover:bg-primary/20 transition-colors flex-shrink-0"
+              onClick={() => handleQuickQuestion(q)}
+            >
+              {q}
+            </Badge>
+          ))}
         </div>
-        
-        <div className="flex gap-2">
+        <div className="flex gap-2 overflow-hidden">
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
             placeholder="Posez une question sur cette startup..."
+            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
             disabled={isLoading}
-            className="flex-1 bg-gray-800 border border-gray-700 text-white placeholder:text-gray-500 rounded-lg px-4 py-3 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/20 outline-none"
+            className="flex-1 min-w-0 bg-background border-primary/20 focus:border-primary"
           />
-          <Button 
-            onClick={handleSend} 
-            disabled={isLoading || !input.trim()} 
-            className="bg-yellow-400 hover:bg-yellow-500 text-gray-900 p-3 rounded-lg transition-colors"
+          <Button
+            onClick={handleSend}
+            disabled={!input.trim() || isLoading}
+            size="icon"
+            className="flex-shrink-0"
           >
             {isLoading ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -304,4 +321,3 @@ export function AIQAChat({ startupData, investmentThesis, fundName }: AIQAChatPr
     </div>
   );
 }
-

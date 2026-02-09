@@ -8,6 +8,8 @@ import { AuthProvider } from "@/components/AuthProvider";
 import Index from "./pages/Index";
 import Analyser from "./pages/Analyser";
 import Analyse from "./pages/Analyse";
+import DueDiligence from "./pages/DueDiligence";
+import DueDiligenceResult from "./pages/DueDiligenceResult";
 import Contact from "./pages/Contact";
 import APropos from "./pages/APropos";
 import MentionsLegales from "./pages/MentionsLegales";
@@ -29,6 +31,8 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/analyser" element={<Analyser />} />
             <Route path="/analyse" element={<Analyse />} />
+            <Route path="/due-diligence" element={<DueDiligence />} />
+            <Route path="/due-diligence/result" element={<DueDiligenceResult />} />
             <Route path="/contact" element={<Contact />} />
             <Route path="/a-propos" element={<APropos />} />
             <Route path="/mentions-legales" element={<MentionsLegales />} />

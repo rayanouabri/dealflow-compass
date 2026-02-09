@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { BarChart3, Crown, LogOut, User, Sparkles } from "lucide-react";
+import { BarChart3, Crown, LogOut, User, Sparkles, Search, FileSearch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -23,7 +23,8 @@ export function AppLayout({
   onUpgrade,
 }: AppLayoutProps) {
   const { pathname } = useLocation();
-  const isAnalyser = pathname === "/analyser";
+  const isAnalyser = pathname === "/analyser" || pathname === "/analyse";
+  const isDueDiligence = pathname.startsWith("/due-diligence");
 
   return (
     <div className="min-h-screen flex flex-col bg-background dark">
@@ -54,9 +55,31 @@ export function AppLayout({
                   </p>
                 </div>
               </Link>
-              <span className="hidden sm:inline text-xs text-muted-foreground border-l border-primary/20 pl-4">
-                {isAnalyser ? "Configuration" : "Analyse"}
-              </span>
+              {/* Navigation tabs */}
+              <nav className="hidden sm:flex items-center gap-1 border-l border-primary/20 pl-4 ml-2">
+                <Link
+                  to="/analyser"
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-all ${
+                    isAnalyser 
+                      ? "bg-primary/20 text-primary border border-primary/30" 
+                      : "text-muted-foreground hover:text-foreground hover:bg-primary/10"
+                  }`}
+                >
+                  <Search className="w-3.5 h-3.5" />
+                  Sourcing
+                </Link>
+                <Link
+                  to="/due-diligence"
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-all ${
+                    isDueDiligence 
+                      ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" 
+                      : "text-muted-foreground hover:text-foreground hover:bg-amber-500/10"
+                  }`}
+                >
+                  <FileSearch className="w-3.5 h-3.5" />
+                  Due Diligence
+                </Link>
+              </nav>
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3">
