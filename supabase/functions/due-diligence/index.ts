@@ -551,12 +551,13 @@ serve(async (req) => {
 
     // ============================================
     // PHASE 1.5: UTILISER AGENT DIGITALOCEAN (si configuré)
+    // TEMPORAIREMENT DÉSACTIVÉ - L'API DO retourne 405 Method Not Allowed
     // ============================================
-    const USE_DO_AGENT = Deno.env.get("USE_DO_AGENT") === "true";
+    const USE_DO_AGENT = false; // Deno.env.get("USE_DO_AGENT") === "true";
     const DO_AGENT_ENDPOINT = Deno.env.get("DO_AGENT_ENDPOINT");
     const DO_AGENT_API_KEY = Deno.env.get("DO_AGENT_API_KEY");
     
-    console.log(`[DO Agent Config] USE_DO_AGENT: ${USE_DO_AGENT}`);
+    console.log(`[DO Agent] TEMPORAIREMENT DÉSACTIVÉ (erreur 405 non résolue)`);
     console.log(`[DO Agent Config] DO_AGENT_ENDPOINT: ${DO_AGENT_ENDPOINT ? "✅ Configuré" : "❌ Manquant"}`);
     console.log(`[DO Agent Config] DO_AGENT_API_KEY: ${DO_AGENT_API_KEY ? "✅ Configuré" : "❌ Manquant"}`);
     

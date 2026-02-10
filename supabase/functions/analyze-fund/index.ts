@@ -215,23 +215,38 @@ async function enrichStartupData(startup: any): Promise<any> {
   const name = startup.name || "";
   if (!name) return startup;
 
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-  // Search for company info, funding, and metrics in parallel - MORE COMPREHENSIVE
-  const [
-    generalResults,
-    fundingResults,
-    metricsResults,
-    financialResults,
-    linkedinResults,
-    crunchbaseResults,
-  ] = await Promise.all([
-    braveSearch(`${name} startup company official website`, 3),
-    braveSearch(`${name} funding round valuation investors series A B C`, 5),
-    braveSearch(`${name} ARR MRR revenue metrics customers growth 2024`, 5),
-    braveSearch(`${name} CAC LTV churn NRR burn rate runway financial metrics`, 5),
-    braveSearch(`${name} LinkedIn company employees team size`, 2),
-    braveSearch(`${name} Crunchbase profile funding revenue`, 3),
-  ]);
+  // OPTIMISATION: UNE SEULE requête Brave par startup (plan Free = 1 req/sec)
+  // On combine toutes les infos dans une seule recherche
+  console.log(`[Enrich] Enrichissement de: ${name}`);
+  
+  const combinedResults = await braveSearch(
+    `${name} startup funding revenue ARR investors LinkedIn Crunchbase 2024`, 
+    15
+  );
+  
+  // Attendre 2 secondes avant la prochaine startup
+  await sleep(2000);
+  
+  // Séparer les résultats par type
+  const generalResults = combinedResults.filter(r => 
+    !r.url.includes("linkedin") && 
+    !r.url.includes("crunchbase")
+  );
+  const fundingResults = combinedResults.filter(r => 
+    r.description.toLowerCase().includes("funding") ||
+    r.description.toLowerCase().includes("raised") ||
+    r.description.toLowerCase().includes("series")
+  );
+  const metricsResults = combinedResults.filter(r => 
+    r.description.toLowerCase().includes("revenue") ||
+    r.description.toLowerCase().includes("arr") ||
+    r.description.toLowerCase().includes("growth")
+  );
+  const financialResults = metricsResults; // Même chose
+  const linkedinResults = combinedResults.filter(r => r.url.includes("linkedin"));
+  const crunchbaseResults = combinedResults.filter(r => r.url.includes("crunchbase"));
 
   // Extract URLs - combine all search results
   const allResults = [
@@ -1054,11 +1069,13 @@ serve(async (req) => {
     const marketData = await enrichMarketData(primarySector, customThesis?.geography || "global");
     
     // Step 2.5: Use DigitalOcean Agent for enhanced sourcing (if configured)
-    const USE_DO_AGENT = Deno.env.get("USE_DO_AGENT") === "true";
+    // TEMPORAIREMENT DÉSACTIVÉ - L'API DO retourne 405 Method Not Allowed
+    // TODO: Réactiver quand le format d'API sera clarifié
+    const USE_DO_AGENT = false; // Deno.env.get("USE_DO_AGENT") === "true";
     const DO_AGENT_ENDPOINT = Deno.env.get("DO_AGENT_ENDPOINT");
     const DO_AGENT_API_KEY = Deno.env.get("DO_AGENT_API_KEY");
     
-    console.log(`[DO Agent Config] USE_DO_AGENT: ${USE_DO_AGENT}`);
+    console.log(`[DO Agent] TEMPORAIREMENT DÉSACTIVÉ (erreur 405 non résolue)`);
     console.log(`[DO Agent Config] DO_AGENT_ENDPOINT: ${DO_AGENT_ENDPOINT ? "✅ Configuré" : "❌ Manquant"}`);
     console.log(`[DO Agent Config] DO_AGENT_API_KEY: ${DO_AGENT_API_KEY ? "✅ Configuré" : "❌ Manquant"}`);
     
@@ -1165,81 +1182,41 @@ serve(async (req) => {
     
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     
-    // COUCHE 1–2 : Classic sourcing
+    // OPTIMISATION: Réduire drastiquement les requêtes Brave (plan Free = 1 req/sec, 2000/mois)
+    // On fait seulement 3-4 requêtes bien ciblées au lieu de 20+
+    
     let startupSearchResults: BraveSearchResult[] = [];
-    for (const query of startupSearchQueries.slice(0, 4)) {
-      const results = await braveSearch(query, 5);
-      startupSearchResults.push(...results);
-      await sleep(1200); // Rate limit Brave Free: 1 req/sec, on attend 1.2s pour être sûr
-    }
     
-    // COUCHE 3 : Ninja sourcing (talent, IP, spinoffs) - adapté au secteur
-    const sectorRoles: Record<string, string[]> = {
-      "defense": ["Defense Program Manager", "Systems Engineer", "Government Contracts Lead"],
-      "aerospace": ["Chief Engineer Aerospace", "Flight Systems Lead", "Propulsion Engineer"],
-      "logistics": ["VP Supply Chain", "Head of Operations", "Logistics Director"],
-      "manufacturing": ["Plant Director", "VP Manufacturing", "Production Lead"],
-      "cybersecurity": ["CISO", "Security Architect", "Threat Intelligence Lead"],
-      "default": ["CTO", "VP Engineering", "Head of Product", "Technical Lead"],
-    };
+    // Construire UNE requête optimale par secteur
+    const mainSector = sectors[0] || "technology";
+    const keywords = getSearchKeywords(mainSector);
+    const mainKeyword = keywords[0];
     
-    const getSectorRoles = (sector: string): string[] => {
-      const normalized = sector.toLowerCase();
-      for (const [key, roles] of Object.entries(sectorRoles)) {
-        if (normalized.includes(key)) return roles;
-      }
-      return sectorRoles["default"];
-    };
+    // Requête 1: Startups récentes dans le secteur
+    console.log(`[Brave] Recherche 1: ${mainKeyword} ${stage} startup ${geography}`);
+    const results1 = await braveSearch(`${mainKeyword} ${stage} startup ${geography} 2024 2025 funding`, 10);
+    startupSearchResults.push(...results1);
+    await sleep(2000); // 2 secondes entre requêtes pour être sûr
     
-    for (const sector of sectors.slice(0, 2)) {
-      const keywords = getSearchKeywords(sector);
-      const mainKeyword = keywords[0];
-      const roles = getSectorRoles(sector);
-      
-      for (const role of roles.slice(0, 2)) {
-        const results = await braveSearch(`${role} ${mainKeyword} ${geography} hiring 2024`, 2);
-        startupSearchResults.push(...results);
-        await sleep(1200); // Rate limit Brave Free: 1 req/sec, on attend 1.2s pour être sûr
-      }
-    }
+    // Requête 2: Best startups du secteur
+    console.log(`[Brave] Recherche 2: best ${mainKeyword} startups`);
+    const results2 = await braveSearch(`best ${mainKeyword} startups ${geography} 2024 emerging`, 10);
+    startupSearchResults.push(...results2);
+    await sleep(2000);
     
-    // Recherche brevets/IP spécifique au secteur
-    for (const sector of sectors.slice(0, 2)) {
-      const keywords = getSearchKeywords(sector);
-      const mainKeyword = keywords[0];
-      const patentQueries = [
-        `${mainKeyword} patent filed ${geography} 2023 2024`,
-        `${mainKeyword} innovation award ${geography} 2024`,
-      ];
-      for (const q of patentQueries) {
-        const results = await braveSearch(q, 2);
-        startupSearchResults.push(...results);
-        await sleep(1200); // Rate limit Brave Free: 1 req/sec, on attend 1.2s pour être sûr
-      }
-    }
+    // Requête 3: Funding récent dans le secteur
+    console.log(`[Brave] Recherche 3: ${mainKeyword} funding`);
+    const results3 = await braveSearch(`${mainKeyword} startup funding round ${geography} 2024`, 10);
+    startupSearchResults.push(...results3);
     
-    // Universities et incubateurs adaptés au secteur et à la géographie
-    const getRelevantInstitutions = (sector: string, geo: string): string[] => {
-      if (geo.includes("europe") || geo.includes("france")) {
-        if (sector.includes("defense") || sector.includes("aerospace")) {
-          return ["DGA", "ONERA", "Safran", "Airbus Defence"];
-        }
-        return ["CNRS", "CEA", "INRIA", "Max Planck", "ETH Zurich"];
-      }
-      if (sector.includes("defense") || sector.includes("aerospace")) {
-        return ["DARPA", "Lockheed Martin Ventures", "Boeing", "NASA JPL"];
-      }
-      return ["MIT", "Stanford", "Harvard", "Berkeley", "Y Combinator"];
-    };
+    console.log(`[Brave] Total résultats: ${startupSearchResults.length}`);
     
-    const institutions = getRelevantInstitutions(sectors[0] || "", geography);
-    for (const sector of sectors.slice(0, 2)) {
-      const keywords = getSearchKeywords(sector);
-      for (const inst of institutions.slice(0, 3)) {
-        const results = await braveSearch(`${inst} ${keywords[0]} spin-off startup 2024`, 2);
-        startupSearchResults.push(...results);
-        await sleep(1200); // Rate limit Brave Free: 1 req/sec, on attend 1.2s pour être sûr
-      }
+    // Skip les recherches additionnelles si on a déjà assez de résultats
+    if (startupSearchResults.length < 10) {
+      await sleep(2000);
+      // Requête 4 (optionnelle): Recherche plus large
+      const results4 = await braveSearch(`${mainSector} company ${geography} innovative 2024`, 10);
+      startupSearchResults.push(...results4);
     }
     
     // COUCHE 4 : Deep dive — actualités secteur, concurrence, régulation
