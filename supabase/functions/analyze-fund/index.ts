@@ -95,14 +95,69 @@ function validateAndCleanUrl(url: string): string | null {
   }
 }
 
-// Search using Brave Search API with retry and rate limit handling
-async function braveSearch(query: string, count: number = 5, retries: number = 3): Promise<BraveSearchResult[]> {
+// Search using Serper.dev API (Google Search) - 2500 free searches/month
+// Fallback to Brave Search if Serper not configured
+async function braveSearch(query: string, count: number = 10, retries: number = 2): Promise<BraveSearchResult[]> {
+  const SERPER_API_KEY = Deno.env.get("SERPER_API_KEY") || Deno.env.get("serper_api");
   const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY");
-  if (!BRAVE_API_KEY) {
-    console.warn("BRAVE_API_KEY not configured - skipping web search");
+  
+  // Préférer Serper (2500/mois gratuit) à Brave (2000/mois, 1 req/sec)
+  if (SERPER_API_KEY) {
+    return serperSearch(query, count, SERPER_API_KEY);
+  }
+  
+  if (BRAVE_API_KEY) {
+    return braveSearchFallback(query, count, BRAVE_API_KEY, retries);
+  }
+  
+  console.warn("Aucune API de recherche configurée (SERPER_API_KEY ou BRAVE_API_KEY)");
+  return [];
+}
+
+// Serper.dev search (Google results) - RECOMMANDÉ
+async function serperSearch(query: string, count: number, apiKey: string): Promise<BraveSearchResult[]> {
+  try {
+    console.log(`[Serper] Recherche: ${query.substring(0, 50)}...`);
+    
+    const response = await fetch("https://google.serper.dev/search", {
+      method: "POST",
+      headers: {
+        "X-API-KEY": apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        q: query,
+        num: Math.min(count, 20), // Max 20 résultats par requête
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[Serper] Erreur ${response.status}: ${errorText.substring(0, 200)}`);
+      return [];
+    }
+
+    const data = await response.json();
+    
+    // Serper retourne les résultats dans "organic"
+    const results = (data.organic || []).slice(0, count).map((r: any) => ({
+      title: r.title || "",
+      url: r.link || "",
+      description: r.snippet || "",
+      extra_snippets: [],
+    }));
+    
+    console.log(`[Serper] ✅ ${results.length} résultats trouvés`);
+    return results;
+    
+  } catch (error) {
+    console.error("[Serper] Échec:", error);
     return [];
   }
+}
 
+// Brave Search fallback (si Serper non configuré)
+async function braveSearchFallback(query: string, count: number, apiKey: string, retries: number): Promise<BraveSearchResult[]> {
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   for (let attempt = 0; attempt < retries; attempt++) {
@@ -112,7 +167,7 @@ async function braveSearch(query: string, count: number = 5, retries: number = 3
       const response = await fetch(url, {
         headers: {
           "Accept": "application/json",
-          "X-Subscription-Token": BRAVE_API_KEY,
+          "X-Subscription-Token": apiKey,
         },
       });
 
@@ -126,50 +181,23 @@ async function braveSearch(query: string, count: number = 5, retries: number = 3
         }));
       }
 
-      // Gestion des erreurs spécifiques
       const status = response.status;
-      const errorText = await response.text();
       
-      if (status === 422) {
-        // Token invalide - on retourne silencieusement (pas besoin de spammer les logs)
-        if (attempt === 0) {
-          console.warn("Brave Search: Token invalide (422) - vérifiez BRAVE_API_KEY");
-        }
-        return [];
+      if (status === 429 && attempt < retries - 1) {
+        const waitTime = Math.min(2000 * Math.pow(2, attempt), 10000);
+        console.log(`[Brave] Rate limited, retry in ${waitTime}ms`);
+        await sleep(waitTime);
+        continue;
       }
       
-      if (status === 429) {
-        // Rate limit - on attend et on réessaie
-        const waitTime = Math.min(2000 * Math.pow(2, attempt), 10000); // Max 10s
-        if (attempt < retries - 1) {
-          console.log(`Brave Search rate limited (429), retry in ${waitTime}ms (attempt ${attempt + 1}/${retries})`);
-          await sleep(waitTime);
-          continue;
-        } else {
-          console.warn("Brave Search: Rate limit atteint, abandon après tous les essais");
-          return [];
-        }
-      }
-      
-      // Autres erreurs - on log seulement la première fois
-      if (attempt === 0) {
-        console.error(`Brave Search error: ${status} - ${errorText.substring(0, 200)}`);
-      }
-      
-      // Si c'est la dernière tentative, on retourne vide
-      if (attempt === retries - 1) {
-        return [];
-      }
-      
-      // Sinon on attend un peu avant de réessayer
-      await sleep(500 * (attempt + 1));
+      return [];
       
     } catch (error) {
       if (attempt === retries - 1) {
-        console.error("Brave Search failed after all retries:", error);
+        console.error("[Brave] Échec:", error);
         return [];
       }
-      await sleep(500 * (attempt + 1));
+      await sleep(1000);
     }
   }
   

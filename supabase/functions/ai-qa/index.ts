@@ -79,25 +79,51 @@ function validateAndCleanUrl(url: string): string | null {
   }
 }
 
-async function braveSearch(query: string, count: number = 4): Promise<BraveSearchResult[]> {
-  const key = Deno.env.get("BRAVE_API_KEY");
-  if (!key) return [];
-  try {
-    const res = await fetch(
-      `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}&text_decorations=false&result_filter=web`,
-      { headers: { "Accept": "application/json", "X-Subscription-Token": key } }
-    );
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.web?.results || []).map((r: any) => ({
-      title: r.title || "",
-      url: r.url || "",
-      description: r.description || "",
-      extra_snippets: r.extra_snippets || [],
-    }));
-  } catch {
-    return [];
+// Search using Serper.dev (preferred) or Brave Search (fallback)
+async function braveSearch(query: string, count: number = 5): Promise<BraveSearchResult[]> {
+  const SERPER_KEY = Deno.env.get("SERPER_API_KEY") || Deno.env.get("serper_api");
+  const BRAVE_KEY = Deno.env.get("BRAVE_API_KEY");
+  
+  // Préférer Serper (2500/mois gratuit, pas de rate limit strict)
+  if (SERPER_KEY) {
+    try {
+      const res = await fetch("https://google.serper.dev/search", {
+        method: "POST",
+        headers: { "X-API-KEY": SERPER_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ q: query, num: Math.min(count, 10) }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return (data.organic || []).slice(0, count).map((r: any) => ({
+          title: r.title || "",
+          url: r.link || "",
+          description: r.snippet || "",
+          extra_snippets: [],
+        }));
+      }
+    } catch { /* fallback to Brave */ }
   }
+  
+  // Fallback Brave
+  if (BRAVE_KEY) {
+    try {
+      const res = await fetch(
+        `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}`,
+        { headers: { "Accept": "application/json", "X-Subscription-Token": BRAVE_KEY } }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        return (data.web?.results || []).map((r: any) => ({
+          title: r.title || "",
+          url: r.url || "",
+          description: r.description || "",
+          extra_snippets: r.extra_snippets || [],
+        }));
+      }
+    } catch { /* return empty */ }
+  }
+  
+  return [];
 }
 
 serve(async (req) => {
