@@ -71,39 +71,85 @@ function validateAndCleanUrl(url: string): string | null {
 }
 
 // Search using Brave Search API
-async function braveSearch(query: string, count: number = 10): Promise<BraveSearchResult[]> {
+// Search using Brave Search API with retry and rate limit handling
+async function braveSearch(query: string, count: number = 10, retries: number = 3): Promise<BraveSearchResult[]> {
   const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY");
   if (!BRAVE_API_KEY) {
     console.warn("BRAVE_API_KEY not configured - skipping web search");
     return [];
   }
 
-  try {
-    const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}&text_decorations=false&result_filter=web`;
-    
-    const response = await fetch(url, {
-      headers: {
-        "Accept": "application/json",
-        "X-Subscription-Token": BRAVE_API_KEY,
-      },
-    });
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-    if (!response.ok) {
-      console.error("Brave Search error:", response.status, await response.text());
-      return [];
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}&text_decorations=false&result_filter=web`;
+      
+      const response = await fetch(url, {
+        headers: {
+          "Accept": "application/json",
+          "X-Subscription-Token": BRAVE_API_KEY,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return (data.web?.results || []).map((r: any) => ({
+          title: r.title || "",
+          url: r.url || "",
+          description: r.description || "",
+          extra_snippets: r.extra_snippets || [],
+        }));
+      }
+
+      // Gestion des erreurs spécifiques
+      const status = response.status;
+      const errorText = await response.text();
+      
+      if (status === 422) {
+        // Token invalide - on retourne silencieusement
+        if (attempt === 0) {
+          console.warn("Brave Search: Token invalide (422) - vérifiez BRAVE_API_KEY");
+        }
+        return [];
+      }
+      
+      if (status === 429) {
+        // Rate limit - on attend et on réessaie
+        const waitTime = Math.min(2000 * Math.pow(2, attempt), 10000); // Max 10s
+        if (attempt < retries - 1) {
+          console.log(`Brave Search rate limited (429), retry in ${waitTime}ms (attempt ${attempt + 1}/${retries})`);
+          await sleep(waitTime);
+          continue;
+        } else {
+          console.warn("Brave Search: Rate limit atteint, abandon après tous les essais");
+          return [];
+        }
+      }
+      
+      // Autres erreurs - on log seulement la première fois
+      if (attempt === 0) {
+        console.error(`Brave Search error: ${status} - ${errorText.substring(0, 200)}`);
+      }
+      
+      // Si c'est la dernière tentative, on retourne vide
+      if (attempt === retries - 1) {
+        return [];
+      }
+      
+      // Sinon on attend un peu avant de réessayer
+      await sleep(500 * (attempt + 1));
+      
+    } catch (error) {
+      if (attempt === retries - 1) {
+        console.error("Brave Search failed after all retries:", error);
+        return [];
+      }
+      await sleep(500 * (attempt + 1));
     }
-
-    const data = await response.json();
-    return (data.web?.results || []).map((r: any) => ({
-      title: r.title || "",
-      url: r.url || "",
-      description: r.description || "",
-      extra_snippets: r.extra_snippets || [],
-    }));
-  } catch (error) {
-    console.error("Brave Search failed:", error);
-    return [];
   }
+  
+  return [];
 }
 
 // Robust JSON parsing function
@@ -411,7 +457,7 @@ serve(async (req) => {
       );
       batchResults.forEach(results => allSearchResults.push(...results));
       if (i + batchSize < searchQueries.length) {
-        await sleep(300); // Rate limiting
+        await sleep(1200); // Rate limit Brave Free: 1 req/sec, on attend 1.2s pour être sûr
       }
     }
 
@@ -507,6 +553,13 @@ serve(async (req) => {
     // PHASE 1.5: UTILISER AGENT DIGITALOCEAN (si configuré)
     // ============================================
     const USE_DO_AGENT = Deno.env.get("USE_DO_AGENT") === "true";
+    const DO_AGENT_ENDPOINT = Deno.env.get("DO_AGENT_ENDPOINT");
+    const DO_AGENT_API_KEY = Deno.env.get("DO_AGENT_API_KEY");
+    
+    console.log(`[DO Agent Config] USE_DO_AGENT: ${USE_DO_AGENT}`);
+    console.log(`[DO Agent Config] DO_AGENT_ENDPOINT: ${DO_AGENT_ENDPOINT ? "✅ Configuré" : "❌ Manquant"}`);
+    console.log(`[DO Agent Config] DO_AGENT_API_KEY: ${DO_AGENT_API_KEY ? "✅ Configuré" : "❌ Manquant"}`);
+    
     let doAgentDueDiligenceResult = "";
     
     if (USE_DO_AGENT) {
@@ -520,11 +573,14 @@ serve(async (req) => {
         
         const doResponse = await callDigitalOceanAgent(dueDiligencePrompt);
         doAgentDueDiligenceResult = doResponse.output || "";
-        console.log("DigitalOcean Agent due diligence completed");
+        console.log("✅ DigitalOcean Agent due diligence completed");
+        console.log(`[DO Agent] Réponse reçue: ${doAgentDueDiligenceResult.length} caractères`);
       } catch (doError) {
-        console.warn("DigitalOcean Agent failed, falling back to standard analysis:", doError);
+        console.error("❌ DigitalOcean Agent failed, falling back to standard analysis:", doError);
         // Continue with standard analysis if agent fails
       }
+    } else {
+      console.log("⚠️ DigitalOcean Agent désactivé (USE_DO_AGENT != 'true')");
     }
 
     // ============================================

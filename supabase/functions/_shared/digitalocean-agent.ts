@@ -43,46 +43,93 @@ export async function callDigitalOceanAgent(
   };
 
   try {
-    const response = await fetch(DO_AGENT_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${DO_AGENT_API_KEY}`,
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(
-        `DigitalOcean Agent API error: ${response.status} - ${errorText}`
-      );
-    }
-
-    const data = await response.json();
+    // Normaliser l'URL de l'endpoint
+    let normalizedEndpoint = DO_AGENT_ENDPOINT.trim();
     
-    // Format de réponse peut varier selon l'API DigitalOcean
-    // On s'adapte aux formats possibles
-    if (data.output) {
-      return {
-        output: data.output,
-        usage: data.usage,
-      };
-    } else if (data.response) {
-      return {
-        output: data.response,
-        usage: data.usage,
-      };
-    } else if (typeof data === 'string') {
-      return {
-        output: data,
-      };
-    } else {
-      // Si la structure est différente, on retourne le JSON stringifié
-      return {
-        output: JSON.stringify(data, null, 2),
-      };
+    // Enlever /invoke si présent pour tester différentes variantes
+    normalizedEndpoint = normalizedEndpoint.replace(/\/invoke\/?$/, '');
+    
+    // Essayer plusieurs formats d'endpoint
+    const endpointVariants = [
+      normalizedEndpoint, // URL de base
+      `${normalizedEndpoint}/invoke`, // Avec /invoke
+      `${normalizedEndpoint}/chat`, // Avec /chat (format alternatif)
+    ];
+    
+    let lastError: Error | null = null;
+    
+    for (const endpoint of endpointVariants) {
+      try {
+        console.log(`[DO Agent] Tentative avec endpoint: ${endpoint.substring(0, 80)}...`);
+        
+        // Essayer avec différents formats de body
+        const bodyVariants = [
+          { input: prompt, stream: false },
+          { message: prompt },
+          { prompt: prompt },
+          { query: prompt },
+        ];
+        
+        for (const bodyVariant of bodyVariants) {
+          try {
+            const response = await fetch(endpoint, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${DO_AGENT_API_KEY}`,
+              },
+              body: JSON.stringify(bodyVariant),
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              console.log(`[DO Agent] ✅ Succès avec endpoint: ${endpoint.substring(0, 50)}...`);
+              
+              // Format de réponse peut varier
+              if (data.output) {
+                return {
+                  output: data.output,
+                  usage: data.usage,
+                };
+              } else if (data.response) {
+                return {
+                  output: data.response,
+                  usage: data.usage,
+                };
+              } else if (data.message) {
+                return {
+                  output: data.message,
+                  usage: data.usage,
+                };
+              } else if (typeof data === 'string') {
+                return {
+                  output: data,
+                };
+              } else {
+                return {
+                  output: JSON.stringify(data, null, 2),
+                };
+              }
+            } else if (response.status !== 404) {
+              // Si ce n'est pas un 404, on continue avec le prochain format
+              const errorText = await response.text();
+              console.log(`[DO Agent] Erreur ${response.status} (non-404), essaie suivant...`);
+              lastError = new Error(`DigitalOcean Agent API error: ${response.status} - ${errorText}`);
+              continue;
+            }
+          } catch (e) {
+            // Continue avec le prochain format
+            continue;
+          }
+        }
+      } catch (e) {
+        lastError = e instanceof Error ? e : new Error(String(e));
+        continue;
+      }
     }
+    
+    // Si toutes les tentatives ont échoué
+    throw lastError || new Error("DigitalOcean Agent: Toutes les tentatives d'endpoint ont échoué");
   } catch (error) {
     console.error("DigitalOcean Agent call failed:", error);
     throw error;
