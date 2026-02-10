@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { callDigitalOceanAgent, formatSourcingPrompt } from "../_shared/digitalocean-agent.ts";
 
 const ALLOWED_ORIGINS = [
   "https://ai-vc-sourcing.vercel.app",
@@ -1007,6 +1008,39 @@ serve(async (req) => {
     const primarySector = customThesis?.sectors?.[0] || "technology startups";
     const marketData = await enrichMarketData(primarySector, customThesis?.geography || "global");
     
+    // Step 2.5: Use DigitalOcean Agent for enhanced sourcing (if configured)
+    const USE_DO_AGENT = Deno.env.get("USE_DO_AGENT") === "true";
+    let doAgentSourcingResult = "";
+    
+    if (USE_DO_AGENT) {
+      try {
+        console.log("Using DigitalOcean Agent for sourcing...");
+        const stage = params.fundingStage || customThesis?.stage || "seed";
+        const geography = params.headquartersRegion || customThesis?.geography || "global";
+        const paramsStartupSector = params.startupSector || "";
+        const sectors = (customThesis?.sectors?.length 
+          ? customThesis.sectors 
+          : (paramsStartupSector ? [paramsStartupSector] : (fundName ? ["technology"] : ["technology"]))
+        ) as string[];
+        
+        const sourcingPrompt = formatSourcingPrompt(
+          fundName || undefined,
+          customThesis,
+          sectors,
+          stage,
+          geography,
+          numberOfStartups
+        );
+        
+        const doResponse = await callDigitalOceanAgent(sourcingPrompt);
+        doAgentSourcingResult = doResponse.output || "";
+        console.log("DigitalOcean Agent sourcing completed");
+      } catch (doError) {
+        console.warn("DigitalOcean Agent failed, falling back to standard sourcing:", doError);
+        // Continue with standard sourcing if agent fails
+      }
+    }
+    
     // Step 3: Search for REAL startups matching the thesis (CRITICAL for sourcing)
     let startupSearchQueries: string[] = [];
     
@@ -1212,10 +1246,16 @@ Réponds UNIQUEMENT avec un JSON: {"queries": ["query1", "query2", ...]}`;
       console.warn("Reflection layer skipped:", e);
     }
     
-    const startupSearchContext = startupSearchResults
+    // Combine all sourcing results
+    let startupSearchContext = startupSearchResults
       .slice(0, 25)
       .map(r => `${r.title}: ${r.description} | URL: ${r.url}`)
       .join("\n") + reflectionContext;
+    
+    // Add DigitalOcean Agent results if available
+    if (doAgentSourcingResult) {
+      startupSearchContext = `=== SOURCING PAR AGENT DIGITALOCEAN (recherche approfondie) ===\n${doAgentSourcingResult}\n\n=== RÉSULTATS RECHERCHE WEB (Brave Search) ===\n${startupSearchContext}`;
+    }
 
     const systemPrompt = `Tu es un analyste VC SENIOR avec 15+ ans d'expérience en sourcing de startups et due diligence approfondie pour les plus grands fonds (Sequoia, a16z, Accel, etc.).
 

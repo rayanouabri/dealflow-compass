@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { callDigitalOceanAgent, formatDueDiligencePrompt } from "../_shared/digitalocean-agent.ts";
 
 const ALLOWED_ORIGINS = [
   "https://ai-vc-sourcing.vercel.app",
@@ -503,6 +504,30 @@ serve(async (req) => {
     const searchContext = buildSearchContext();
 
     // ============================================
+    // PHASE 1.5: UTILISER AGENT DIGITALOCEAN (si configuré)
+    // ============================================
+    const USE_DO_AGENT = Deno.env.get("USE_DO_AGENT") === "true";
+    let doAgentDueDiligenceResult = "";
+    
+    if (USE_DO_AGENT) {
+      try {
+        console.log("Using DigitalOcean Agent for due diligence...");
+        const dueDiligencePrompt = formatDueDiligencePrompt(
+          companyName,
+          companyWebsite,
+          additionalContext
+        );
+        
+        const doResponse = await callDigitalOceanAgent(dueDiligencePrompt);
+        doAgentDueDiligenceResult = doResponse.output || "";
+        console.log("DigitalOcean Agent due diligence completed");
+      } catch (doError) {
+        console.warn("DigitalOcean Agent failed, falling back to standard analysis:", doError);
+        // Continue with standard analysis if agent fails
+      }
+    }
+
+    // ============================================
     // PHASE 2: ANALYSE IA AVEC TOUTES LES DONNÉES
     // ============================================
 
@@ -705,17 +730,24 @@ INSTRUCTIONS SUPPLÉMENTAIRES :
 ${additionalContext ? `\nCONTEXTE ADDITIONNEL FOURNI PAR L'UTILISATEUR:\n${additionalContext}` : ''}
 ${companyWebsite ? `\nSITE WEB FOURNI: ${companyWebsite}` : ''}`;
 
+    // Combine search context with DigitalOcean Agent results
+    let combinedContext = searchContext;
+    if (doAgentDueDiligenceResult) {
+      combinedContext = `=== ANALYSE PAR AGENT DIGITALOCEAN (recherche approfondie) ===\n${doAgentDueDiligenceResult}\n\n=== RÉSULTATS RECHERCHE WEB (Brave Search) ===\n${searchContext}`;
+    }
+
     const userPrompt = `Effectue une due diligence COMPLÈTE sur l'entreprise "${companyName}".
 
-Voici TOUTES les données collectées par nos recherches web. Utilise-les pour produire un rapport exhaustif :
+Voici TOUTES les données collectées par nos recherches web et notre agent de sourcing. Utilise-les pour produire un rapport exhaustif :
 
-${searchContext}
+${combinedContext}
 
 ⚠️ RAPPELS CRITIQUES :
 1. Cite TOUJOURS les sources avec leurs URLs exactes
 2. N'invente AUCUNE donnée ni URL
 3. Si une info n'est pas dans les recherches, indique "Non disponible"
 4. Sois exhaustif et professionnel
+5. Priorise les informations de l'agent DigitalOcean si disponibles (recherche approfondie)
 
 Réponds UNIQUEMENT avec du JSON valide.`;
 
