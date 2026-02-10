@@ -345,22 +345,51 @@ Description: ${investmentThesis.description || "Non spécifié"}
         ).join("\n")}\n`
       : "";
 
-    // Couches Brave : actualités, funding, question ciblée
+    // Couches Brave : recherches ciblées selon la question
     const name = startupData.name || "";
-    const braveQueries = [
-      `${name} startup news 2024 2025`,
-      `${name} funding valuation investors`,
-    ];
+    const sector = startupData.sector || "";
     const qLower = question.toLowerCase().trim();
-    if (qLower.length > 10 && !qLower.includes("?")) {
-      braveQueries.push(`${name} ${question.slice(0, 60).trim()}`);
+    
+    // Construire des requêtes intelligentes basées sur la question
+    const braveQueries: string[] = [];
+    
+    // Requête principale basée sur la question
+    if (qLower.length > 5) {
+      braveQueries.push(`${name} ${question.slice(0, 80).trim()}`);
     }
+    
+    // Requêtes contextuelles selon le type de question
+    if (qLower.includes("arr") || qLower.includes("mrr") || qLower.includes("revenu") || qLower.includes("chiffre")) {
+      braveQueries.push(`${name} revenue ARR MRR 2024 2025`);
+    }
+    if (qLower.includes("funding") || qLower.includes("levée") || qLower.includes("investisseur") || qLower.includes("valorisation")) {
+      braveQueries.push(`${name} funding round investors valuation 2024 2025`);
+    }
+    if (qLower.includes("équipe") || qLower.includes("fondateur") || qLower.includes("ceo") || qLower.includes("team")) {
+      braveQueries.push(`${name} founders CEO team LinkedIn`);
+    }
+    if (qLower.includes("produit") || qLower.includes("technologie") || qLower.includes("tech")) {
+      braveQueries.push(`${name} product technology stack features`);
+    }
+    if (qLower.includes("concurrent") || qLower.includes("marché") || qLower.includes("competition")) {
+      braveQueries.push(`${name} competitors market ${sector}`);
+    }
+    if (qLower.includes("client") || qLower.includes("traction") || qLower.includes("growth")) {
+      braveQueries.push(`${name} customers traction growth 2024`);
+    }
+    
+    // Requête générale si pas assez de requêtes spécifiques
+    if (braveQueries.length < 2) {
+      braveQueries.push(`${name} startup news 2024 2025`);
+      braveQueries.push(`${name} ${sector} company`);
+    }
+    
     let braveContext = "";
     const allBraveResults: BraveSearchResult[] = [];
-    for (const q of braveQueries.slice(0, 3)) {
-      const results = await braveSearch(q, 4);
+    for (const q of braveQueries.slice(0, 4)) {
+      const results = await braveSearch(q, 5);
       allBraveResults.push(...results);
-      await new Promise((r) => setTimeout(r, 350));
+      await new Promise((r) => setTimeout(r, 1200)); // Rate limit Brave Free: 1 req/sec
     }
     if (allBraveResults.length > 0) {
       braveContext = `\n\nRECHERCHE WEB (Brave) - données récentes sur ${name}:\n${allBraveResults
@@ -369,18 +398,42 @@ Description: ${investmentThesis.description || "Non spécifié"}
         .join("\n")}`;
     }
 
-    const systemPrompt = `Tu es l'assistant IA d'AI-VC, expert en analyse de startups. Tu réponds aux questions sur les startups en t'appuyant sur :
-1. Les données d'analyse fournies (métriques, thèse, due diligence).
-2. Les résultats de recherche web (Brave) quand présents — cite les URLs quand tu t'en sers.
+    const systemPrompt = `Tu es l'assistant IA d'AI-VC, un expert senior en analyse de startups et due diligence VC.
 
-RÈGLES IMPORTANTES :
-- Réfléchis avant de répondre. Structure ta réponse clairement.
-- Cite TOUJOURS les sources (URLs complètes) quand tu utilises des données web.
-- Inclus au moins 3-5 sources URL valides dans ta réponse quand tu utilises des données web.
-- N'utilise JAMAIS de formatage markdown (**bold**, *italic*, etc.) - écris en texte brut.
-- Si une info manque, dis-le clairement.
-- Reste professionnel et factuel.
-- Les URLs doivent être complètes (https://...) et valides.`;
+TON RÔLE :
+Tu réponds aux questions sur la startup "${startupData.name}" en t'appuyant sur :
+1. Les données d'analyse fournies (métriques, thèse, due diligence)
+2. Les résultats de recherche web (Brave) - cite TOUJOURS les URLs
+3. L'historique de conversation pour maintenir le contexte
+
+RÈGLES CRITIQUES :
+1. SOURCES OBLIGATOIRES : Chaque fait doit avoir une source URL
+2. MÉMOIRE : Utilise l'historique de conversation pour des réponses cohérentes
+3. PRÉCISION : Si une info n'est pas disponible, dis-le clairement
+4. FORMAT : Texte brut uniquement (pas de markdown **bold** ou *italic*)
+5. STRUCTURE : Organise ta réponse avec des sections claires
+
+TYPES DE QUESTIONS À GÉRER :
+- Métriques financières (ARR, MRR, croissance, valorisation)
+- Équipe et fondateurs (background, LinkedIn)
+- Produit et technologie (stack, brevets, différenciation)
+- Marché (TAM, SAM, SOM, concurrence)
+- Funding (historique des levées, investisseurs)
+- Risques et opportunités
+
+POUR CHAQUE RÉPONSE :
+1. Commence par un résumé direct de la réponse
+2. Développe avec les détails et le contexte
+3. Cite les sources avec URLs complètes
+4. Si pertinent, donne ton analyse VC
+
+EXEMPLE DE BONNE RÉPONSE :
+"L'ARR de [Startup] est estimé à $2.5M selon TechCrunch (https://techcrunch.com/...). 
+Cette métrique est cohérente avec leur stade Series A et leur croissance de 120% YoY.
+Sources: [URL1], [URL2]"
+
+EXEMPLE DE MAUVAISE RÉPONSE :
+"L'ARR est de $2.5M." (pas de source, pas de contexte)`;
 
     const userPrompt = `${startupContext}
 ${metricsContext}

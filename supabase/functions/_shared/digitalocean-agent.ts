@@ -1,12 +1,10 @@
 /**
  * Helper pour appeler l'agent DigitalOcean GenAI
  * Utilisé pour le sourcing de startups et la due diligence
+ * 
+ * NOTE: L'API DigitalOcean Agents utilise un format spécifique.
+ * L'endpoint doit être appelé avec le bon format de requête.
  */
-
-interface DigitalOceanAgentRequest {
-  input: string;
-  stream?: boolean;
-}
 
 interface DigitalOceanAgentResponse {
   output: string;
@@ -18,10 +16,7 @@ interface DigitalOceanAgentResponse {
 
 /**
  * Appelle l'agent DigitalOcean avec une requête
- * @param prompt - Le prompt à envoyer à l'agent
- * @param endpointUrl - L'URL de l'endpoint de l'agent (optionnel, prend depuis env si non fourni)
- * @param apiKey - La clé d'API (optionnel, prend depuis env si non fourni)
- * @returns La réponse de l'agent
+ * Format attendu par l'API DigitalOcean GenAI Agents
  */
 export async function callDigitalOceanAgent(
   prompt: string,
@@ -37,114 +32,79 @@ export async function callDigitalOceanAgent(
     );
   }
 
-  const requestBody: DigitalOceanAgentRequest = {
-    input: prompt,
-    stream: false, // On veut une réponse complète, pas un stream
-  };
+  // Normaliser l'URL de l'endpoint
+  let normalizedEndpoint = DO_AGENT_ENDPOINT.trim();
+  
+  // S'assurer que l'URL ne se termine pas par /
+  normalizedEndpoint = normalizedEndpoint.replace(/\/+$/, '');
+  
+  console.log(`[DO Agent] Appel à: ${normalizedEndpoint.substring(0, 60)}...`);
 
   try {
-    // Normaliser l'URL de l'endpoint
-    let normalizedEndpoint = DO_AGENT_ENDPOINT.trim();
-    
-    // Enlever /invoke si présent pour tester différentes variantes
-    normalizedEndpoint = normalizedEndpoint.replace(/\/invoke\/?$/, '');
-    
-    // Essayer plusieurs formats d'endpoint
-    const endpointVariants = [
-      normalizedEndpoint, // URL de base
-      `${normalizedEndpoint}/invoke`, // Avec /invoke
-      `${normalizedEndpoint}/chat`, // Avec /chat (format alternatif)
-    ];
-    
-    let lastError: Error | null = null;
-    
-    for (const endpoint of endpointVariants) {
-      try {
-        console.log(`[DO Agent] Tentative avec endpoint: ${endpoint.substring(0, 80)}...`);
-        
-        // Essayer avec différents formats de body
-        const bodyVariants = [
-          { input: prompt, stream: false },
-          { message: prompt },
-          { prompt: prompt },
-          { query: prompt },
-        ];
-        
-        for (const bodyVariant of bodyVariants) {
-          try {
-            const response = await fetch(endpoint, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${DO_AGENT_API_KEY}`,
-              },
-              body: JSON.stringify(bodyVariant),
-            });
-
-            if (response.ok) {
-              const data = await response.json();
-              console.log(`[DO Agent] ✅ Succès avec endpoint: ${endpoint.substring(0, 50)}...`);
-              
-              // Format de réponse peut varier
-              if (data.output) {
-                return {
-                  output: data.output,
-                  usage: data.usage,
-                };
-              } else if (data.response) {
-                return {
-                  output: data.response,
-                  usage: data.usage,
-                };
-              } else if (data.message) {
-                return {
-                  output: data.message,
-                  usage: data.usage,
-                };
-              } else if (typeof data === 'string') {
-                return {
-                  output: data,
-                };
-              } else {
-                return {
-                  output: JSON.stringify(data, null, 2),
-                };
-              }
-            } else if (response.status !== 404) {
-              // Si ce n'est pas un 404, on continue avec le prochain format
-              const errorText = await response.text();
-              console.log(`[DO Agent] Erreur ${response.status} (non-404), essaie suivant...`);
-              lastError = new Error(`DigitalOcean Agent API error: ${response.status} - ${errorText}`);
-              continue;
-            }
-          } catch (e) {
-            // Continue avec le prochain format
-            continue;
-          }
+    // Format de requête pour DigitalOcean GenAI Agents
+    // Basé sur la documentation: https://docs.digitalocean.com/products/genai-platform/
+    const requestBody = {
+      messages: [
+        {
+          role: "user",
+          content: prompt
         }
-      } catch (e) {
-        lastError = e instanceof Error ? e : new Error(String(e));
-        continue;
-      }
+      ],
+      stream: false
+    };
+
+    const response = await fetch(normalizedEndpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${DO_AGENT_API_KEY}`,
+        "Accept": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[DO Agent] Erreur ${response.status}: ${errorText.substring(0, 200)}`);
+      throw new Error(`DigitalOcean Agent API error: ${response.status} - ${errorText}`);
     }
+
+    const data = await response.json();
+    console.log(`[DO Agent] ✅ Réponse reçue`);
     
-    // Si toutes les tentatives ont échoué
-    throw lastError || new Error("DigitalOcean Agent: Toutes les tentatives d'endpoint ont échoué");
+    // Extraire la réponse selon le format de l'API
+    let output = "";
+    
+    if (data.choices && data.choices[0]?.message?.content) {
+      // Format OpenAI-like
+      output = data.choices[0].message.content;
+    } else if (data.output) {
+      output = data.output;
+    } else if (data.response) {
+      output = data.response;
+    } else if (data.message) {
+      output = data.message;
+    } else if (data.content) {
+      output = data.content;
+    } else if (typeof data === 'string') {
+      output = data;
+    } else {
+      output = JSON.stringify(data, null, 2);
+    }
+
+    return {
+      output,
+      usage: data.usage,
+    };
   } catch (error) {
-    console.error("DigitalOcean Agent call failed:", error);
+    console.error("[DO Agent] Échec:", error);
     throw error;
   }
 }
 
 /**
  * Formate une requête de sourcing pour l'agent DigitalOcean
- * @param fundName - Nom du fond (optionnel)
- * @param customThesis - Thèse personnalisée (optionnel)
- * @param sectors - Secteurs cibles
- * @param stage - Stade d'investissement
- * @param geography - Géographie cible
- * @param numberOfStartups - Nombre de startups à sourcer
- * @returns Le prompt formaté pour l'agent
+ * Prompt optimisé pour des résultats pertinents et sourcés
  */
 export function formatSourcingPrompt(
   fundName?: string,
@@ -160,97 +120,243 @@ export function formatSourcingPrompt(
   geography?: string,
   numberOfStartups: number = 5
 ): string {
-  let prompt = "";
+  let prompt = `# MISSION DE SOURCING VC PROFESSIONNEL
 
-  if (fundName) {
-    prompt += `Thèse d'investissement du fond : "${fundName}"\n\n`;
+Tu es un analyste VC senior spécialisé dans le sourcing de startups. Tu dois identifier ${numberOfStartups} startup(s) qui correspondent PARFAITEMENT aux critères ci-dessous.
+
+## CRITÈRES D'INVESTISSEMENT
+`;
+
+  if (fundName && fundName !== "Custom Thesis") {
+    prompt += `\n**Fond de référence:** ${fundName}\n`;
+    prompt += `Analyse la thèse d'investissement de ce fond et trouve des startups qui correspondent à leur stratégie.\n`;
   }
 
   if (customThesis) {
-    prompt += "THÈSE PERSONNALISÉE :\n";
+    prompt += `\n**Thèse personnalisée:**\n`;
     if (customThesis.sectors?.length) {
-      prompt += `- Secteurs : ${customThesis.sectors.join(", ")}\n`;
+      prompt += `- Secteurs: ${customThesis.sectors.join(", ")}\n`;
     }
     if (customThesis.stage) {
-      prompt += `- Stade : ${customThesis.stage}\n`;
+      prompt += `- Stade: ${customThesis.stage}\n`;
     }
     if (customThesis.geography) {
-      prompt += `- Géographie : ${customThesis.geography}\n`;
+      prompt += `- Géographie: ${customThesis.geography}\n`;
     }
     if (customThesis.ticketSize) {
-      prompt += `- Ticket : ${customThesis.ticketSize}\n`;
+      prompt += `- Ticket: ${customThesis.ticketSize}\n`;
     }
     if (customThesis.description) {
-      prompt += `- Description : ${customThesis.description}\n`;
+      prompt += `- Description: ${customThesis.description}\n`;
     }
-    prompt += "\n";
   } else {
-    // Utiliser les paramètres directs
     if (sectors?.length) {
-      prompt += `Secteurs recherchés : ${sectors.join(", ")}\n`;
+      prompt += `- Secteurs: ${sectors.join(", ")}\n`;
     }
     if (stage) {
-      prompt += `Stade : ${stage}\n`;
+      prompt += `- Stade: ${stage}\n`;
     }
     if (geography) {
-      prompt += `Géographie : ${geography}\n`;
+      prompt += `- Géographie: ${geography}\n`;
     }
-    prompt += "\n";
   }
 
-  prompt += `MISSION : Sourcer ${numberOfStartups} startup(s) qui correspondent PARFAITEMENT à cette thèse.\n\n`;
-  prompt += `IMPORTANT :\n`;
-  prompt += `- Cherche des startups RÉELLES avec des sources vérifiables (site web, LinkedIn, articles)\n`;
-  prompt += `- Détecte les signaux faibles (recrutement massif, brevets, spin-offs, incubateurs)\n`;
-  prompt += `- Ne te limite PAS à Crunchbase - utilise aussi presse spécialisée, blogs tech, LinkedIn, GitHub, etc.\n`;
-  prompt += `- Pour chaque startup, donne : nom, site web (URL), localisation, secteur, stade, description, pourquoi elle matche, signes forts, signaux faibles, funding connu, et AU MOINS 3 sources avec URLs\n`;
-  prompt += `- Réponds en FRANÇAIS\n`;
-  prompt += `- Format : liste claire et structurée, avec sources citées pour chaque info\n`;
+  prompt += `
+## RÈGLES STRICTES
+
+1. **STARTUPS RÉELLES UNIQUEMENT** - Ne propose que des entreprises qui existent vraiment
+2. **SOURCES OBLIGATOIRES** - Chaque information doit avoir une source vérifiable (URL)
+3. **PAS DE CRUNCHBASE UNIQUEMENT** - Diversifie tes sources:
+   - Presse spécialisée (TechCrunch, Les Echos, Maddyness, etc.)
+   - LinkedIn (profils fondateurs, page entreprise)
+   - Site web officiel de la startup
+   - GitHub si pertinent
+   - Articles de blog, podcasts, interviews
+   - Communiqués de presse
+4. **SIGNAUX FAIBLES** - Détecte:
+   - Recrutements massifs (LinkedIn Jobs)
+   - Nouveaux brevets déposés
+   - Spin-offs d'entreprises/universités
+   - Participation à des incubateurs/accélérateurs
+   - Partenariats stratégiques récents
+5. **MÉTRIQUES VÉRIFIABLES** - Si tu donnes des chiffres, cite la source
+6. **SI PAS ASSEZ D'INFO** - Passe à une autre startup plus documentée
+
+## FORMAT DE RÉPONSE (pour chaque startup)
+
+\`\`\`
+### [NOM DE LA STARTUP]
+
+**Site web:** [URL vérifiée]
+**Localisation:** [Ville, Pays]
+**Secteur:** [Secteur principal]
+**Stade:** [Pre-seed/Seed/Series A/etc.]
+**Fondée en:** [Année]
+
+**Description:**
+[2-3 phrases sur ce que fait la startup]
+
+**Pourquoi elle matche:**
+[Explication de l'adéquation avec la thèse]
+
+**Métriques connues:**
+- [Métrique 1] - Source: [URL]
+- [Métrique 2] - Source: [URL]
+
+**Funding:**
+- [Montant] - [Date] - [Investisseurs] - Source: [URL]
+
+**Signaux forts:**
+- [Signal 1]
+- [Signal 2]
+
+**Signaux faibles détectés:**
+- [Signal 1] - Source: [URL]
+- [Signal 2] - Source: [URL]
+
+**Équipe clé:**
+- [Fondateur 1] - [Background] - LinkedIn: [URL]
+- [Fondateur 2] - [Background] - LinkedIn: [URL]
+
+**Sources:**
+1. [URL 1] - [Description]
+2. [URL 2] - [Description]
+3. [URL 3] - [Description]
+\`\`\`
+
+## IMPORTANT
+- Réponds en FRANÇAIS
+- Minimum 3 sources par startup
+- Si une info n'est pas trouvable, indique "Non disponible"
+- Priorise la qualité sur la quantité
+`;
 
   return prompt;
 }
 
 /**
  * Formate une requête de due diligence pour l'agent DigitalOcean
- * @param companyName - Nom de l'entreprise
- * @param companyWebsite - Site web (optionnel)
- * @param additionalContext - Contexte additionnel (optionnel)
- * @returns Le prompt formaté pour l'agent
+ * Prompt optimisé pour un rapport complet et sourcé
  */
 export function formatDueDiligencePrompt(
   companyName: string,
   companyWebsite?: string,
   additionalContext?: string
 ): string {
-  let prompt = `DUE DILIGENCE COMPLÈTE sur l'entreprise : "${companyName}"\n\n`;
+  let prompt = `# DUE DILIGENCE PROFESSIONNELLE
+
+Tu es un analyste VC senior. Effectue une due diligence COMPLÈTE sur l'entreprise suivante.
+
+## ENTREPRISE CIBLE
+**Nom:** ${companyName}
+`;
 
   if (companyWebsite) {
-    prompt += `Site web : ${companyWebsite}\n\n`;
+    prompt += `**Site web:** ${companyWebsite}\n`;
   }
 
   if (additionalContext) {
-    prompt += `Contexte additionnel : ${additionalContext}\n\n`;
+    prompt += `**Contexte:** ${additionalContext}\n`;
   }
 
-  prompt += `MISSION : Effectuer une due diligence PROFESSIONNELLE de niveau VC senior.\n\n`;
-  prompt += `SECTIONS À ANALYSER :\n`;
-  prompt += `1. Présentation entreprise (nom, tagline, secteur, stade, localisation, fondée en)\n`;
-  prompt += `2. Produit & Technologie (description, proposition de valeur, stack technique, brevets)\n`;
-  prompt += `3. Marché (TAM/SAM/SOM avec sources, CAGR, tendances)\n`;
-  prompt += `4. Financements (historique complet des levées avec montants, dates, investisseurs, sources)\n`;
-  prompt += `5. Métriques & Traction (ARR/MRR, croissance, clients, NRR, CAC, LTV, churn, burn rate, runway)\n`;
-  prompt += `6. Équipe (fondateurs avec LinkedIn, background, taille équipe, recrutements clés)\n`;
-  prompt += `7. Concurrence (paysage concurrentiel, avantages compétitifs, moat)\n`;
-  prompt += `8. Risques (marché, exécution, financiers, concurrentiels, réglementaires)\n`;
-  prompt += `9. Opportunités (croissance, expansion marché/produit, valeur stratégique)\n`;
-  prompt += `10. Recommandation (INVEST/WATCH/PASS avec justification, multiple cible, ticket suggéré)\n\n`;
-  prompt += `RÈGLES CRITIQUES :\n`;
-  prompt += `- CHAQUE information doit avoir sa SOURCE avec URL\n`;
-  prompt += `- Ne JAMAIS inventer de données ou d'URLs\n`;
-  prompt += `- Si une info n'est pas disponible, indique "Non disponible - aucune source trouvée"\n`;
-  prompt += `- Utilise plusieurs types de sources : presse, Crunchbase, LinkedIn, rapports, sites officiels\n`;
-  prompt += `- Réponds en FRANÇAIS\n`;
-  prompt += `- Format : rapport structuré et professionnel, prêt pour un Investment Committee\n`;
+  prompt += `
+## RÈGLES CRITIQUES
+
+1. **SOURCES OBLIGATOIRES** - Chaque information DOIT avoir une URL source
+2. **PAS D'INVENTION** - Si tu ne trouves pas l'info, indique "Non disponible - aucune source trouvée"
+3. **DIVERSITÉ DES SOURCES** - Utilise:
+   - Site officiel de l'entreprise
+   - Crunchbase, PitchBook, Dealroom
+   - LinkedIn (entreprise + fondateurs)
+   - Presse (TechCrunch, Les Echos, Maddyness, etc.)
+   - Registres officiels (societe.com, Pappers, etc.)
+   - GitHub si pertinent
+4. **MÉTRIQUES VÉRIFIABLES** - Cite toujours la source des chiffres
+
+## SECTIONS DU RAPPORT
+
+### 1. PRÉSENTATION
+- Nom, tagline, secteur
+- Date de création
+- Localisation (siège + bureaux)
+- Nombre d'employés (avec source)
+
+### 2. PRODUIT & TECHNOLOGIE
+- Description du produit/service
+- Proposition de valeur unique
+- Stack technique (si disponible)
+- Brevets déposés (avec numéros)
+- Avantages technologiques
+
+### 3. MARCHÉ
+- TAM (Total Addressable Market) - avec source
+- SAM (Serviceable Addressable Market) - avec source
+- SOM (Serviceable Obtainable Market) - avec source
+- CAGR du marché - avec source
+- Tendances clés
+
+### 4. FINANCEMENTS
+Pour chaque levée:
+- Montant
+- Date
+- Type (Seed, Series A, etc.)
+- Investisseurs (lead + participants)
+- Valorisation (si connue)
+- Source (URL)
+
+### 5. MÉTRIQUES & TRACTION
+- ARR/MRR (avec source)
+- Croissance YoY (avec source)
+- Nombre de clients
+- Clients notables
+- NRR (Net Revenue Retention)
+- CAC, LTV, ratio LTV/CAC
+- Churn rate
+- Burn rate estimé
+- Runway estimé
+
+### 6. ÉQUIPE
+Pour chaque fondateur/C-level:
+- Nom
+- Rôle
+- Background (études, expériences précédentes)
+- LinkedIn URL
+- Exits précédents
+
+Taille de l'équipe totale (avec source)
+
+### 7. CONCURRENCE
+- Concurrents directs (avec URLs)
+- Concurrents indirects
+- Positionnement différenciant
+- Avantages compétitifs (moat)
+
+### 8. RISQUES
+- Risques marché
+- Risques exécution
+- Risques financiers
+- Risques concurrentiels
+- Risques réglementaires
+
+### 9. OPPORTUNITÉS
+- Potentiel de croissance
+- Expansion géographique possible
+- Extension produit
+- Valeur stratégique (M&A potentiel)
+
+### 10. RECOMMANDATION
+- Verdict: INVEST / WATCH / PASS
+- Justification détaillée
+- Multiple de valorisation cible
+- Ticket suggéré
+- Points de vigilance pour la suite
+
+## FORMAT
+- Réponds en FRANÇAIS
+- Structure claire avec titres
+- Chaque fait = une source URL
+- Si info non trouvée = "Non disponible"
+`;
 
   return prompt;
 }
