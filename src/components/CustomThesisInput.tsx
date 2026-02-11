@@ -12,7 +12,8 @@ import {
   Target, 
   FileText,
   X,
-  Plus
+  Plus,
+  Search
 } from "lucide-react";
 import {
   Select,
@@ -29,6 +30,7 @@ export interface CustomThesis {
   ticketSize?: string;
   description?: string;
   specificCriteria?: string;
+  sourcingInstructions?: string;
 }
 
 interface CustomThesisInputProps {
@@ -107,7 +109,7 @@ export function CustomThesisInput({ thesis, onChange, onClear }: CustomThesisInp
   };
 
   const hasThesis = thesis.sectors?.length || thesis.stage || thesis.geography || 
-                    thesis.ticketSize || thesis.description || thesis.specificCriteria;
+                    thesis.ticketSize || thesis.description || thesis.specificCriteria || thesis.sourcingInstructions;
 
   return (
     <Card className="bg-card border-border">
@@ -268,6 +270,24 @@ export function CustomThesisInput({ thesis, onChange, onClear }: CustomThesisInp
           />
           <p className="text-xs text-muted-foreground">
             Spécifiez des critères précis que les startups doivent respecter
+          </p>
+        </div>
+
+        {/* Instructions de sourcing */}
+        <div className="space-y-2">
+          <Label className="flex items-center gap-2">
+            <Search className="w-4 h-4 text-primary" />
+            Instructions de sourcing
+          </Label>
+          <Textarea
+            placeholder="Ex: Chercher des startups avec brevets déposés, signaux de recrutement actif, partenariats récents avec grands comptes, présence sur Product Hunt..."
+            value={thesis.sourcingInstructions || ""}
+            onChange={(e) => onChange({ ...thesis, sourcingInstructions: e.target.value })}
+            rows={4}
+            className="resize-none"
+          />
+          <p className="text-xs text-muted-foreground">
+            Indiquez des instructions spécifiques pour le sourcing : types de signaux à détecter, sources à privilégier, critères de qualité des données
           </p>
         </div>
       </CardContent>
