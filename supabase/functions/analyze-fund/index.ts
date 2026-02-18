@@ -21,6 +21,8 @@ function corsHeaders(req: Request): Record<string, string> {
 }
 
 interface AnalysisRequest {
+  phase?: "search" | "analyze";
+  jobId?: string;
   fundName?: string;
   customThesis?: {
     sectors?: string[];
@@ -919,8 +921,101 @@ serve(async (req) => {
       });
     }
 
-    const { fundName, customThesis, params = {} } = requestData;
-    
+    const { phase, jobId, fundName, customThesis, params = {} } = requestData;
+
+    // ========== PHASE ANALYZE : charger le job et lancer l'IA uniquement (évite 546) ==========
+    if (phase === "analyze" && jobId) {
+      const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+      const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+        return new Response(JSON.stringify({ error: "Configuration Supabase manquante (phase analyze)" }), {
+          status: 500,
+          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+        });
+      }
+      const jobRes = await fetch(`${SUPABASE_URL}/rest/v1/sourcing_jobs?id=eq.${encodeURIComponent(jobId)}&select=*`, {
+        headers: { "apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
+      });
+      const jobList = await jobRes.json();
+      const job = Array.isArray(jobList) ? jobList[0] : jobList;
+      if (!job || job.status !== "search_done" || !job.search_context) {
+        return new Response(JSON.stringify({ error: "Job introuvable ou déjà analysé" }), {
+          status: 400,
+          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+        });
+      }
+      const ctx = job.search_context as any;
+      const systemPrompt = ctx.systemPrompt || "";
+      const userPrompt = ctx.userPrompt || "";
+      const fundSources = ctx.fundSources || [];
+      const marketSources = ctx.marketSources || [];
+      if (!systemPrompt || !userPrompt) {
+        return new Response(JSON.stringify({ error: "Contexte du job invalide (systemPrompt/userPrompt manquants)" }), {
+          status: 400,
+          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+        });
+      }
+      const AI_PROVIDER_A = (Deno.env.get("AI_PROVIDER") || "gemini").toLowerCase();
+      const GEMINI_API_KEY_A = Deno.env.get("GEMINI_KEY_2") || Deno.env.get("GEMINI_API_KEY");
+      const VERTEX_AI_PROJECT_A = Deno.env.get("VERTEX_AI_PROJECT_ID");
+      const VERTEX_AI_CREDENTIALS_A = Deno.env.get("VERTEX_AI_CREDENTIALS");
+      const VERTEX_AI_MODEL_A = Deno.env.get("VERTEX_AI_MODEL") || "gemini-2.5-pro";
+      const GEMINI_MODEL_A = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-pro";
+      let aiEndpointA: { url: string; headers: Record<string, string> };
+      if (AI_PROVIDER_A === "vertex") {
+        if (!VERTEX_AI_PROJECT_A || !VERTEX_AI_CREDENTIALS_A) {
+          return new Response(JSON.stringify({ error: "Phase analyze avec Vertex AI: configurez VERTEX_AI_PROJECT_ID et VERTEX_AI_CREDENTIALS (ou utilisez Gemini)." }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+        }
+        const creds = typeof VERTEX_AI_CREDENTIALS_A === "string" ? JSON.parse(VERTEX_AI_CREDENTIALS_A) : VERTEX_AI_CREDENTIALS_A;
+        const base64urlA = (d: Uint8Array | string) => { const b = typeof d === "string" ? new TextEncoder().encode(d) : d; const s = btoa(String.fromCharCode(...b)); return s.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, ""); };
+        const header = { alg: "RS256", typ: "JWT" }, now = Math.floor(Date.now() / 1000), payload = { iss: creds.client_email, sub: creds.client_email, aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600, scope: "https://www.googleapis.com/auth/cloud-platform" };
+        const msg = `${base64urlA(JSON.stringify(header))}.${base64urlA(JSON.stringify(payload))}`;
+        const pem = creds.private_key.replace(/\\n/g, "\n").replace(/-----BEGIN PRIVATE KEY-----/, "").replace(/-----END PRIVATE KEY-----/, "").replace(/\s/g, "");
+        const keyBuf = Uint8Array.from(atob(pem), (c: string) => c.charCodeAt(0));
+        const privKey = await crypto.subtle.importKey("pkcs8", keyBuf, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
+        const sig = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", privKey, new TextEncoder().encode(msg));
+        const jwt = `${msg}.${base64urlA(new Uint8Array(sig))}`;
+        const tr = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: jwt }) });
+        if (!tr.ok) throw new Error("Vertex token failed");
+        const token = (await tr.json()).access_token;
+        aiEndpointA = { url: `https://us-central1-aiplatform.googleapis.com/v1/projects/${VERTEX_AI_PROJECT_A}/locations/us-central1/publishers/google/models/${VERTEX_AI_MODEL_A}:generateContent`, headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` } };
+      } else {
+        if (!GEMINI_API_KEY_A) throw new Error("GEMINI_API_KEY requis");
+        aiEndpointA = { url: `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL_A}:generateContent?key=${GEMINI_API_KEY_A}`, headers: { "Content-Type": "application/json" } };
+      }
+      const maxOutputTokensA = 20480;
+      const aiBodyA = AI_PROVIDER_A === "vertex"
+        ? { contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\n${userPrompt}\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.` }] }], generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens: maxOutputTokensA } }
+        : { contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.` }] }], generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens: maxOutputTokensA, responseMimeType: "application/json" as const } };
+      const responseA = await fetch(aiEndpointA.url, { method: "POST", headers: aiEndpointA.headers, body: JSON.stringify(aiBodyA) });
+      const dataA = await responseA.json();
+      const contentA: string = dataA.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      if (!contentA) {
+        await fetch(`${SUPABASE_URL}/rest/v1/sourcing_jobs?id=eq.${encodeURIComponent(jobId)}`, {
+          method: "PATCH",
+          headers: { "apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "error", error_message: "Réponse IA vide", updated_at: new Date().toISOString() }),
+        });
+        return new Response(JSON.stringify({ error: "Réponse IA vide" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+      }
+      let analysisResultA = parseJSONResponse(contentA);
+      if (!Array.isArray(analysisResultA.startups)) analysisResultA.startups = analysisResultA.startup ? [analysisResultA.startup] : [];
+      const enrichedA = await Promise.all(analysisResultA.startups.map((s: any) => enrichStartupData(s)));
+      const validatedA = enrichedA.map((s: any) => ({ ...s, reliabilityScore: 8, reliabilityStatus: "reliable", missingData: [] }));
+      analysisResultA.startups = validatedA;
+      if (fundSources.length > 0) { analysisResultA.fundInfo = analysisResultA.fundInfo || {}; analysisResultA.fundInfo.sources = fundSources; }
+      if (marketSources?.length > 0) analysisResultA.marketSources = marketSources;
+      if (!Array.isArray(analysisResultA.dueDiligenceReports)) analysisResultA.dueDiligenceReports = analysisResultA.dueDiligenceReport ? [analysisResultA.dueDiligenceReport] : [];
+      await fetch(`${SUPABASE_URL}/rest/v1/sourcing_jobs?id=eq.${encodeURIComponent(jobId)}`, {
+        method: "PATCH",
+        headers: { "apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ result: analysisResultA, status: "analyze_done", updated_at: new Date().toISOString() }),
+      });
+      return new Response(JSON.stringify(analysisResultA), { headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+    }
+
+    const isSearchPhase = phase === "search";
+
     // Configuration AI : Gemini ou Vertex AI
     const AI_PROVIDER = (Deno.env.get("AI_PROVIDER") || "gemini").toLowerCase(); // "gemini" ou "vertex"
     const GEMINI_API_KEY = Deno.env.get("GEMINI_KEY_2") || Deno.env.get("GEMINI_API_KEY");
@@ -1093,6 +1188,13 @@ serve(async (req) => {
     const [fundData, marketData] = await Promise.all([
       fundName
         ? (async () => {
+            if (isSearchPhase) {
+              const fundResults = await braveSearch(`${fundName} investment thesis portfolio sectors 2024`, 10);
+              return {
+                fundThesisContext: fundResults.map(r => `${r.title}: ${r.description}`).join("\n"),
+                fundSources: fundResults.slice(0, 5).map(r => ({ name: r.title.substring(0, 60), url: r.url })),
+              };
+            }
             const fundResults = await braveSearch(`${fundName} investment thesis criteria sectors stage geography ticket size`, 12);
             await sleep(1200);
             const portfolioResults = await braveSearch(`${fundName} portfolio companies investments 2023 2024`, 8);
@@ -1232,7 +1334,7 @@ serve(async (req) => {
     const keywords = getSearchKeywords(mainSector);
     const mainKeyword = keywords[0];
     
-    const RESULTS_PER_QUERY = 15;
+    const RESULTS_PER_QUERY = isSearchPhase ? 10 : 15;
     const BATCH_DELAY_MS = 1200;
 
     console.log(`[Brave] Recherche 1: ${mainKeyword} ${stage} startup ${geography}`);
@@ -1245,65 +1347,64 @@ serve(async (req) => {
     startupSearchResults.push(...results2);
     await sleep(BATCH_DELAY_MS);
 
-    console.log(`[Brave] Recherche 3: ${mainKeyword} funding`);
-    const results3 = await braveSearch(`${mainKeyword} startup funding round ${geography} 2024`, RESULTS_PER_QUERY);
-    startupSearchResults.push(...results3);
-    await sleep(BATCH_DELAY_MS);
-
-    console.log(`[Brave] Recherche 4: ${mainKeyword} founders traction`);
-    const results4 = await braveSearch(`${mainKeyword} ${stage} startup founders CEO team ${geography} 2024`, RESULTS_PER_QUERY);
-    startupSearchResults.push(...results4);
-    await sleep(BATCH_DELAY_MS);
-
-    console.log(`[Brave] Recherche 5: ${mainKeyword} traction metrics`);
-    const results5 = await braveSearch(`${mainKeyword} startup traction revenue growth metrics ${geography} 2024`, RESULTS_PER_QUERY);
-    startupSearchResults.push(...results5);
-
-    console.log(`[Brave] Total résultats: ${startupSearchResults.length}`);
-
-    if (startupSearchResults.length < 20) {
-      await sleep(BATCH_DELAY_MS);
-      const results6 = await braveSearch(`${mainSector} company ${geography} innovative 2024`, 10);
-      startupSearchResults.push(...results6);
-    }
-
-    const deepQueries = [
-      `${primarySector} news 2024 2025 trends`,
-      `${primarySector} competitors landscape 2024`,
-      `${mainKeyword} LinkedIn Crunchbase company profile`,
-    ];
-    for (const q of deepQueries) {
-      const results = await braveSearch(q, 6);
-      startupSearchResults.push(...results);
-      await sleep(1100);
-    }
-
-    // COUCHE 4b : Propriété intellectuelle & signaux d'innovation (brevets, dépôts, spin-offs)
-    const ipInnovationQueries = [
-      `${mainKeyword} startup patent filing 2024 2025 ${geography}`,
-      `${primarySector} patent portfolio company funding`,
-      `${mainKeyword} university spin-off research startup ${geography} 2024`,
-    ];
     let ipInnovationContext = "";
-    for (const q of ipInnovationQueries) {
-      const results = await braveSearch(q, 6);
-      startupSearchResults.push(...results);
-      if (results.length > 0) {
-        ipInnovationContext += results.map(r => `${r.title}: ${r.description} | ${r.url}`).join("\n") + "\n";
+    if (!isSearchPhase) {
+      console.log(`[Brave] Recherche 3: ${mainKeyword} funding`);
+      const results3 = await braveSearch(`${mainKeyword} startup funding round ${geography} 2024`, RESULTS_PER_QUERY);
+      startupSearchResults.push(...results3);
+      await sleep(BATCH_DELAY_MS);
+
+      console.log(`[Brave] Recherche 4: ${mainKeyword} founders traction`);
+      const results4 = await braveSearch(`${mainKeyword} ${stage} startup founders CEO team ${geography} 2024`, RESULTS_PER_QUERY);
+      startupSearchResults.push(...results4);
+      await sleep(BATCH_DELAY_MS);
+
+      console.log(`[Brave] Recherche 5: ${mainKeyword} traction metrics`);
+      const results5 = await braveSearch(`${mainKeyword} startup traction revenue growth metrics ${geography} 2024`, RESULTS_PER_QUERY);
+      startupSearchResults.push(...results5);
+
+      if (startupSearchResults.length < 20) {
+        await sleep(BATCH_DELAY_MS);
+        const results6 = await braveSearch(`${mainSector} company ${geography} innovative 2024`, 10);
+        startupSearchResults.push(...results6);
       }
-      await sleep(1100);
-    }
-    if (ipInnovationContext) {
-      ipInnovationContext = `\n\n=== PROPRIÉTÉ INTELLECTUELLE & INNOVATION (brevets, dépôts, spin-offs) ===\n${ipInnovationContext.slice(0, 2000)}`;
+
+      const deepQueries = [
+        `${primarySector} news 2024 2025 trends`,
+        `${primarySector} competitors landscape 2024`,
+        `${mainKeyword} LinkedIn Crunchbase company profile`,
+      ];
+      for (const q of deepQueries) {
+        const results = await braveSearch(q, 6);
+        startupSearchResults.push(...results);
+        await sleep(1100);
+      }
+
+      const ipInnovationQueries = [
+        `${mainKeyword} startup patent filing 2024 2025 ${geography}`,
+        `${primarySector} patent portfolio company funding`,
+        `${mainKeyword} university spin-off research startup ${geography} 2024`,
+      ];
+      for (const q of ipInnovationQueries) {
+        const results = await braveSearch(q, 6);
+        startupSearchResults.push(...results);
+        if (results.length > 0) {
+          ipInnovationContext += results.map(r => `${r.title}: ${r.description} | ${r.url}`).join("\n") + "\n";
+        }
+        await sleep(1100);
+      }
+      if (ipInnovationContext) {
+        ipInnovationContext = `\n\n=== PROPRIÉTÉ INTELLECTUELLE & INNOVATION (brevets, dépôts, spin-offs) ===\n${ipInnovationContext.slice(0, 2000)}`;
+      }
     }
 
-    // Dédupliquer par URL pour éviter doublons dans le contexte
+    console.log(`[Brave] Total résultats: ${startupSearchResults.length}${isSearchPhase ? " (phase search légère)" : ""}`);
+
     const searchSeen = new Set<string>();
     const uniqueSearchResults = startupSearchResults.filter(r => r.url && !searchSeen.has(r.url) && (searchSeen.add(r.url), true));
 
-    // COUCHE 5 : Reflection — seulement si peu de résultats (évite dépassement 546)
     let reflectionContext = "";
-    if (uniqueSearchResults.length < 25) {
+    if (!isSearchPhase && uniqueSearchResults.length < 25) {
       try {
         const refPrompt = `Tu es un assistant VC spécialisé dans le sourcing. Fonds: "${fundName || "thèse personnalisée"}". 
 Secteurs: ${sectors.join(", ")}. Géographie: ${geography}. Stade: ${stage}
@@ -1333,10 +1434,9 @@ Propose EXACTEMENT 3 requêtes (en anglais, courtes) pour trouver d'autres start
       }
     }
 
-    // Liste finale dédupliquée (après reflection, au cas où des résultats ont été ajoutés)
     const finalSeen = new Set<string>();
     const finalUnique = startupSearchResults.filter(r => r.url && !finalSeen.has(r.url) && (finalSeen.add(r.url), true));
-    const maxResultsForContext = 35;
+    const maxResultsForContext = isSearchPhase ? 20 : 35;
     let startupSearchContext = finalUnique
       .slice(0, maxResultsForContext)
       .map(r => `${r.title}: ${r.description} | URL: ${r.url}`)
@@ -1832,6 +1932,32 @@ IMPORTANT :
 - Ne crée PAS de données fictives
 - 🚫 NE JAMAIS inventer d'URLs (website, LinkedIn, Crunchbase, sources) - utilise uniquement celles trouvées dans les recherches web
 - Si une URL n'est pas dans les résultats de recherche, laisse le champ vide ou null`;
+
+    if (phase === "search") {
+      const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+      const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+        return new Response(JSON.stringify({ error: "Configuration Supabase manquante (phase search)" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+      }
+      const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/sourcing_jobs`, {
+        method: "POST",
+        headers: { "apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json", "Prefer": "return=representation" },
+        body: JSON.stringify({
+          fund_name: fundName || null,
+          custom_thesis: customThesis || null,
+          params: params || {},
+          search_context: { systemPrompt, userPrompt, fundSources, marketSources: marketData.marketSources || [] },
+          search_results_count: finalUnique?.length ?? 0,
+          status: "search_done",
+        }),
+      });
+      const insertData = await insertRes.json();
+      const jobIdOut = Array.isArray(insertData) ? insertData[0]?.id : insertData?.id;
+      if (!jobIdOut) {
+        return new Response(JSON.stringify({ error: "Échec création job sourcing" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ jobId: jobIdOut }), { headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+    }
 
     let response: Response | null = null;
     let lastErrorText = "";

@@ -132,53 +132,69 @@ export default function Analyse() {
     const { requestBody, fundName: fn, useCustomThesis } = effective;
     setFundName(fn);
 
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    const TIMEOUT_SEARCH_MS = 120_000;
+    const TIMEOUT_ANALYZE_MS = 180_000;
+
+    const parseResponse = async (res: Response): Promise<{ data: any; errorMsg?: string }> => {
+      const text = await res.text();
+      let data: any;
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        if (res.status === 546) throw new Error("Limite de ressources serveur dépassée (546). Réessayez dans 1–2 minutes ou avec « 1 startup ».");
+        if (res.status >= 500) throw new Error(`Erreur serveur (${res.status}). Le service est temporairement indisponible.`);
+        if (res.status === 429) throw new Error("Trop de requêtes. Veuillez patienter quelques instants.");
+        if (res.status >= 400) throw new Error(`Erreur de requête (${res.status}).`);
+        throw new Error(`Réponse invalide (${res.status}).`);
+      }
+      const errorMsg = typeof data?.error === "string" ? data.error : data?.error?.message;
+      return { data, errorMsg };
+    };
+
     (async () => {
       try {
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-        const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
         if (!supabaseUrl || !supabaseKey) throw new Error("Configuration Supabase manquante.");
 
-        const res = await fetch(`${supabaseUrl}/functions/v1/analyze-fund`, {
+        // Phase 1 : recherche (sauvegarde du contexte dans sourcing_jobs, retour jobId)
+        const ctrlSearch = new AbortController();
+        const tSearch = setTimeout(() => ctrlSearch.abort(), TIMEOUT_SEARCH_MS);
+        const resSearch = await fetch(`${supabaseUrl}/functions/v1/analyze-fund`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${supabaseKey}`, apikey: supabaseKey },
-          body: JSON.stringify(requestBody),
+          body: JSON.stringify({ ...requestBody, phase: "search" }),
+          signal: ctrlSearch.signal,
         });
-
-        const text = await res.text();
-        let data: any;
-        try {
-          data = text ? JSON.parse(text) : {};
-        } catch {
-          if (res.status === 546) {
-            throw new Error("Limite de ressources serveur dépassée (546). Réessayez dans 1–2 minutes ou avec « 1 startup ».");
-          }
-          if (res.status >= 500) {
-            throw new Error(`Erreur serveur (${res.status}). Le service est temporairement indisponible. Veuillez réessayer dans quelques instants.`);
-          } else if (res.status === 429) {
-            throw new Error("Trop de requêtes. Veuillez patienter quelques instants avant de réessayer.");
-          } else if (res.status >= 400) {
-            throw new Error(`Erreur de requête (${res.status}). Vérifiez votre configuration et réessayez.`);
-          }
-          throw new Error(`Réponse invalide (${res.status}).`);
+        clearTimeout(tSearch);
+        const { data: dataSearch, errorMsg: errSearch } = await parseResponse(resSearch);
+        if (!resSearch.ok) {
+          if (resSearch.status === 546) throw new Error("Limite de ressources serveur dépassée (546). L'analyse a été interrompue.\n\nConseils :\n• Réessayez dans 1–2 minutes.\n• Choisissez « 1 startup » dans les options pour réduire la charge.\n• La qualité de l'analyse reste la même pour 1 startup.");
+          if (resSearch.status >= 500) throw new Error((errSearch || "Erreur serveur") + "\n\nRéessayez dans quelques instants ou avec 1 startup.");
+          if (resSearch.status === 429) throw new Error("Trop de requêtes simultanées. Veuillez patienter.");
+          if (resSearch.status === 401 || resSearch.status === 403) throw new Error("Erreur d'authentification. Veuillez vous reconnecter.");
+          throw new Error(errSearch || "Erreur phase recherche");
         }
+        const jobId = dataSearch?.jobId;
+        if (!jobId) throw new Error("Réponse invalide : jobId manquant après la phase recherche.");
 
-        if (!res.ok) {
-          const errorMsg = typeof data?.error === "string" 
-            ? data.error 
-            : data?.error?.message || `Erreur serveur (${res.status})`;
-          
-          // 546 = limite ressources Supabase (CPU/mémoire) — message clair et actionnable
-          if (res.status === 546) {
-            throw new Error("Limite de ressources serveur dépassée (546). L'analyse a été interrompue.\n\nConseils :\n• Réessayez dans 1–2 minutes.\n• Choisissez « 1 startup » dans les options pour réduire la charge.\n• La qualité de l'analyse reste la même pour 1 startup.");
-          }
-          if (res.status >= 500) {
-            throw new Error(`${errorMsg}\n\nLe serveur rencontre des difficultés. Réessayez dans quelques instants ou avec 1 startup.`);
-          } else if (res.status === 429) {
-            throw new Error("Trop de requêtes simultanées. Veuillez patienter quelques instants avant de réessayer.");
-          } else if (res.status === 401 || res.status === 403) {
-            throw new Error("Erreur d'authentification. Veuillez vous reconnecter.");
-          }
-          throw new Error(errorMsg);
+        // Phase 2 : analyse (charge le job, appelle LLM, retourne le résultat)
+        const ctrlAnalyze = new AbortController();
+        const tAnalyze = setTimeout(() => ctrlAnalyze.abort(), TIMEOUT_ANALYZE_MS);
+        const resAnalyze = await fetch(`${supabaseUrl}/functions/v1/analyze-fund`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${supabaseKey}`, apikey: supabaseKey },
+          body: JSON.stringify({ phase: "analyze", jobId }),
+          signal: ctrlAnalyze.signal,
+        });
+        clearTimeout(tAnalyze);
+        const { data, errorMsg } = await parseResponse(resAnalyze);
+        if (!resAnalyze.ok) {
+          if (resAnalyze.status === 546) throw new Error("Limite de ressources serveur dépassée (546). L'analyse a été interrompue.\n\nConseils :\n• Réessayez dans 1–2 minutes.\n• Choisissez « 1 startup » dans les options pour réduire la charge.");
+          if (resAnalyze.status >= 500) throw new Error((errorMsg || "Erreur serveur") + "\n\nRéessayez dans quelques instants ou avec 1 startup.");
+          if (resAnalyze.status === 429) throw new Error("Trop de requêtes simultanées. Veuillez patienter.");
+          if (resAnalyze.status === 401 || resAnalyze.status === 403) throw new Error("Erreur d'authentification. Veuillez vous reconnecter.");
+          throw new Error(errorMsg || "Erreur phase analyse");
         }
         if (data?.error) throw new Error(typeof data.error === "string" ? data.error : data.error?.message || "Erreur");
 
@@ -206,7 +222,7 @@ export default function Analyse() {
       } catch (e) {
         let msg = e instanceof Error ? e.message : "Échec de l'analyse.";
         // Failed to fetch / CORS souvent dû au 546 côté serveur
-        if (typeof msg === "string" && (msg.toLowerCase().includes("failed to fetch") || msg.toLowerCase().includes("network"))) {
+        if (typeof msg === "string" && (msg.toLowerCase().includes("failed to fetch") || msg.toLowerCase().includes("network") || msg.toLowerCase().includes("abort"))) {
           msg = "Impossible de joindre le serveur (connexion ou timeout). Cause fréquente : limite serveur (546).\n\n• Réessayez dans 1–2 minutes.\n• Utilisez l’option « 1 startup » pour réduire la charge.\n• La qualité reste identique pour une seule startup.";
         }
         setErrorMessage(msg);
