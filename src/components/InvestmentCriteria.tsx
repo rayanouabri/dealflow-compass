@@ -38,7 +38,7 @@ export function InvestmentCriteria({ fundName, thesis }: InvestmentCriteriaProps
             <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5">Focus Sectors</p>
               <div className="flex flex-wrap gap-1.5">
-                {thesis.sectors.map((sector, i) => (
+                {(thesis.sectors ?? []).map((sector, i) => (
                   <Badge key={i} variant="secondary" className="bg-secondary/80 text-secondary-foreground text-xs">
                     {sector}
                   </Badge>

@@ -134,7 +134,7 @@ export default function Analyse() {
 
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
     const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-    const TIMEOUT_SEARCH_MS = 120_000;
+    const TIMEOUT_PHASE_MS = 90_000;
     const TIMEOUT_ANALYZE_MS = 180_000;
 
     const parseResponse = async (res: Response): Promise<{ data: any; errorMsg?: string }> => {
@@ -157,28 +157,35 @@ export default function Analyse() {
       try {
         if (!supabaseUrl || !supabaseKey) throw new Error("Configuration Supabase manquante.");
 
-        // Phase 1 : recherche (sauvegarde du contexte dans sourcing_jobs, retour jobId)
-        const ctrlSearch = new AbortController();
-        const tSearch = setTimeout(() => ctrlSearch.abort(), TIMEOUT_SEARCH_MS);
-        const resSearch = await fetch(`${supabaseUrl}/functions/v1/analyze-fund`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${supabaseKey}`, apikey: supabaseKey },
-          body: JSON.stringify({ ...requestBody, phase: "search" }),
-          signal: ctrlSearch.signal,
-        });
-        clearTimeout(tSearch);
-        const { data: dataSearch, errorMsg: errSearch } = await parseResponse(resSearch);
-        if (!resSearch.ok) {
-          if (resSearch.status === 546) throw new Error("Limite de ressources serveur dépassée (546). L'analyse a été interrompue.\n\nConseils :\n• Réessayez dans 1–2 minutes.\n• Choisissez « 1 startup » dans les options pour réduire la charge.\n• La qualité de l'analyse reste la même pour 1 startup.");
-          if (resSearch.status >= 500) throw new Error((errSearch || "Erreur serveur") + "\n\nRéessayez dans quelques instants ou avec 1 startup.");
-          if (resSearch.status === 429) throw new Error("Trop de requêtes simultanées. Veuillez patienter.");
-          if (resSearch.status === 401 || resSearch.status === 403) throw new Error("Erreur d'authentification. Veuillez vous reconnecter.");
-          throw new Error(errSearch || "Erreur phase recherche");
-        }
-        const jobId = dataSearch?.jobId;
-        if (!jobId) throw new Error("Réponse invalide : jobId manquant après la phase recherche.");
+        const runPhase = async (phase: string, body: object) => {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), TIMEOUT_PHASE_MS);
+          const res = await fetch(`${supabaseUrl}/functions/v1/analyze-fund`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${supabaseKey}`, apikey: supabaseKey },
+            body: JSON.stringify(body),
+            signal: ctrl.signal,
+          });
+          clearTimeout(t);
+          const { data, errorMsg } = await parseResponse(res);
+          if (!res.ok) {
+            if (res.status === 546) throw new Error("Limite de ressources serveur dépassée (546). Réessayez dans 1–2 minutes.");
+            if (res.status >= 500) throw new Error((errorMsg || "Erreur serveur") + "\n\nRéessayez dans quelques instants.");
+            if (res.status === 429) throw new Error("Trop de requêtes simultanées. Veuillez patienter.");
+            if (res.status === 401 || res.status === 403) throw new Error("Erreur d'authentification. Veuillez vous reconnecter.");
+            throw new Error(errorMsg || `Erreur phase ${phase}`);
+          }
+          return data;
+        };
 
-        // Phase 2 : analyse (charge le job, appelle LLM, retourne le résultat)
+        const dataFund = await runPhase("search_fund", { ...requestBody, phase: "search_fund" });
+        const jobId = dataFund?.jobId;
+        if (!jobId) throw new Error("Réponse invalide : jobId manquant après search_fund.");
+
+        await runPhase("search_market", { phase: "search_market", jobId });
+        await runPhase("search_startups", { phase: "search_startups", jobId });
+
+        // Phase analyse (charge le job, appelle LLM, retourne le résultat)
         const ctrlAnalyze = new AbortController();
         const tAnalyze = setTimeout(() => ctrlAnalyze.abort(), TIMEOUT_ANALYZE_MS);
         const resAnalyze = await fetch(`${supabaseUrl}/functions/v1/analyze-fund`, {
@@ -273,7 +280,7 @@ export default function Analyse() {
     if (!current) return;
 
     const content = slides
-      .map((s) => `## ${s.title}\n\n${s.content}\n\n**Points clés:**\n${s.keyPoints.map((p) => `- ${p}`).join("\n")}\n\n`)
+      .map((s) => `## ${s.title}\n\n${s.content}\n\n**Points clés:**\n${(s.keyPoints ?? []).map((p) => `- ${p}`).join("\n")}\n\n`)
       .join("---\n\n");
     const blob = new Blob([`# Due Diligence: ${current.name}\n\n${content}`], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
@@ -385,13 +392,21 @@ export default function Analyse() {
     );
   }
 
-  const startups = result.startups || (result.startup ? [result.startup] : []);
-  const reports = result.dueDiligenceReports || (result.dueDiligenceReport ? [result.dueDiligenceReport] : []) || (result.pitchDeck ? [result.pitchDeck] : []);
+  const startups = Array.isArray(result.startups) ? result.startups : (result.startup ? [result.startup] : []);
+  const reportsRaw = result.dueDiligenceReports ?? result.dueDiligenceReport ?? result.pitchDeck;
+  const reports = Array.isArray(reportsRaw) ? reportsRaw : (reportsRaw ? [reportsRaw] : []);
   const currentStartup = startups[selectedStartupIndex];
-  const currentReportData = reports[selectedStartupIndex] || reports[0];
-  const currentReport: Slide[] = Array.isArray(currentReportData) ? currentReportData : currentReportData ? [currentReportData] : [];
+  const currentReportData = reports[selectedStartupIndex] ?? reports[0];
+  const currentReport: Slide[] = Array.isArray(currentReportData) ? currentReportData : (currentReportData ? [currentReportData] : []);
 
-  const thesis = result.investmentThesis || { sectors: [], stage: "", geography: "", ticketSize: "", description: "" };
+  const rawThesis = result.investmentThesis;
+  const thesis = {
+    sectors: Array.isArray(rawThesis?.sectors) ? rawThesis.sectors : [],
+    stage: rawThesis?.stage ?? "",
+    geography: rawThesis?.geography ?? "",
+    ticketSize: rawThesis?.ticketSize ?? "",
+    description: rawThesis?.description ?? "",
+  };
 
   return (
     <AppLayout

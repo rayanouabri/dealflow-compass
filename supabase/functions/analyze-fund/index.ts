@@ -372,8 +372,18 @@ async function enrichStartupData(startup: any): Promise<any> {
 }
 
 // Enrich market data with real TAM/SAM/SOM figures (recherche approfondie comme Due Diligence)
-async function enrichMarketData(sector: string, geography: string): Promise<any> {
+// light = true : 1 seule requête Brave (phase search pour éviter 546)
+async function enrichMarketData(sector: string, geography: string, light?: boolean): Promise<any> {
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  if (light) {
+    const marketResults = await braveSearch(`${sector} market size TAM SAM 2024 ${geography}`, 8);
+    const seen = new Set<string>();
+    const deduped = marketResults.filter(r => r.url && !seen.has(r.url) && (seen.add(r.url), true));
+    const snippets = deduped.flatMap(r => [r.description, ...(r.extra_snippets || [])]).filter(Boolean);
+    const sources = deduped.slice(0, 4).map(r => ({ name: r.title.substring(0, 50), url: r.url }));
+    return { marketContext: snippets.join(" | "), marketSources: sources };
+  }
 
   const marketResults = await braveSearch(
     `${sector} market size TAM SAM 2024 2025 billion growth rate CAGR`,
@@ -921,7 +931,7 @@ serve(async (req) => {
       });
     }
 
-    const { phase, jobId, fundName, customThesis, params = {} } = requestData;
+    let { phase, jobId, fundName, customThesis, params = {} } = requestData;
 
     // ========== PHASE ANALYZE : charger le job et lancer l'IA uniquement (évite 546) ==========
     if (phase === "analyze" && jobId) {
@@ -1014,7 +1024,101 @@ serve(async (req) => {
       return new Response(JSON.stringify(analysisResultA), { headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
     }
 
-    const isSearchPhase = phase === "search";
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+    // ========== PHASE SEARCH_FUND : uniquement recherches fonds, crée le job ==========
+    if (phase === "search_fund") {
+      if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+        return new Response(JSON.stringify({ error: "Configuration Supabase manquante" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+      }
+      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+      let fundThesisContext = "";
+      let fundSources: { name: string; url: string }[] = [];
+      if (fundName) {
+        const fundResults = await braveSearch(`${fundName} investment thesis criteria sectors stage geography ticket size`, 12);
+        await sleep(1200);
+        const portfolioResults = await braveSearch(`${fundName} portfolio companies investments 2023 2024`, 8);
+        await sleep(1100);
+        const teamResults = await braveSearch(`${fundName} team partners investors`, 6);
+        fundThesisContext = fundResults.map((r: any) => `${r.title}: ${r.description}`).join("\n") + "\n\nPORTFOLIO EXAMPLES:\n" + portfolioResults.map((r: any) => `${r.title}: ${r.description}`).join("\n") + (teamResults.length ? "\n\nFUND TEAM/PARTNERS:\n" + teamResults.map((r: any) => `${r.title}: ${r.description}`).join("\n") : "");
+        fundSources = [...fundResults, ...portfolioResults].slice(0, 8).map((r: any) => ({ name: r.title.substring(0, 60), url: r.url }));
+      }
+      const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/sourcing_jobs`, {
+        method: "POST",
+        headers: { "apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json", "Prefer": "return=representation" },
+        body: JSON.stringify({
+          fund_name: fundName || null,
+          custom_thesis: customThesis || null,
+          params: params || {},
+          search_context: { fundThesisContext, fundSources },
+          status: "fund_done",
+        }),
+      });
+      const insertData = await insertRes.json();
+      const jobIdOut = Array.isArray(insertData) ? insertData[0]?.id : insertData?.id;
+      if (!jobIdOut) return new Response(JSON.stringify({ error: "Échec création job (search_fund)" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ jobId: jobIdOut }), { headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+    }
+
+    // ========== PHASE SEARCH_MARKET : charge le job, recherches marché, met à jour ==========
+    if (phase === "search_market" && jobId) {
+      if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+        return new Response(JSON.stringify({ error: "Configuration Supabase manquante" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+      }
+      const jobRes = await fetch(`${SUPABASE_URL}/rest/v1/sourcing_jobs?id=eq.${encodeURIComponent(jobId)}&select=*`, {
+        headers: { "apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
+      });
+      const jobList = await jobRes.json();
+      const job = Array.isArray(jobList) ? jobList[0] : jobList;
+      if (!job || job.status !== "fund_done" || !job.search_context) {
+        return new Response(JSON.stringify({ error: "Job introuvable ou statut invalide (attendu fund_done)" }), { status: 400, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+      }
+      const ctx = job.search_context as any;
+      const primarySector = job.custom_thesis?.sectors?.[0] || "technology startups";
+      const geography = job.custom_thesis?.geography || "global";
+      const marketData = await enrichMarketData(primarySector, geography, false);
+      const mergedContext = { ...ctx, marketContext: marketData.marketContext, marketSources: marketData.marketSources };
+      const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/sourcing_jobs?id=eq.${encodeURIComponent(jobId)}`, {
+        method: "PATCH",
+        headers: { "apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ search_context: mergedContext, status: "market_done", updated_at: new Date().toISOString() }),
+      });
+      if (!patchRes.ok) return new Response(JSON.stringify({ error: "Échec mise à jour job (search_market)" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ jobId }), { headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+    }
+
+    // ========== PHASE SEARCH_STARTUPS : charge contexte depuis job, fait toutes les recherches startups + build prompts ==========
+    let contextFromJob = false;
+    let fundThesisContext = "";
+    let fundSources: { name: string; url: string }[] = [];
+    let marketData: { marketContext?: string; marketSources?: { name: string; url: string }[] } = {};
+    let paramsFromJob = params;
+    let customThesisFromJob = customThesis;
+    let fundNameFromJob = fundName;
+    if (phase === "search_startups" && jobId && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+      const jobRes = await fetch(`${SUPABASE_URL}/rest/v1/sourcing_jobs?id=eq.${encodeURIComponent(jobId)}&select=*`, {
+        headers: { "apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
+      });
+      const jobList = await jobRes.json();
+      const job = Array.isArray(jobList) ? jobList[0] : jobList;
+      if (!job || job.status !== "market_done" || !job.search_context) {
+        return new Response(JSON.stringify({ error: "Job introuvable ou statut invalide (attendu market_done)" }), { status: 400, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+      }
+      const ctx = job.search_context as any;
+      fundThesisContext = ctx.fundThesisContext || "";
+      fundSources = ctx.fundSources || [];
+      marketData = { marketContext: ctx.marketContext, marketSources: ctx.marketSources || [] };
+      paramsFromJob = job.params || {};
+      customThesisFromJob = job.custom_thesis || null;
+      fundNameFromJob = job.fund_name || "";
+      contextFromJob = true;
+      fundName = fundNameFromJob;
+      customThesis = customThesisFromJob;
+      params = paramsFromJob;
+    }
+
+    const isSearchPhase = false;
 
     // Configuration AI : Gemini ou Vertex AI
     const AI_PROVIDER = (Deno.env.get("AI_PROVIDER") || "gemini").toLowerCase(); // "gemini" ou "vertex"
@@ -1179,38 +1283,40 @@ serve(async (req) => {
     const numberOfStartups = Math.min(Math.max(params.numberOfStartups || 1, 1), 5);
 
 
-    // Step 1 & 2 en parallèle pour rester sous les limites (546 = CPU/mémoire)
-    let fundThesisContext = "";
-    let fundSources: { name: string; url: string }[] = [];
+    let fundThesisContextLocal = fundThesisContext;
+    let fundSourcesLocal = fundSources;
+    let marketDataLocal = marketData;
     const primarySector = customThesis?.sectors?.[0] || "technology startups";
-
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-    const [fundData, marketData] = await Promise.all([
-      fundName
-        ? (async () => {
-            if (isSearchPhase) {
-              const fundResults = await braveSearch(`${fundName} investment thesis portfolio sectors 2024`, 10);
-              return {
-                fundThesisContext: fundResults.map(r => `${r.title}: ${r.description}`).join("\n"),
-                fundSources: fundResults.slice(0, 5).map(r => ({ name: r.title.substring(0, 60), url: r.url })),
-              };
-            }
-            const fundResults = await braveSearch(`${fundName} investment thesis criteria sectors stage geography ticket size`, 12);
-            await sleep(1200);
-            const portfolioResults = await braveSearch(`${fundName} portfolio companies investments 2023 2024`, 8);
-            await sleep(1100);
-            const teamResults = await braveSearch(`${fundName} team partners investors`, 6);
-            return {
-              fundThesisContext: fundResults.map(r => `${r.title}: ${r.description}`).join("\n") + "\n\nPORTFOLIO EXAMPLES:\n" + portfolioResults.map(r => `${r.title}: ${r.description}`).join("\n") + (teamResults.length ? "\n\nFUND TEAM/PARTNERS:\n" + teamResults.map(r => `${r.title}: ${r.description}`).join("\n") : ""),
-              fundSources: [...fundResults, ...portfolioResults].slice(0, 8).map(r => ({ name: r.title.substring(0, 60), url: r.url })),
-            };
-          })()
-        : Promise.resolve({ fundThesisContext: "", fundSources: [] as { name: string; url: string }[] }),
-      enrichMarketData(primarySector, customThesis?.geography || "global"),
-    ]);
 
-    if (fundData.fundThesisContext) fundThesisContext = fundData.fundThesisContext;
-    if (fundData.fundSources.length) fundSources = fundData.fundSources;
+    if (!contextFromJob) {
+      fundThesisContextLocal = "";
+      fundSourcesLocal = [];
+      marketDataLocal = {};
+      const [fundData, marketDataRes] = await Promise.all([
+        fundName
+          ? (async () => {
+              const fundResults = await braveSearch(`${fundName} investment thesis criteria sectors stage geography ticket size`, 12);
+              await sleep(1200);
+              const portfolioResults = await braveSearch(`${fundName} portfolio companies investments 2023 2024`, 8);
+              await sleep(1100);
+              const teamResults = await braveSearch(`${fundName} team partners investors`, 6);
+              return {
+                fundThesisContext: fundResults.map((r: any) => `${r.title}: ${r.description}`).join("\n") + "\n\nPORTFOLIO EXAMPLES:\n" + portfolioResults.map((r: any) => `${r.title}: ${r.description}`).join("\n") + (teamResults.length ? "\n\nFUND TEAM/PARTNERS:\n" + teamResults.map((r: any) => `${r.title}: ${r.description}`).join("\n") : ""),
+                fundSources: [...fundResults, ...portfolioResults].slice(0, 8).map((r: any) => ({ name: r.title.substring(0, 60), url: r.url })),
+              };
+            })()
+          : Promise.resolve({ fundThesisContext: "", fundSources: [] as { name: string; url: string }[] }),
+        enrichMarketData(primarySector, customThesis?.geography || "global", false),
+      ]);
+      if (fundData.fundThesisContext) fundThesisContextLocal = fundData.fundThesisContext;
+      if (fundData.fundSources?.length) fundSourcesLocal = fundData.fundSources;
+      marketDataLocal = marketDataRes;
+    }
+
+    fundThesisContext = fundThesisContextLocal;
+    fundSources = fundSourcesLocal;
+    marketData = marketDataLocal;
     
     // Step 2.5: Use DigitalOcean Agent for enhanced sourcing (if configured)
     // TEMPORAIREMENT DÉSACTIVÉ - L'API DO retourne 405 Method Not Allowed
@@ -1342,10 +1448,12 @@ serve(async (req) => {
     startupSearchResults.push(...results1);
     await sleep(BATCH_DELAY_MS);
 
-    console.log(`[Brave] Recherche 2: best ${mainKeyword} startups`);
-    const results2 = await braveSearch(`best ${mainKeyword} startups ${geography} 2024 emerging`, RESULTS_PER_QUERY);
-    startupSearchResults.push(...results2);
-    await sleep(BATCH_DELAY_MS);
+    if (!isSearchPhase) {
+      console.log(`[Brave] Recherche 2: best ${mainKeyword} startups`);
+      const results2 = await braveSearch(`best ${mainKeyword} startups ${geography} 2024 emerging`, RESULTS_PER_QUERY);
+      startupSearchResults.push(...results2);
+      await sleep(BATCH_DELAY_MS);
+    }
 
     let ipInnovationContext = "";
     if (!isSearchPhase) {
@@ -1436,7 +1544,7 @@ Propose EXACTEMENT 3 requêtes (en anglais, courtes) pour trouver d'autres start
 
     const finalSeen = new Set<string>();
     const finalUnique = startupSearchResults.filter(r => r.url && !finalSeen.has(r.url) && (finalSeen.add(r.url), true));
-    const maxResultsForContext = isSearchPhase ? 20 : 35;
+    const maxResultsForContext = isSearchPhase ? 15 : 35;
     let startupSearchContext = finalUnique
       .slice(0, maxResultsForContext)
       .map(r => `${r.title}: ${r.description} | URL: ${r.url}`)
@@ -1933,12 +2041,21 @@ IMPORTANT :
 - 🚫 NE JAMAIS inventer d'URLs (website, LinkedIn, Crunchbase, sources) - utilise uniquement celles trouvées dans les recherches web
 - Si une URL n'est pas dans les résultats de recherche, laisse le champ vide ou null`;
 
-    if (phase === "search") {
-      const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-      const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-      if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-        return new Response(JSON.stringify({ error: "Configuration Supabase manquante (phase search)" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
-      }
+    if (phase === "search_startups" && jobId && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+      const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/sourcing_jobs?id=eq.${encodeURIComponent(jobId)}`, {
+        method: "PATCH",
+        headers: { "apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          search_context: { systemPrompt, userPrompt, fundSources, marketSources: marketData.marketSources || [] },
+          search_results_count: finalUnique?.length ?? 0,
+          status: "search_done",
+          updated_at: new Date().toISOString(),
+        }),
+      });
+      if (!patchRes.ok) return new Response(JSON.stringify({ error: "Échec mise à jour job (search_startups)" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ jobId }), { headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+    }
+    if (phase === "search" && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
       const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/sourcing_jobs`, {
         method: "POST",
         headers: { "apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json", "Prefer": "return=representation" },
@@ -1953,9 +2070,7 @@ IMPORTANT :
       });
       const insertData = await insertRes.json();
       const jobIdOut = Array.isArray(insertData) ? insertData[0]?.id : insertData?.id;
-      if (!jobIdOut) {
-        return new Response(JSON.stringify({ error: "Échec création job sourcing" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
-      }
+      if (!jobIdOut) return new Response(JSON.stringify({ error: "Échec création job sourcing" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
       return new Response(JSON.stringify({ jobId: jobIdOut }), { headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
     }
 
