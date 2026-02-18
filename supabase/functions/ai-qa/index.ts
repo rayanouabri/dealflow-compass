@@ -24,6 +24,7 @@ interface QARequest {
   startupData: any;
   investmentThesis?: any;
   fundName?: string;
+  dueDiligenceData?: any;
   conversationHistory?: Array<{ role: string; content: string }>;
 }
 
@@ -158,7 +159,10 @@ serve(async (req) => {
       });
     }
 
-    const { question, startupData, investmentThesis, fundName, conversationHistory = [] } = requestData;
+    const { question, startupData, investmentThesis, fundName, dueDiligenceData, conversationHistory = [] } = requestData;
+
+    const companyName = startupData?.name || dueDiligenceData?.company?.name || "Entreprise";
+    const effectiveStartupData = startupData && startupData.name ? startupData : { name: companyName, sector: dueDiligenceData?.company?.sector, stage: dueDiligenceData?.company?.stage, location: dueDiligenceData?.company?.headquarters, founded: dueDiligenceData?.company?.founded, teamSize: dueDiligenceData?.company?.employeeCount };
 
     if (!question || !question.trim()) {
       return new Response(JSON.stringify({ 
@@ -169,9 +173,9 @@ serve(async (req) => {
       });
     }
 
-    if (!startupData || !startupData.name) {
+    if (!effectiveStartupData?.name && !dueDiligenceData?.company?.name) {
       return new Response(JSON.stringify({ 
-        error: "Startup data is required." 
+        error: "Startup data or due diligence data is required." 
       }), {
         status: 400,
         headers: { ...corsHeaders(req), "Content-Type": "application/json" },
@@ -322,27 +326,42 @@ serve(async (req) => {
     }
 
     // Build context from startup data
-    const startupContext = `
+    let startupContext = `
 INFORMATIONS SUR LA STARTUP ANALYSÉE :
 
-Nom: ${startupData.name}
-Secteur: ${startupData.sector || "Non spécifié"}
-Stade: ${startupData.stage || "Non spécifié"}
-Localisation: ${startupData.location || "Non spécifié"}
-Fondée en: ${startupData.founded || "Non spécifié"}
-Taille de l'équipe: ${startupData.teamSize || "Non spécifié"}
+Nom: ${effectiveStartupData.name}
+Secteur: ${effectiveStartupData.sector || "Non spécifié"}
+Stade: ${effectiveStartupData.stage || "Non spécifié"}
+Localisation: ${effectiveStartupData.location || "Non spécifié"}
+Fondée en: ${effectiveStartupData.founded || "Non spécifié"}
+Taille de l'équipe: ${effectiveStartupData.teamSize || "Non spécifié"}
 
-${startupData.problem ? `Problème résolu: ${startupData.problem}` : ''}
-${startupData.solution ? `Solution: ${startupData.solution}` : ''}
-${startupData.businessModel ? `Modèle économique: ${startupData.businessModel}` : ''}
-${startupData.competitors ? `Concurrents: ${startupData.competitors}` : ''}
-${startupData.moat ? `Avantage concurrentiel: ${startupData.moat}` : ''}
+${effectiveStartupData.problem ? `Problème résolu: ${effectiveStartupData.problem}` : ''}
+${effectiveStartupData.solution ? `Solution: ${effectiveStartupData.solution}` : ''}
+${effectiveStartupData.businessModel ? `Modèle économique: ${effectiveStartupData.businessModel}` : ''}
+${effectiveStartupData.competitors ? `Concurrents: ${effectiveStartupData.competitors}` : ''}
+${effectiveStartupData.moat ? `Avantage concurrentiel: ${effectiveStartupData.moat}` : ''}
 `;
 
-    // Extract metrics from due diligence report if available
+    // Contexte complet du rapport Due Diligence (pour approfondir les points)
+    let dueDiligenceContext = "";
+    if (dueDiligenceData && typeof dueDiligenceData === "object") {
+      try {
+        dueDiligenceContext = `
+
+RAPPORT DUE DILIGENCE COMPLET (utilise ce contenu pour répondre en détail) :
+
+${JSON.stringify(dueDiligenceData, null, 0).slice(0, 28000)}
+`;
+      } catch (_) {
+        dueDiligenceContext = "\n(Rapport due diligence non sérialisable)\n";
+      }
+    }
+
+    // Extract metrics from due diligence report (slide format) if available
     let metricsContext = "";
-    if (startupData.dueDiligenceReport && Array.isArray(startupData.dueDiligenceReport)) {
-      const metricsSlide = startupData.dueDiligenceReport.find(
+    if (effectiveStartupData.dueDiligenceReport && Array.isArray(effectiveStartupData.dueDiligenceReport)) {
+      const metricsSlide = effectiveStartupData.dueDiligenceReport.find(
         (slide: any) => slide.title?.toLowerCase().includes("metrics") || 
                       slide.title?.toLowerCase().includes("traction") ||
                       slide.title?.toLowerCase().includes("business")
@@ -372,8 +391,8 @@ Description: ${investmentThesis.description || "Non spécifié"}
       : "";
 
     // Couches Brave : recherches ciblées selon la question
-    const name = startupData.name || "";
-    const sector = startupData.sector || "";
+    const name = companyName;
+    const sector = effectiveStartupData.sector || dueDiligenceData?.company?.sector || "";
     const qLower = question.toLowerCase().trim();
     
     // Construire des requêtes intelligentes basées sur la question
@@ -427,10 +446,11 @@ Description: ${investmentThesis.description || "Non spécifié"}
     const systemPrompt = `Tu es l'assistant IA d'AI-VC, un expert senior en analyse de startups et due diligence VC.
 
 TON RÔLE :
-Tu réponds aux questions sur la startup "${startupData.name}" en t'appuyant sur :
-1. Les données d'analyse fournies (métriques, thèse, due diligence)
-2. Les résultats de recherche web (Brave) - cite TOUJOURS les URLs
-3. L'historique de conversation pour maintenir le contexte
+Tu réponds aux questions sur l'entreprise "${companyName}" en t'appuyant sur :
+1. Le rapport de due diligence fourni (sections entreprise, résumé, produit, marché, financements, équipe, traction, risques, recommandation) - priorité à ce contenu pour approfondir les points
+2. Les données d'analyse additionnelles (métriques, thèse) si fournies
+3. Les résultats de recherche web (Brave) - cite TOUJOURS les URLs
+4. L'historique de conversation pour maintenir le contexte
 
 RÈGLES CRITIQUES :
 1. SOURCES OBLIGATOIRES : Chaque fait doit avoir une source URL
@@ -462,6 +482,7 @@ EXEMPLE DE MAUVAISE RÉPONSE :
 "L'ARR est de $2.5M." (pas de source, pas de contexte)`;
 
     const userPrompt = `${startupContext}
+${dueDiligenceContext}
 ${metricsContext}
 ${thesisContext}
 ${braveContext}

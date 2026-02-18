@@ -35,8 +35,10 @@ import {
   AlertCircle,
   Lightbulb,
   BarChart3,
-  Link as LinkIcon
+  Link as LinkIcon,
+  MessageCircle
 } from "lucide-react";
+import { AIQAChat } from "@/components/AIQAChat";
 
 interface DueDiligenceData {
   company?: {
@@ -845,6 +847,10 @@ export default function DueDiligenceResult() {
                   <LinkIcon className="w-3.5 h-3.5 mr-1.5" />
                   Sources
                 </TabsTrigger>
+                <TabsTrigger value="assistant" className="text-xs px-3 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300 text-foreground/70 data-[state=active]:text-primary-foreground">
+                  <MessageCircle className="w-3.5 h-3.5 mr-1.5" />
+                  Assistant IA
+                </TabsTrigger>
               </TabsList>
 
               {/* Financials Tab */}
@@ -1513,6 +1519,25 @@ export default function DueDiligenceResult() {
                     </ScrollArea>
                   </CardContent>
                 </Card>
+              </TabsContent>
+
+              {/* Assistant IA — approfondir des points du rapport */}
+              <TabsContent value="assistant" className="mt-4">
+                <div className="rounded-xl border border-primary/40 bg-card/80 backdrop-blur-sm overflow-hidden w-full shadow-lg">
+                  <div className="h-[580px] overflow-hidden w-full">
+                    <AIQAChat
+                      startupData={{
+                        name: data.company?.name || requestPayload?.companyName || "",
+                        sector: data.company?.sector,
+                        stage: data.company?.stage,
+                        location: data.company?.headquarters,
+                        founded: data.company?.founded,
+                        teamSize: data.company?.employeeCount,
+                      }}
+                      dueDiligenceData={data}
+                    />
+                  </div>
+                </div>
               </TabsContent>
             </Tabs>
 

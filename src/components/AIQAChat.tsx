@@ -18,11 +18,11 @@ interface Message {
 interface AIQAChatProps {
   startupData: {
     name: string;
-    sector: string;
-    stage: string;
-    location: string;
-    founded: string | number;
-    teamSize: string | number;
+    sector?: string;
+    stage?: string;
+    location?: string;
+    founded?: string | number;
+    teamSize?: string | number;
     problem?: string;
     solution?: string;
     businessModel?: string;
@@ -32,11 +32,13 @@ interface AIQAChatProps {
   };
   investmentThesis?: any;
   fundName?: string;
+  /** Rapport due diligence complet (sections entreprise, produit, marché, équipe, etc.) pour approfondir les points */
+  dueDiligenceData?: any;
 }
 
-export function AIQAChat({ startupData, investmentThesis, fundName }: AIQAChatProps) {
-  // Clé unique pour cet assistant basée sur le nom de la startup
-  const storageKey = `ai-qa-history-${startupData.name}`;
+export function AIQAChat({ startupData, investmentThesis, fundName, dueDiligenceData }: AIQAChatProps) {
+  const companyName = startupData?.name || dueDiligenceData?.company?.name || "Entreprise";
+  const storageKey = dueDiligenceData ? `ai-qa-due-diligence-${companyName}` : `ai-qa-history-${companyName}`;
   
   // Fonction pour charger l'historique depuis sessionStorage
   const loadHistory = (): Message[] => {
@@ -52,7 +54,9 @@ export function AIQAChat({ startupData, investmentThesis, fundName }: AIQAChatPr
       {
         id: "1",
         role: "assistant",
-        content: `Bonjour ! Je suis votre assistant IA spécialisé dans l'analyse de startups. Je peux répondre à vos questions sur ${startupData.name} en me basant sur les données d'analyse disponibles. Que souhaitez-vous savoir ?`,
+        content: dueDiligenceData
+          ? `Bonjour ! Je suis votre assistant IA pour ce rapport de due diligence. Posez-moi des questions pour approfondir un point (financements, équipe, risques, recommandation, métriques, etc.) ou obtenir des précisions. Je m'appuie sur le rapport et des recherches complémentaires.`
+          : `Bonjour ! Je suis votre assistant IA spécialisé dans l'analyse de startups. Je peux répondre à vos questions sur ${companyName} en me basant sur les données d'analyse disponibles. Que souhaitez-vous savoir ?`,
         timestamp: new Date(),
       },
     ];
@@ -116,9 +120,10 @@ export function AIQAChat({ startupData, investmentThesis, fundName }: AIQAChatPr
         },
         body: JSON.stringify({
           question: input,
-          startupData,
+          startupData: { ...startupData, name: companyName },
           investmentThesis,
           fundName,
+          dueDiligenceData: dueDiligenceData ?? undefined,
           conversationHistory: messages.slice(-5).map((m) => ({
             role: m.role,
             content: m.content,
@@ -174,12 +179,9 @@ export function AIQAChat({ startupData, investmentThesis, fundName }: AIQAChatPr
     setInput(question);
   };
 
-  const quickQuestions = [
-    "Stratégie",
-    "Métriques",
-    "Concurrence",
-    "Risques",
-  ];
+  const quickQuestions = dueDiligenceData
+    ? ["Résumé des risques", "Recommandation détaillée", "Équipe & fondateurs", "Métriques financières"]
+    : ["Stratégie", "Métriques", "Concurrence", "Risques"];
 
   const formatTime = (date: Date) => {
     return new Intl.DateTimeFormat("fr-FR", {
@@ -196,10 +198,10 @@ export function AIQAChat({ startupData, investmentThesis, fundName }: AIQAChatPr
           <Bot className="w-6 h-6 text-primary flex-shrink-0" />
           <div className="min-w-0 overflow-hidden flex-1">
             <h3 className="font-semibold text-foreground truncate">
-              Assistant IA - Questions sur {startupData.name}
+              Assistant IA — {dueDiligenceData ? "Due Diligence" : "Questions sur"} {companyName}
             </h3>
             <p className="text-sm text-muted-foreground break-words line-clamp-2">
-              Posez des questions sur l'entreprise, son marché, sa stratégie, ses métriques, etc.
+              {dueDiligenceData ? "Approfondissez des points du rapport, posez des questions sur les sections (financements, équipe, risques, recommandation), ou demandez des infos complémentaires." : "Posez des questions sur l'entreprise, son marché, sa stratégie, ses métriques, etc."}
             </p>
           </div>
         </div>
