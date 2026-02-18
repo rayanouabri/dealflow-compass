@@ -886,9 +886,9 @@ export default function DueDiligenceResult() {
                               {round.valuation && (
                                 <p className="text-sm text-amber-400 mb-2 font-medium">Valorisation: {round.valuation}</p>
                               )}
-                              {round.investors && round.investors.length > 0 && (
+                              {round.investors && (
                                 <p className="text-sm text-muted-foreground">
-                                  <span className="font-medium text-gray-300">Investisseurs:</span> {round.investors.join(", ")}
+                                  <span className="font-medium text-gray-300">Investisseurs:</span> {Array.isArray(round.investors) ? round.investors.join(", ") : (typeof round.investors === "string" ? round.investors : String(round.investors ?? ""))}
                                 </p>
                               )}
                             </div>
