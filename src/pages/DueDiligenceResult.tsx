@@ -245,7 +245,7 @@ export default function DueDiligenceResult() {
       // ——— Phase 1 : recherche (reste sous 150s côté serveur) ———
       setStatusMessage("Recherche d'informations (sources, financements, équipe…)…");
       const controller1 = new AbortController();
-      const timeout1 = setTimeout(() => controller1.abort(), 100_000);
+      const timeout1 = setTimeout(() => controller1.abort(), 160_000);
       const resSearch = await fetch(`${supabaseUrl}/functions/v1/due-diligence`, {
         method: "POST",
         signal: controller1.signal,
@@ -277,7 +277,7 @@ export default function DueDiligenceResult() {
 
       // ——— Phase 2 : analyse IA ———
       const controller2 = new AbortController();
-      const timeout2 = setTimeout(() => controller2.abort(), 120_000);
+      const timeout2 = setTimeout(() => controller2.abort(), 200_000);
       const resAnalyze = await fetch(`${supabaseUrl}/functions/v1/due-diligence`, {
         method: "POST",
         signal: controller2.signal,
@@ -344,7 +344,7 @@ export default function DueDiligenceResult() {
       // Timeout côté client (AbortController)
       const isAbort = err instanceof DOMException && err.name === "AbortError";
       if (isAbort) {
-        errorMessage = "L'analyse a pris trop de temps (plus de 2 minutes). Le serveur peut être surchargé.\n\nRéessayez dans quelques minutes ou choisissez une entreprise plus simple à analyser.";
+        errorMessage = "L'analyse a pris trop de temps (timeout côté client). Le serveur peut être surchargé ou l'entreprise est très complexe.\n\nRéessayez dans quelques minutes ou choisissez une entreprise plus simple à analyser.";
       } else if (err instanceof Error) {
         const errMsg = err.message.toLowerCase();
         
