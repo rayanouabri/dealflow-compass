@@ -402,6 +402,22 @@ export default function DueDiligenceResult() {
     }
   };
 
+  // Éviter [object Object] : extraire une chaîne affichable depuis n'importe quelle valeur (string, number, object)
+  const toDisplayString = (value: unknown): string => {
+    if (value == null) return "";
+    if (typeof value === "string") return value;
+    if (typeof value === "number") return String(value);
+    if (Array.isArray(value)) return value.map(toDisplayString).filter(Boolean).join(", ") || "";
+    if (typeof value === "object") {
+      const o = value as Record<string, unknown>;
+      const s = o.milestone ?? o.name ?? o.title ?? o.description ?? o.text ?? o.label ?? o.value ?? o.amount ?? o.round;
+      if (s != null && typeof s === "string") return s;
+      if (s != null) return String(s);
+      try { return JSON.stringify(value).slice(0, 150); } catch { return ""; }
+    }
+    return String(value);
+  };
+
   // Retirer TOUS les "(Source: ...)" du texte (même URLs avec parenthèses) — utilisé à l'affichage
   const stripInlineSources = (text: string | undefined | null): string => {
     if (!text || typeof text !== "string") return "";
@@ -1182,7 +1198,7 @@ export default function DueDiligenceResult() {
                               <p className="text-xs text-muted-foreground mb-2">Clients Notables</p>
                               <div className="flex flex-wrap gap-2">
                                 {list.map((c, i) => (
-                                  <Badge key={i} variant="secondary">{typeof c === "string" ? c : String(c ?? "")}</Badge>
+                                  <Badge key={i} variant="secondary">{toDisplayString(c)}</Badge>
                                 ))}
                               </div>
                             </div>
@@ -1203,7 +1219,7 @@ export default function DueDiligenceResult() {
                               <div key={i} className="flex items-start gap-3 bg-gray-800/20 rounded-lg p-3">
                                 <div className="w-2 h-2 rounded-full bg-green-400 mt-2 flex-shrink-0" />
                                 <div className="flex-1">
-                                  <p className="text-sm text-gray-300">{typeof m?.milestone === "string" ? m.milestone : (m?.milestone ? String(m.milestone) : "")}</p>
+                                  <p className="text-sm text-gray-300">{stripInlineSources(toDisplayString(m?.milestone))}</p>
                                   {m?.date && <p className="text-xs text-muted-foreground mt-1">{m.date}</p>}
                                 </div>
                               </div>
@@ -1222,7 +1238,7 @@ export default function DueDiligenceResult() {
                           <h4 className="font-semibold mb-2">Partenariats</h4>
                           <div className="flex flex-wrap gap-2">
                             {list.map((item, i) => (
-                              <Badge key={i} variant="outline">{typeof item === "string" ? item : String(item ?? "")}</Badge>
+                              <Badge key={i} variant="outline">{toDisplayString(item)}</Badge>
                             ))}
                           </div>
                         </div>
@@ -1241,7 +1257,7 @@ export default function DueDiligenceResult() {
                           </h4>
                           <ul className="space-y-1">
                             {list.map((a, i) => (
-                              <li key={i} className="text-sm text-gray-300">• {typeof a === "string" ? a : String(a ?? "")}</li>
+                              <li key={i} className="text-sm text-gray-300">• {toDisplayString(a)}</li>
                             ))}
                           </ul>
                         </div>
@@ -1352,24 +1368,18 @@ export default function DueDiligenceResult() {
                     )}
                     
                     <div className="grid md:grid-cols-3 gap-4 my-4">
-                      {data.investmentRecommendation?.targetReturn && (
-                        <div className="bg-gray-800/50 rounded-lg p-3 text-center">
-                          <p className="text-xs text-muted-foreground mb-1">Multiple Cible</p>
-                          <p className="text-lg font-semibold text-amber-400">{data.investmentRecommendation.targetReturn}</p>
-                        </div>
-                      )}
-                      {data.investmentRecommendation?.investmentHorizon && (
-                        <div className="bg-gray-800/50 rounded-lg p-3 text-center">
-                          <p className="text-xs text-muted-foreground mb-1">Horizon</p>
-                          <p className="text-lg font-semibold">{data.investmentRecommendation.investmentHorizon}</p>
-                        </div>
-                      )}
-                      {data.investmentRecommendation?.suggestedTicket && (
-                        <div className="bg-gray-800/50 rounded-lg p-3 text-center">
-                          <p className="text-xs text-muted-foreground mb-1">Ticket Suggéré</p>
-                          <p className="text-lg font-semibold text-green-400">{data.investmentRecommendation.suggestedTicket}</p>
-                        </div>
-                      )}
+                      <div className="bg-gray-800/50 rounded-lg p-3 text-center">
+                        <p className="text-xs text-muted-foreground mb-1">Multiple Cible</p>
+                        <p className="text-lg font-semibold text-amber-400">{toDisplayString(data.investmentRecommendation?.targetReturn) || "Non disponible"}</p>
+                      </div>
+                      <div className="bg-gray-800/50 rounded-lg p-3 text-center">
+                        <p className="text-xs text-muted-foreground mb-1">Horizon</p>
+                        <p className="text-lg font-semibold">{toDisplayString(data.investmentRecommendation?.investmentHorizon) || "Non disponible"}</p>
+                      </div>
+                      <div className="bg-gray-800/50 rounded-lg p-3 text-center">
+                        <p className="text-xs text-muted-foreground mb-1">Ticket Suggéré</p>
+                        <p className="text-lg font-semibold text-green-400">{toDisplayString(data.investmentRecommendation?.suggestedTicket) || "Non disponible"}</p>
+                      </div>
                     </div>
                     
                     <div className="grid md:grid-cols-2 gap-4">
@@ -1378,7 +1388,7 @@ export default function DueDiligenceResult() {
                           <h4 className="font-semibold text-green-400 mb-2">Forces</h4>
                           <ul className="space-y-1 text-sm">
                             {data.investmentRecommendation.strengths.map((s, i) => (
-                              <li key={i} className="text-gray-300">• {s}</li>
+                              <li key={i} className="text-gray-300">• {toDisplayString(s)}</li>
                             ))}
                           </ul>
                         </div>
@@ -1389,7 +1399,7 @@ export default function DueDiligenceResult() {
                           <h4 className="font-semibold text-red-400 mb-2">Faiblesses</h4>
                           <ul className="space-y-1 text-sm">
                             {data.investmentRecommendation.weaknesses.map((w, i) => (
-                              <li key={i} className="text-gray-300">• {w}</li>
+                              <li key={i} className="text-gray-300">• {toDisplayString(w)}</li>
                             ))}
                           </ul>
                         </div>
@@ -1401,7 +1411,7 @@ export default function DueDiligenceResult() {
                         <h4 className="font-semibold text-blue-400 mb-2">Questions à Creuser</h4>
                         <ul className="space-y-1 text-sm">
                           {data.investmentRecommendation.keyQuestions.map((q, i) => (
-                            <li key={i} className="text-gray-300">• {q}</li>
+                            <li key={i} className="text-gray-300">• {toDisplayString(q)}</li>
                           ))}
                         </ul>
                       </div>
@@ -1416,7 +1426,7 @@ export default function DueDiligenceResult() {
                               <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-xs font-semibold flex-shrink-0">
                                 {i + 1}
                               </span>
-                              {s}
+                              {toDisplayString(s)}
                             </li>
                           ))}
                         </ol>

@@ -437,10 +437,12 @@ Tu dois produire un rapport de due diligence COMPLET et PROFESSIONNEL sur l'entr
    - Si une information n'a PAS de source dans les données fournies, indique "Non disponible" dans le texte (sans URL).
    - NE JAMAIS inventer de données ou d'URLs.
 
-2. DONNÉES VÉRIFIÉES UNIQUEMENT :
-   - Utilise UNIQUEMENT les informations des résultats de recherche fournis
-   - Les URLs doivent être exactement celles trouvées dans les recherches
-   - Si tu ne trouves pas une information, dis-le clairement
+2. DONNÉES VÉRIFIÉES ET ESTIMATIONS :
+   - Priorité aux informations trouvées dans les recherches. Les URLs doivent être exactement celles trouvées.
+   - Si une information n'est PAS trouvée (métriques, fondateurs, multiple cible, ticket suggéré, etc.) : fournis une ESTIMATION en t'appuyant sur des sociétés comparables ou des standards du secteur, et précise TOUJOURS que c'est une estimation. Exemples : "Estimation (secteur deep tech Seed) : 2-3x", "Non disponible (estimation : 5-7 ans)", "Fondateur : [nom si trouvé] ; sinon Estimation (profil type CEO early-stage) : ...".
+   - Pour team.founders : remplis name, role, background, linkedin dès que trouvé ; sinon "Non disponible" ou "Estimation (profil typique) : ...".
+   - Pour investmentRecommendation : targetReturn, investmentHorizon, suggestedTicket doivent TOUJOURS être remplis. Si pas de donnée : "Non disponible" ou "Estimation : [fourchette ou description]".
+   - keyMilestones : chaque élément doit avoir "milestone" (chaîne de caractères, pas un objet) et optionnellement "date". partnerships et awards : tableaux de CHAÎNES uniquement (ex: ["Partenaire A", "Prix X"]), jamais d'objets.
 
 3. FORMAT DU RAPPORT :
    Tu dois retourner un objet JSON avec la structure suivante (tous les champs sont requis):
@@ -470,10 +472,10 @@ Tu dois produire un rapport de due diligence COMPLET et PROFESSIONNEL sur l'entr
   "competition": { "landscape": "...", "competitors": [], "competitiveAdvantage": "...", "moat": "...", "sources": [] },
   "financials": { "fundingHistory": [], "totalFunding": "...", "latestValuation": "...", "metrics": {}, "sources": [] },
   "team": { "overview": "...", "founders": [], "keyExecutives": [], "teamSize": "...", "culture": "...", "hiringTrends": "...", "sources": [] },
-  "traction": { "overview": "...", "keyMilestones": [], "customers": {}, "partnerships": [], "awards": [], "sources": [] },
+  "traction": { "overview": "...", "keyMilestones": [ { "date": "YYYY ou texte", "milestone": "texte seul (obligatoire)" } ], "customers": { "count": "...", "notable": ["string", "string"], "segments": "..." }, "partnerships": ["string", "string"], "awards": ["string"], "sources": [] },
   "risks": { "marketRisks": [], "executionRisks": [], "financialRisks": [], "competitiveRisks": [], "regulatoryRisks": [], "mitigations": [], "overallRiskLevel": "...", "sources": [] },
   "opportunities": { "growthOpportunities": [], "marketExpansion": "...", "productExpansion": "...", "strategicValue": "...", "sources": [] },
-  "investmentRecommendation": { "recommendation": "...", "rationale": "...", "strengths": [], "weaknesses": [], "keyQuestions": [], "suggestedNextSteps": [], "targetReturn": "...", "investmentHorizon": "...", "suggestedTicket": "..." },
+  "investmentRecommendation": { "recommendation": "...", "rationale": "...", "strengths": [], "weaknesses": [], "keyQuestions": [], "suggestedNextSteps": [], "targetReturn": "texte (obligatoire; si inconnu: 'Non disponible' ou 'Estimation: ...')", "investmentHorizon": "texte (obligatoire)", "suggestedTicket": "texte (obligatoire)" },
   "allSources": [ { "name": "...", "url": "...", "type": "article|crunchbase|linkedin|official|press|other", "relevance": "..." } ],
   "dataQuality": { "overallScore": "...", "dataAvailability": {}, "limitations": [], "sourcesCount": "..." }
 }
@@ -489,9 +491,11 @@ ${analyzeContext}
 ⚠️ RAPPELS CRITIQUES :
 1. NE METS AUCUNE URL dans le texte. Toutes les URLs vont UNIQUEMENT dans "sources" et "allSources".
 2. allSources doit contenir 15–25 entrées minimum avec name, url, type, relevance.
-3. N'invente AUCUNE donnée ni URL.
-4. Si une info n'est pas dans les recherches, indique "Non disponible".
-5. Sois exhaustif et professionnel.
+3. N'invente AUCUNE URL. Pour les données manquantes : indique "Non disponible" ou fournis une estimation en la préfixant par "Estimation :" ou "Estimation (secteur comparable) :".
+4. Remplis TOUJOURS targetReturn, investmentHorizon, suggestedTicket (au minimum "Non disponible" si aucune donnée).
+5. keyMilestones[].milestone, partnerships[], awards[] : uniquement des chaînes de caractères, jamais d'objets.
+6. Équipe / fondateurs : remplis au maximum à partir des recherches ; sinon "Non disponible" ou estimation explicitement indiquée.
+7. Sois exhaustif et professionnel.
 
 Réponds UNIQUEMENT avec du JSON valide.`;
 
@@ -607,6 +611,36 @@ Réponds UNIQUEMENT avec du JSON valide.`;
         return obj;
       };
       dueDiligenceResult = cleanUrlsAnalyze(stripSrc(dueDiligenceResult));
+      // Normaliser champs qui doivent être des chaînes (éviter [object Object] côté frontend)
+      const toStr = (v: any): string => {
+        if (v == null) return "";
+        if (typeof v === "string") return v;
+        if (typeof v === "object" && v !== null) return (v.milestone ?? v.name ?? v.title ?? v.description ?? v.text ?? v.label ?? "").toString() || JSON.stringify(v).slice(0, 200);
+        return String(v);
+      };
+      if (dueDiligenceResult.traction) {
+        if (Array.isArray(dueDiligenceResult.traction.keyMilestones)) {
+          dueDiligenceResult.traction.keyMilestones = dueDiligenceResult.traction.keyMilestones.map((m: any) => ({
+            date: typeof m?.date === "string" ? m.date : "",
+            milestone: toStr(m?.milestone ?? m),
+          })).filter((m: any) => m.milestone);
+        }
+        if (Array.isArray(dueDiligenceResult.traction.partnerships)) {
+          dueDiligenceResult.traction.partnerships = dueDiligenceResult.traction.partnerships.map((p: any) => toStr(p));
+        }
+        if (Array.isArray(dueDiligenceResult.traction.awards)) {
+          dueDiligenceResult.traction.awards = dueDiligenceResult.traction.awards.map((a: any) => toStr(a));
+        }
+        if (dueDiligenceResult.traction.customers?.notable && Array.isArray(dueDiligenceResult.traction.customers.notable)) {
+          dueDiligenceResult.traction.customers.notable = dueDiligenceResult.traction.customers.notable.map((n: any) => toStr(n));
+        }
+      }
+      if (dueDiligenceResult.investmentRecommendation) {
+        const ir = dueDiligenceResult.investmentRecommendation;
+        if (!ir.targetReturn || typeof ir.targetReturn !== "string") ir.targetReturn = "Non disponible";
+        if (!ir.investmentHorizon || typeof ir.investmentHorizon !== "string") ir.investmentHorizon = "Non disponible";
+        if (!ir.suggestedTicket || typeof ir.suggestedTicket !== "string") ir.suggestedTicket = "Non disponible";
+      }
       dueDiligenceResult.metadata = { companyName, generatedAt: new Date().toISOString(), searchResultsCount: analyzeSearchCount, aiProvider: AI_PROVIDER };
 
       await fetch(`${SUPABASE_URL}/rest/v1/due_diligence_jobs?id=eq.${encodeURIComponent(jobId)}`, {
@@ -640,12 +674,17 @@ Réponds UNIQUEMENT avec du JSON valide.`;
       `${companyName} revenue ARR MRR metrics`,
       `${companyName} customers clients users growth`,
       `${companyName} traction growth rate metrics 2024`,
+      `${companyName} milestones achievements key events`,
+      `${companyName} partnerships deals clients`,
       `${companyName} market share business performance`,
-      `${companyName} key metrics KPIs`,
+      `${companyName} key metrics KPIs unit economics`,
+      `${companyName} revenue growth ARR valuation multiple`,
       `${companyName} founders CEO CTO team LinkedIn`,
+      `${companyName} founder CEO name background biography`,
       `${companyName} leadership team executives background`,
       `${companyName} employees headcount team size`,
       `${companyName} fondateurs équipe management`,
+      `${companyName} who founded CEO`,
       `${companyName} product technology platform`,
       `${companyName} solution features how it works`,
       `${companyName} technology stack patents`,
@@ -663,6 +702,8 @@ Réponds UNIQUEMENT avec du JSON valide.`;
       `${companyName} challenges risks concerns`,
       `${companyName} reviews reputation`,
       `${companyName} awards prizes recognition`,
+      `${companyName} récompenses prix concours`,
+      `${companyName} investment thesis target return ticket`,
     ];
     
     // Si le site web est fourni, l'ajouter aux recherches
