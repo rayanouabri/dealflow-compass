@@ -17,7 +17,8 @@ import { useTrial } from "@/hooks/useTrial";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ArrowLeft, AlertCircle, RefreshCcw } from "lucide-react";
 
 interface Slide {
   title: string;
@@ -87,6 +88,7 @@ export default function Analyse() {
   const [showAuthDialog, setShowAuthDialog] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
   const [restoredState, setRestoredState] = useState<AnalyseState | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const analyseState = (state as AnalyseState | null) ?? restoredState;
 
@@ -145,12 +147,39 @@ export default function Analyse() {
         const text = await res.text();
         let data: any;
         try {
-          data = JSON.parse(text);
+          data = text ? JSON.parse(text) : {};
         } catch {
+          if (res.status === 546) {
+            throw new Error("Limite de ressources serveur dépassée (546). Réessayez dans 1–2 minutes ou avec « 1 startup ».");
+          }
+          if (res.status >= 500) {
+            throw new Error(`Erreur serveur (${res.status}). Le service est temporairement indisponible. Veuillez réessayer dans quelques instants.`);
+          } else if (res.status === 429) {
+            throw new Error("Trop de requêtes. Veuillez patienter quelques instants avant de réessayer.");
+          } else if (res.status >= 400) {
+            throw new Error(`Erreur de requête (${res.status}). Vérifiez votre configuration et réessayez.`);
+          }
           throw new Error(`Réponse invalide (${res.status}).`);
         }
 
-        if (!res.ok) throw new Error(typeof data?.error === "string" ? data.error : data?.error?.message || "Erreur API");
+        if (!res.ok) {
+          const errorMsg = typeof data?.error === "string" 
+            ? data.error 
+            : data?.error?.message || `Erreur serveur (${res.status})`;
+          
+          // 546 = limite ressources Supabase (CPU/mémoire) — message clair et actionnable
+          if (res.status === 546) {
+            throw new Error("Limite de ressources serveur dépassée (546). L'analyse a été interrompue.\n\nConseils :\n• Réessayez dans 1–2 minutes.\n• Choisissez « 1 startup » dans les options pour réduire la charge.\n• La qualité de l'analyse reste la même pour 1 startup.");
+          }
+          if (res.status >= 500) {
+            throw new Error(`${errorMsg}\n\nLe serveur rencontre des difficultés. Réessayez dans quelques instants ou avec 1 startup.`);
+          } else if (res.status === 429) {
+            throw new Error("Trop de requêtes simultanées. Veuillez patienter quelques instants avant de réessayer.");
+          } else if (res.status === 401 || res.status === 403) {
+            throw new Error("Erreur d'authentification. Veuillez vous reconnecter.");
+          }
+          throw new Error(errorMsg);
+        }
         if (data?.error) throw new Error(typeof data.error === "string" ? data.error : data.error?.message || "Erreur");
 
         useTrialCredit();
@@ -175,8 +204,13 @@ export default function Analyse() {
           description: `${startups.length} startup(s) trouvée(s). Rapports prêts.`,
         });
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Échec de l'analyse.";
-        toast({ title: "Erreur", description: msg, variant: "destructive", duration: 10000 });
+        let msg = e instanceof Error ? e.message : "Échec de l'analyse.";
+        // Failed to fetch / CORS souvent dû au 546 côté serveur
+        if (typeof msg === "string" && (msg.toLowerCase().includes("failed to fetch") || msg.toLowerCase().includes("network"))) {
+          msg = "Impossible de joindre le serveur (connexion ou timeout). Cause fréquente : limite serveur (546).\n\n• Réessayez dans 1–2 minutes.\n• Utilisez l’option « 1 startup » pour réduire la charge.\n• La qualité reste identique pour une seule startup.";
+        }
+        setErrorMessage(msg);
+        toast({ title: "Erreur", description: msg.split("\n")[0], variant: "destructive", duration: 10000 });
         setResult(null);
       } finally {
         setLoading(false);
@@ -263,6 +297,13 @@ export default function Analyse() {
   }
 
   if (!result) {
+    const handleRetry = () => {
+      setErrorMessage(null);
+      setLoading(true);
+      // Reload the page to retry
+      window.location.reload();
+    };
+
     return (
       <>
         <AppLayout
@@ -273,12 +314,53 @@ export default function Analyse() {
           onSignOut={signOut}
           onUpgrade={() => setShowPaywall(true)}
         >
-          <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4">
-            <p className="text-muted-foreground">L&apos;analyse a échoué.</p>
-            <Button onClick={handleBack} variant="outline" className="gap-2">
+          <div className="max-w-2xl mx-auto">
+            <Link
+              to="/analyser"
+              className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
+            >
               <ArrowLeft className="w-4 h-4" />
-              Nouvelle analyse
-            </Button>
+              Retour à la configuration
+            </Link>
+
+            <Card className="bg-card/80 border-red-500/30">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-red-400">
+                  <AlertCircle className="w-5 h-5" />
+                  L&apos;analyse a échoué
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {errorMessage && (
+                  <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4">
+                    <p className="text-sm text-gray-300 leading-relaxed">{errorMessage}</p>
+                  </div>
+                )}
+                
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    Causes possibles :
+                  </p>
+                  <ul className="text-sm text-muted-foreground space-y-1 ml-4 list-disc">
+                    <li>Problème de connexion au serveur</li>
+                    <li>Configuration manquante (clés API)</li>
+                    <li>Timeout de la requête</li>
+                    <li>Erreur serveur temporaire</li>
+                  </ul>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <Button onClick={handleRetry} variant="default" className="gap-2">
+                    <RefreshCcw className="w-4 h-4" />
+                    Réessayer
+                  </Button>
+                  <Button onClick={handleBack} variant="outline" className="gap-2">
+                    <ArrowLeft className="w-4 h-4" />
+                    Nouvelle analyse
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </AppLayout>
         <AuthDialog open={showAuthDialog} onOpenChange={setShowAuthDialog} defaultView="login" onAuthSuccess={() => setShowAuthDialog(false)} />

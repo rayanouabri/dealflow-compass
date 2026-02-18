@@ -21,7 +21,9 @@ function corsHeaders(req: Request): Record<string, string> {
 }
 
 interface DueDiligenceRequest {
-  companyName: string;
+  phase?: "search" | "analyze";
+  jobId?: string;
+  companyName?: string;
   companyWebsite?: string;
   additionalContext?: string;
 }
@@ -73,7 +75,7 @@ function validateAndCleanUrl(url: string): string | null {
 // Search using Brave Search API
 // Search using Serper.dev API (Google Search) - 2500 free searches/month
 // Fallback to Brave Search if Serper not configured
-async function braveSearch(query: string, count: number = 10, retries: number = 2): Promise<BraveSearchResult[]> {
+async function braveSearch(query: string, count: number = 20, retries: number = 2): Promise<BraveSearchResult[]> {
   const SERPER_API_KEY = Deno.env.get("SERPER_API_KEY") || Deno.env.get("serper_api");
   const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY");
   
@@ -99,7 +101,7 @@ async function serperSearch(query: string, count: number, apiKey: string): Promi
         "X-API-KEY": apiKey,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ q: query, num: Math.min(count, 20) }),
+      body: JSON.stringify({ q: query, num: Math.min(count, 30) }),
     });
 
     if (!response.ok) {
@@ -224,9 +226,20 @@ serve(async (req) => {
       });
     }
 
-    const { companyName, companyWebsite, additionalContext } = requestData;
-    
-    if (!companyName || companyName.trim().length < 2) {
+    const phase = requestData.phase;
+    const jobId = requestData.jobId;
+    let companyName = requestData.companyName?.trim() || "";
+    const companyWebsite = requestData.companyWebsite?.trim() || undefined;
+    const additionalContext = requestData.additionalContext?.trim() || undefined;
+
+    if (phase === "analyze") {
+      if (!jobId) {
+        return new Response(JSON.stringify({ error: "jobId requis pour phase analyze" }), {
+          status: 400,
+          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+        });
+      }
+    } else if (!companyName || companyName.length < 2) {
       return new Response(JSON.stringify({ 
         error: "Company name is required (minimum 2 characters)" 
       }), {
@@ -377,12 +390,231 @@ serve(async (req) => {
       }
     }
     
-    if (!BRAVE_API_KEY) {
+    if (phase !== "analyze" && !BRAVE_API_KEY) {
       return new Response(JSON.stringify({ 
         error: "BRAVE_API_KEY manquante.",
         setupRequired: true
       }), {
         status: 500,
+        headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+      });
+    }
+
+    // ========== PHASE ANALYZE : charger le job et lancer l'IA uniquement ==========
+    if (phase === "analyze" && jobId) {
+      const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+      const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+        return new Response(JSON.stringify({ error: "Configuration Supabase manquante (phase analyze)" }), {
+          status: 500,
+          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+        });
+      }
+      const jobRes = await fetch(`${SUPABASE_URL}/rest/v1/due_diligence_jobs?id=eq.${encodeURIComponent(jobId)}&select=*`, {
+        headers: { "apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
+      });
+      const jobList = await jobRes.json();
+      const job = Array.isArray(jobList) ? jobList[0] : jobList;
+      if (!job || job.status !== "search_done" || !job.search_context) {
+        return new Response(JSON.stringify({ error: "Job introuvable ou déjà analysé" }), {
+          status: 400,
+          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+        });
+      }
+      companyName = job.company_name || "";
+      const analyzeContext = job.search_context;
+      const analyzeSearchCount = job.search_results_count || 0;
+
+      const systemPromptAnalyze = `Tu es un analyste VC senior spécialisé en due diligence avec 20 ans d'expérience. 
+Tu dois produire un rapport de due diligence COMPLET et PROFESSIONNEL sur l'entreprise "${companyName}".
+
+⚠️ RÈGLES CRITIQUES :
+
+1. SOURCES OBLIGATOIRES — MAIS PAS DANS LE TEXTE :
+   - NE JAMAIS mettre d'URLs ou de "(Source: ...)" dans les champs texte (overview, tagline, keyHighlights, keyRisks, description, etc.). Le texte doit rester lisible et professionnel.
+   - Chaque information doit avoir une source : place TOUTES les sources UNIQUEMENT dans les tableaux "sources" de chaque section ET dans "allSources" avec { "name": "Titre court (ex: Crunchbase, Article Maddyness)", "url": "URL exacte", "type": "article|crunchbase|linkedin|official|press|other", "relevance": "Information clé extraite" }.
+   - Minimum 15–25 entrées dans "allSources". Utilise TOUTES les URLs pertinentes des résultats de recherche fournis.
+   - Si une information n'a PAS de source dans les données fournies, indique "Non disponible" dans le texte (sans URL).
+   - NE JAMAIS inventer de données ou d'URLs.
+
+2. DONNÉES VÉRIFIÉES UNIQUEMENT :
+   - Utilise UNIQUEMENT les informations des résultats de recherche fournis
+   - Les URLs doivent être exactement celles trouvées dans les recherches
+   - Si tu ne trouves pas une information, dis-le clairement
+
+3. FORMAT DU RAPPORT :
+   Tu dois retourner un objet JSON avec la structure suivante (tous les champs sont requis):
+
+{
+  "company": {
+    "name": "Nom officiel de l'entreprise",
+    "tagline": "Description courte (SANS URL, texte seul)",
+    "website": "URL du site officiel (trouvée dans les recherches)",
+    "linkedinUrl": "URL LinkedIn (trouvée dans les recherches)",
+    "crunchbaseUrl": "URL Crunchbase (trouvée dans les recherches)",
+    "founded": "Année de création (texte seul)",
+    "headquarters": "Siège social (texte seul)",
+    "sector": "Secteur d'activité",
+    "stage": "Stade (Seed, Series A, etc.)",
+    "employeeCount": "Nombre d'employés (texte seul)"
+  },
+  "executiveSummary": {
+    "overview": "Résumé de l'entreprise en 200 mots, texte seul SANS aucune URL ni (Source: ...). Les sources vont dans allSources.",
+    "keyHighlights": ["Point fort 1", "Point fort 2", ...],
+    "keyRisks": ["Risque 1", "Risque 2", ...],
+    "recommendation": "INVEST | WATCH | PASS",
+    "confidenceLevel": "high | medium | low"
+  },
+  "product": { "description": "...", "valueProposition": "...", "technology": "...", "patents": "...", "keyFeatures": [], "sources": [] },
+  "market": { "tam": "...", "sam": "...", "som": "...", "cagr": "...", "trends": [], "analysis": "...", "sources": [] },
+  "competition": { "landscape": "...", "competitors": [], "competitiveAdvantage": "...", "moat": "...", "sources": [] },
+  "financials": { "fundingHistory": [], "totalFunding": "...", "latestValuation": "...", "metrics": {}, "sources": [] },
+  "team": { "overview": "...", "founders": [], "keyExecutives": [], "teamSize": "...", "culture": "...", "hiringTrends": "...", "sources": [] },
+  "traction": { "overview": "...", "keyMilestones": [], "customers": {}, "partnerships": [], "awards": [], "sources": [] },
+  "risks": { "marketRisks": [], "executionRisks": [], "financialRisks": [], "competitiveRisks": [], "regulatoryRisks": [], "mitigations": [], "overallRiskLevel": "...", "sources": [] },
+  "opportunities": { "growthOpportunities": [], "marketExpansion": "...", "productExpansion": "...", "strategicValue": "...", "sources": [] },
+  "investmentRecommendation": { "recommendation": "...", "rationale": "...", "strengths": [], "weaknesses": [], "keyQuestions": [], "suggestedNextSteps": [], "targetReturn": "...", "investmentHorizon": "...", "suggestedTicket": "..." },
+  "allSources": [ { "name": "...", "url": "...", "type": "article|crunchbase|linkedin|official|press|other", "relevance": "..." } ],
+  "dataQuality": { "overallScore": "...", "dataAvailability": {}, "limitations": [], "sourcesCount": "..." }
+}
+
+Réponds UNIQUEMENT avec du JSON valide.`;
+
+      const userPromptAnalyze = `Effectue une due diligence COMPLÈTE sur l'entreprise "${companyName}".
+
+Voici TOUTES les données collectées par nos recherches web. Utilise-les pour produire un rapport exhaustif :
+
+${analyzeContext}
+
+⚠️ RAPPELS CRITIQUES :
+1. NE METS AUCUNE URL dans le texte. Toutes les URLs vont UNIQUEMENT dans "sources" et "allSources".
+2. allSources doit contenir 15–25 entrées minimum avec name, url, type, relevance.
+3. N'invente AUCUNE donnée ni URL.
+4. Si une info n'est pas dans les recherches, indique "Non disponible".
+5. Sois exhaustif et professionnel.
+
+Réponds UNIQUEMENT avec du JSON valide.`;
+
+      const aiEndpoint = await getAIEndpoint();
+      const aiBody = AI_PROVIDER === "vertex" 
+        ? {
+            contents: [{ role: "user", parts: [{ text: `${systemPromptAnalyze}\n\n${userPromptAnalyze}` }] }],
+            generationConfig: { temperature: 0.1, topP: 0.9, topK: 40, maxOutputTokens: 32768 },
+          }
+        : {
+            contents: [{ parts: [{ text: `${systemPromptAnalyze}\n\n${userPromptAnalyze}` }] }],
+            generationConfig: { temperature: 0.1, topP: 0.9, topK: 40, maxOutputTokens: 32768, responseMimeType: "application/json" as const },
+          };
+      let response = await fetch(aiEndpoint.url, { method: "POST", headers: aiEndpoint.headers, body: JSON.stringify(aiBody) });
+      if (!response.ok) {
+        const errText = await response.text();
+        return new Response(JSON.stringify({ error: `Erreur API IA: ${response.status} - ${errText.slice(0, 200)}` }), {
+          status: 500,
+          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+        });
+      }
+      const data = await response.json();
+      const content: string = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      if (!content) {
+        return new Response(JSON.stringify({ error: "Réponse IA vide" }), {
+          status: 500,
+          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+        });
+      }
+      let dueDiligenceResult = parseJSONResponse(content);
+      // Extraire les URLs des "(Source: url)" pour les mettre dans allSources (pas de perte de sources)
+      const SOURCE_REGEX = /\(Source:\s*([^)]+)\)/gi;
+      const extracted: { name: string; url: string }[] = [];
+      function extractUrlsFromString(str: string): void {
+        if (typeof str !== "string" || str.startsWith("http")) return;
+        let m: RegExpExecArray | null;
+        SOURCE_REGEX.lastIndex = 0;
+        while ((m = SOURCE_REGEX.exec(str)) !== null) {
+          const part = m[1];
+          part.split(/[\s,]+/).map((u: string) => u.trim()).filter((u: string) => u.startsWith("http")).forEach((url: string) => {
+            const cleaned = validateAndCleanUrl(url);
+            if (cleaned && !extracted.some((e) => e.url === cleaned)) {
+              try {
+                extracted.push({ name: new URL(cleaned).hostname.replace(/^www\./, ""), url: cleaned });
+              } catch {
+                extracted.push({ name: "Source", url: cleaned });
+              }
+            }
+          });
+        }
+      }
+      function walkExtract(obj: any): void {
+        if (!obj) return;
+        if (typeof obj === "string") {
+          extractUrlsFromString(obj);
+          return;
+        }
+        if (Array.isArray(obj)) { obj.forEach(walkExtract); return; }
+        if (typeof obj === "object") {
+          for (const k of Object.keys(obj)) {
+            if (k === "sources" || k === "allSources") continue;
+            walkExtract(obj[k]);
+          }
+        }
+      }
+      walkExtract(dueDiligenceResult);
+      if (extracted.length > 0) {
+        dueDiligenceResult.allSources = dueDiligenceResult.allSources || [];
+        const existingUrls = new Set((dueDiligenceResult.allSources as any[]).map((s: any) => s.url));
+        extracted.forEach((e) => {
+          if (!existingUrls.has(e.url)) {
+            (dueDiligenceResult.allSources as any[]).push({ name: e.name, url: e.url, type: "other", relevance: "Extrait du rapport" });
+            existingUrls.add(e.url);
+          }
+        });
+      }
+      // Nettoyer le texte : retirer TOUS les "(Source: ...)" (même si l'URL contient des parenthèses)
+      function stripSourceFromString(str: string): string {
+        if (!str || typeof str !== "string") return str;
+        if (str.startsWith("http")) return validateAndCleanUrl(str) || str;
+        let s = str;
+        let prev = "";
+        while (prev !== s) {
+          prev = s;
+          const lower = s.toLowerCase();
+          const idx = lower.indexOf("(source:");
+          if (idx === -1) break;
+          const end = s.indexOf(")", idx);
+          if (end === -1) break;
+          s = s.slice(0, idx).trimEnd() + " " + s.slice(end + 1).trimStart();
+        }
+        return s.replace(/\s{2,}/g, " ").trim();
+      }
+      const stripSrc = (o: any): any => {
+        if (!o) return o;
+        if (typeof o === "string") return stripSourceFromString(o);
+        if (Array.isArray(o)) return o.map(stripSrc);
+        if (typeof o === "object") {
+          const out: any = {};
+          for (const k of Object.keys(o)) {
+            if (k === "sources" || k === "allSources") { out[k] = o[k]; continue; }
+            out[k] = stripSrc(o[k]);
+          }
+          return out;
+        }
+        return o;
+      };
+      const cleanUrlsAnalyze = (obj: any): any => {
+        if (!obj) return obj;
+        if (typeof obj === "string") return obj.startsWith("http") ? (validateAndCleanUrl(obj) || obj) : obj;
+        if (Array.isArray(obj)) return obj.map(cleanUrlsAnalyze);
+        if (typeof obj === "object") { const c: any = {}; for (const k of Object.keys(obj)) c[k] = cleanUrlsAnalyze(obj[k]); return c; }
+        return obj;
+      };
+      dueDiligenceResult = cleanUrlsAnalyze(stripSrc(dueDiligenceResult));
+      dueDiligenceResult.metadata = { companyName, generatedAt: new Date().toISOString(), searchResultsCount: analyzeSearchCount, aiProvider: AI_PROVIDER };
+
+      await fetch(`${SUPABASE_URL}/rest/v1/due_diligence_jobs?id=eq.${encodeURIComponent(jobId)}`, {
+        method: "PATCH",
+        headers: { "apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ result: dueDiligenceResult, status: "analyze_done", updated_at: new Date().toISOString() }),
+      });
+      return new Response(JSON.stringify(dueDiligenceResult), {
         headers: { ...corsHeaders(req), "Content-Type": "application/json" },
       });
     }
@@ -394,50 +626,43 @@ serve(async (req) => {
     // PHASE 1: RECHERCHES MASSIVES ET PARALLÈLES
     // ============================================
     
+    // Phase 1 seule = tout le budget ~150s pour la recherche → on maximise requêtes et limites
     const searchQueries = [
-      // Informations générales
       `${companyName} company overview about`,
       `${companyName} startup official website`,
       `"${companyName}" company profile business`,
-      
-      // Funding & Valorisation
+      `${companyName} company description mission`,
       `${companyName} funding round investment 2024 2025`,
       `${companyName} series A B C funding valuation investors`,
       `${companyName} raised million funding round`,
       `${companyName} valuation latest funding`,
-      
-      // Métriques & Traction
+      `${companyName} levée de fonds investisseurs`,
       `${companyName} revenue ARR MRR metrics`,
       `${companyName} customers clients users growth`,
       `${companyName} traction growth rate metrics 2024`,
       `${companyName} market share business performance`,
-      
-      // Équipe & Fondateurs
+      `${companyName} key metrics KPIs`,
       `${companyName} founders CEO CTO team LinkedIn`,
       `${companyName} leadership team executives background`,
       `${companyName} employees headcount team size`,
-      
-      // Produit & Technologie
+      `${companyName} fondateurs équipe management`,
       `${companyName} product technology platform`,
       `${companyName} solution features how it works`,
       `${companyName} technology stack patents`,
-      
-      // Marché & Concurrence
+      `${companyName} produit innovation`,
       `${companyName} competitors market landscape`,
       `${companyName} industry market TAM SAM`,
       `${companyName} competitive advantage moat`,
-      
-      // News & Actualités
+      `${companyName} market size opportunity`,
       `${companyName} news latest 2024 2025`,
       `${companyName} press release announcement`,
-      
-      // LinkedIn & Crunchbase
+      `${companyName} partenariat accord`,
       `${companyName} LinkedIn company page`,
       `${companyName} Crunchbase profile`,
-      
-      // Risques & Controverses
+      `${companyName} Dealroom PitchBook`,
       `${companyName} challenges risks concerns`,
       `${companyName} reviews reputation`,
+      `${companyName} awards prizes recognition`,
     ];
     
     // Si le site web est fourni, l'ajouter aux recherches
@@ -451,18 +676,20 @@ serve(async (req) => {
       searchQueries.push(`${companyName} ${additionalContext}`);
     }
 
-    // Exécuter toutes les recherches (en batch pour éviter rate limiting)
+    // Phase 1 seule : plus de résultats par requête, délai raisonnable pour rester sous 150s
     const allSearchResults: BraveSearchResult[] = [];
+    const RESULTS_PER_QUERY = 20;
     const batchSize = 3;
-    
+    const BATCH_DELAY_MS = 650;
+
     for (let i = 0; i < searchQueries.length; i += batchSize) {
       const batch = searchQueries.slice(i, i + batchSize);
       const batchResults = await Promise.all(
-        batch.map(query => braveSearch(query, 8))
+        batch.map(query => braveSearch(query, RESULTS_PER_QUERY))
       );
       batchResults.forEach(results => allSearchResults.push(...results));
       if (i + batchSize < searchQueries.length) {
-        await sleep(1200); // Rate limit Brave Free: 1 req/sec, on attend 1.2s pour être sûr
+        await sleep(BATCH_DELAY_MS);
       }
     }
 
@@ -539,382 +766,55 @@ serve(async (req) => {
         });
       };
       
-      addCategory("Official & Company Info", categorizedResults.official.concat(categorizedResults.other).slice(0, 15), 15);
-      addCategory("Funding & Investments", categorizedResults.funding, 12);
-      addCategory("Metrics & Traction", categorizedResults.metrics, 10);
-      addCategory("Team & Founders", categorizedResults.team, 8);
-      addCategory("Product & Technology", categorizedResults.product, 8);
-      addCategory("Market & Competition", categorizedResults.market, 8);
-      addCategory("News & Press", categorizedResults.news, 8);
-      addCategory("LinkedIn", categorizedResults.linkedin, 5);
-      addCategory("Crunchbase", categorizedResults.crunchbase, 5);
+      // Limites par catégorie : phase 1 seule → on envoie plus de contexte à l'IA en phase 2
+      addCategory("Official & Company Info", categorizedResults.official.concat(categorizedResults.other).slice(0, 40), 40);
+      addCategory("Funding & Investments", categorizedResults.funding, 35);
+      addCategory("Metrics & Traction", categorizedResults.metrics, 30);
+      addCategory("Team & Founders", categorizedResults.team, 28);
+      addCategory("Product & Technology", categorizedResults.product, 28);
+      addCategory("Market & Competition", categorizedResults.market, 28);
+      addCategory("News & Press", categorizedResults.news, 22);
+      addCategory("LinkedIn", categorizedResults.linkedin, 10);
+      addCategory("Crunchbase", categorizedResults.crunchbase, 10);
       
       return context;
     };
 
     const searchContext = buildSearchContext();
 
-    // ============================================
-    // PHASE 1.5: UTILISER AGENT DIGITALOCEAN (si configuré)
-    // TEMPORAIREMENT DÉSACTIVÉ - L'API DO retourne 405 Method Not Allowed
-    // ============================================
-    const USE_DO_AGENT = false; // Deno.env.get("USE_DO_AGENT") === "true";
-    const DO_AGENT_ENDPOINT = Deno.env.get("DO_AGENT_ENDPOINT");
-    const DO_AGENT_API_KEY = Deno.env.get("DO_AGENT_API_KEY");
-    
-    console.log(`[DO Agent] TEMPORAIREMENT DÉSACTIVÉ (erreur 405 non résolue)`);
-    console.log(`[DO Agent Config] DO_AGENT_ENDPOINT: ${DO_AGENT_ENDPOINT ? "✅ Configuré" : "❌ Manquant"}`);
-    console.log(`[DO Agent Config] DO_AGENT_API_KEY: ${DO_AGENT_API_KEY ? "✅ Configuré" : "❌ Manquant"}`);
-    
-    let doAgentDueDiligenceResult = "";
-    
-    if (USE_DO_AGENT) {
-      try {
-        console.log("Using DigitalOcean Agent for due diligence...");
-        const dueDiligencePrompt = formatDueDiligencePrompt(
-          companyName,
-          companyWebsite,
-          additionalContext
-        );
-        
-        const doResponse = await callDigitalOceanAgent(dueDiligencePrompt);
-        doAgentDueDiligenceResult = doResponse.output || "";
-        console.log("✅ DigitalOcean Agent due diligence completed");
-        console.log(`[DO Agent] Réponse reçue: ${doAgentDueDiligenceResult.length} caractères`);
-      } catch (doError) {
-        console.error("❌ DigitalOcean Agent failed, falling back to standard analysis:", doError);
-        // Continue with standard analysis if agent fails
-      }
-    } else {
-      console.log("⚠️ DigitalOcean Agent désactivé (USE_DO_AGENT != 'true')");
-    }
-
-    // ============================================
-    // PHASE 2: ANALYSE IA AVEC TOUTES LES DONNÉES
-    // ============================================
-
-    const systemPrompt = `Tu es un analyste VC senior spécialisé en due diligence avec 20 ans d'expérience. 
-Tu dois produire un rapport de due diligence COMPLET et PROFESSIONNEL sur l'entreprise "${companyName}".
-
-⚠️ RÈGLES CRITIQUES :
-
-1. SOURCES OBLIGATOIRES :
-   - CHAQUE information doit être accompagnée de sa source URL
-   - Format: "[Donnée] (Source: url)"
-   - Si une information n'a PAS de source dans les données fournies, indique "Non disponible - aucune source trouvée"
-   - NE JAMAIS inventer de données ou d'URLs
-
-2. DONNÉES VÉRIFIÉES UNIQUEMENT :
-   - Utilise UNIQUEMENT les informations des résultats de recherche fournis
-   - Les URLs doivent être exactement celles trouvées dans les recherches
-   - Si tu ne trouves pas une information, dis-le clairement
-
-3. FORMAT DU RAPPORT :
-   Tu dois retourner un objet JSON avec la structure suivante (tous les champs sont requis):
-
-{
-  "company": {
-    "name": "Nom officiel de l'entreprise",
-    "tagline": "Description courte",
-    "website": "URL du site officiel (trouvée dans les recherches)",
-    "linkedinUrl": "URL LinkedIn (trouvée dans les recherches)",
-    "crunchbaseUrl": "URL Crunchbase (trouvée dans les recherches)",
-    "founded": "Année de création avec source",
-    "headquarters": "Siège social avec source",
-    "sector": "Secteur d'activité",
-    "stage": "Stade (Seed, Series A, etc.)",
-    "employeeCount": "Nombre d'employés avec source"
-  },
-  "executiveSummary": {
-    "overview": "Résumé de l'entreprise en 200 mots (avec sources citées)",
-    "keyHighlights": ["Point fort 1 (source)", "Point fort 2 (source)", ...],
-    "keyRisks": ["Risque 1 (source)", "Risque 2 (source)", ...],
-    "recommendation": "INVEST | WATCH | PASS",
-    "confidenceLevel": "high | medium | low"
-  },
-  "product": {
-    "description": "Description détaillée du produit/service (300+ mots, avec sources)",
-    "valueProposition": "Proposition de valeur unique",
-    "technology": "Stack technique et innovations (avec sources)",
-    "patents": "Brevets déposés si mentionnés (avec sources)",
-    "keyFeatures": ["Feature 1", "Feature 2", ...],
-    "sources": [{"name": "...", "url": "..."}]
-  },
-  "market": {
-    "tam": "Total Addressable Market avec source",
-    "sam": "Serviceable Addressable Market avec source",
-    "som": "Serviceable Obtainable Market avec source",
-    "cagr": "Taux de croissance du marché avec source",
-    "trends": ["Tendance 1 (source)", "Tendance 2 (source)", ...],
-    "analysis": "Analyse du marché détaillée (200+ mots)",
-    "sources": [{"name": "...", "url": "..."}]
-  },
-  "competition": {
-    "landscape": "Analyse du paysage concurrentiel (200+ mots)",
-    "competitors": [
-      {
-        "name": "Nom du concurrent",
-        "description": "Description",
-        "funding": "Funding si connu",
-        "strengths": ["..."],
-        "weaknesses": ["..."]
-      }
-    ],
-    "competitiveAdvantage": "Avantages compétitifs de ${companyName} (avec sources)",
-    "moat": "Barrières à l'entrée / moat",
-    "sources": [{"name": "...", "url": "..."}]
-  },
-  "financials": {
-    "fundingHistory": [
-      {
-        "round": "Seed / Series A / etc.",
-        "amount": "Montant levé",
-        "date": "Date",
-        "investors": ["Investor 1", "Investor 2"],
-        "valuation": "Valorisation si connue",
-        "source": "URL source"
-      }
-    ],
-    "totalFunding": "Total levé avec source",
-    "latestValuation": "Dernière valorisation avec source",
-    "metrics": {
-      "arr": "ARR avec source ou 'Non disponible'",
-      "mrr": "MRR avec source ou 'Non disponible'",
-      "revenue": "Revenus avec source ou 'Non disponible'",
-      "growth": "Croissance avec source ou 'Non disponible'",
-      "customers": "Nombre de clients avec source ou 'Non disponible'",
-      "nrr": "Net Revenue Retention avec source ou 'Non disponible'",
-      "churn": "Taux de churn avec source ou 'Non disponible'",
-      "grossMargin": "Marge brute avec source ou 'Non disponible'",
-      "burnRate": "Burn rate avec source ou 'Non disponible'",
-      "runway": "Runway avec source ou 'Non disponible'"
-    },
-    "sources": [{"name": "...", "url": "..."}]
-  },
-  "team": {
-    "overview": "Analyse de l'équipe (200+ mots)",
-    "founders": [
-      {
-        "name": "Nom complet",
-        "role": "CEO / CTO / etc.",
-        "linkedin": "URL LinkedIn si trouvée",
-        "background": "Expérience et parcours",
-        "source": "URL source"
-      }
-    ],
-    "keyExecutives": [
-      {
-        "name": "...",
-        "role": "...",
-        "background": "..."
-      }
-    ],
-    "teamSize": "Taille de l'équipe avec source",
-    "culture": "Culture d'entreprise si mentionnée",
-    "hiringTrends": "Tendances de recrutement si disponibles",
-    "sources": [{"name": "...", "url": "..."}]
-  },
-  "traction": {
-    "overview": "Analyse de la traction (200+ mots)",
-    "keyMilestones": [
-      {
-        "date": "Date",
-        "milestone": "Description du milestone",
-        "source": "URL source"
-      }
-    ],
-    "customers": {
-      "count": "Nombre avec source",
-      "notable": ["Client notable 1", "Client notable 2"],
-      "segments": "Segments clients"
-    },
-    "partnerships": ["Partenariat 1 (source)", ...],
-    "awards": ["Prix/reconnaissance (source)", ...],
-    "sources": [{"name": "...", "url": "..."}]
-  },
-  "risks": {
-    "marketRisks": ["Risque marché 1 avec explication", ...],
-    "executionRisks": ["Risque exécution 1 avec explication", ...],
-    "financialRisks": ["Risque financier 1 avec explication", ...],
-    "competitiveRisks": ["Risque concurrentiel 1 avec explication", ...],
-    "regulatoryRisks": ["Risque réglementaire 1 avec explication", ...],
-    "mitigations": ["Facteur atténuant 1", ...],
-    "overallRiskLevel": "high | medium | low",
-    "sources": [{"name": "...", "url": "..."}]
-  },
-  "opportunities": {
-    "growthOpportunities": ["Opportunité 1 avec explication", ...],
-    "marketExpansion": "Potentiel d'expansion géographique/sectorielle",
-    "productExpansion": "Potentiel d'expansion produit",
-    "strategicValue": "Valeur stratégique (M&A potentiel, etc.)",
-    "sources": [{"name": "...", "url": "..."}]
-  },
-  "investmentRecommendation": {
-    "recommendation": "INVEST | WATCH | PASS",
-    "rationale": "Justification détaillée (300+ mots)",
-    "strengths": ["Force 1 avec source", "Force 2 avec source", ...],
-    "weaknesses": ["Faiblesse 1 avec source", "Faiblesse 2 avec source", ...],
-    "keyQuestions": ["Question à creuser 1", "Question à creuser 2", ...],
-    "suggestedNextSteps": ["Prochaine étape 1", "Prochaine étape 2", ...],
-    "targetReturn": "Multiple cible estimé (ex: 5-10x)",
-    "investmentHorizon": "Horizon d'investissement suggéré",
-    "suggestedTicket": "Ticket suggéré si applicable"
-  },
-  "allSources": [
-    {
-      "name": "Titre de la source",
-      "url": "URL complète",
-      "type": "article | crunchbase | linkedin | official | press | other",
-      "relevance": "Information clé extraite"
-    }
-  ],
-  "dataQuality": {
-    "overallScore": "excellent | good | fair | limited",
-    "dataAvailability": {
-      "funding": "high | medium | low | none",
-      "metrics": "high | medium | low | none",
-      "team": "high | medium | low | none",
-      "product": "high | medium | low | none",
-      "market": "high | medium | low | none"
-    },
-    "limitations": ["Limitation 1", "Limitation 2", ...],
-    "sourcesCount": "Nombre total de sources utilisées"
-  }
-}
-
-INSTRUCTIONS SUPPLÉMENTAIRES :
-- Sois EXHAUSTIF : utilise TOUTES les données disponibles dans les recherches
-- Sois PRÉCIS : cite toujours la source avec l'URL exacte
-- Sois HONNÊTE : si une donnée n'est pas disponible, dis-le clairement
-- Sois ANALYTIQUE : donne ton avis professionnel basé sur les faits
-- NE PAS INVENTER : aucune donnée fictive, aucune URL inventée
-
-${additionalContext ? `\nCONTEXTE ADDITIONNEL FOURNI PAR L'UTILISATEUR:\n${additionalContext}` : ''}
-${companyWebsite ? `\nSITE WEB FOURNI: ${companyWebsite}` : ''}`;
-
-    // Combine search context with DigitalOcean Agent results
-    let combinedContext = searchContext;
-    if (doAgentDueDiligenceResult) {
-      combinedContext = `=== ANALYSE PAR AGENT DIGITALOCEAN (recherche approfondie) ===\n${doAgentDueDiligenceResult}\n\n=== RÉSULTATS RECHERCHE WEB (Brave Search) ===\n${searchContext}`;
-    }
-
-    const userPrompt = `Effectue une due diligence COMPLÈTE sur l'entreprise "${companyName}".
-
-Voici TOUTES les données collectées par nos recherches web et notre agent de sourcing. Utilise-les pour produire un rapport exhaustif :
-
-${combinedContext}
-
-⚠️ RAPPELS CRITIQUES :
-1. Cite TOUJOURS les sources avec leurs URLs exactes
-2. N'invente AUCUNE donnée ni URL
-3. Si une info n'est pas dans les recherches, indique "Non disponible"
-4. Sois exhaustif et professionnel
-5. Priorise les informations de l'agent DigitalOcean si disponibles (recherche approfondie)
-
-Réponds UNIQUEMENT avec du JSON valide.`;
-
-    const aiEndpoint = await getAIEndpoint();
-    
-    const aiBody = AI_PROVIDER === "vertex" 
-      ? {
-          contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
-          generationConfig: { temperature: 0.1, topP: 0.9, topK: 40, maxOutputTokens: 32768 },
-        }
-      : {
-          contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
-          generationConfig: { temperature: 0.1, topP: 0.9, topK: 40, maxOutputTokens: 32768, responseMimeType: "application/json" as const },
-        };
-
-    let response: Response | null = null;
-    let lastErrorText = "";
-
-    for (let attempt = 0; attempt < 3; attempt++) {
-      if (attempt > 0) {
-        const waitMs = Math.min(8000, 800 * Math.pow(2, attempt - 1)) + Math.floor(Math.random() * 400);
-        console.log(`Rate-limited. Retrying in ${waitMs}ms (attempt ${attempt + 1}/3)`);
-        await sleep(waitMs);
-      }
-      response = await fetch(aiEndpoint.url, {
-        method: "POST",
-        headers: aiEndpoint.headers,
-        body: JSON.stringify(aiBody),
-      });
-      if (response.ok) break;
-      lastErrorText = await response.text();
-      console.error(`AI API error:`, response.status, lastErrorText);
-      if (response.status !== 429) break;
-    }
-
-    if (!response || !response.ok) {
-      return new Response(JSON.stringify({ 
-        error: `Erreur API IA: ${response?.status || 'unknown'}`
-      }), {
+    // Phase search : sauvegarder le contexte et retourner jobId (analyse IA en phase 2 séparée)
+    const jobIdNew = crypto.randomUUID();
+    const SUPABASE_URL_SEARCH = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_SERVICE_ROLE_KEY_SEARCH = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!SUPABASE_URL_SEARCH || !SUPABASE_SERVICE_ROLE_KEY_SEARCH) {
+      return new Response(JSON.stringify({ error: "Configuration Supabase manquante (phase search)" }), {
         status: 500,
         headers: { ...corsHeaders(req), "Content-Type": "application/json" },
       });
     }
-
-    const data = await response.json();
-    const content: string = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-    if (!content) {
-      return new Response(JSON.stringify({ error: "Réponse IA vide" }), {
-        status: 500,
-        headers: { ...corsHeaders(req), "Content-Type": "application/json" },
-      });
-    }
-
-    let dueDiligenceResult;
-    try {
-      dueDiligenceResult = parseJSONResponse(content);
-    } catch (parseError) {
-      console.error("Failed to parse AI response:", parseError);
-      return new Response(JSON.stringify({ 
-        error: `Erreur parsing réponse IA: ${parseError instanceof Error ? parseError.message : "Unknown"}`
-      }), {
-        status: 500,
-        headers: { ...corsHeaders(req), "Content-Type": "application/json" },
-      });
-    }
-
-    // Nettoyer et valider les URLs dans le résultat
-    const cleanUrls = (obj: any): any => {
-      if (!obj) return obj;
-      if (typeof obj === 'string') {
-        if (obj.startsWith('http')) {
-          return validateAndCleanUrl(obj) || obj;
-        }
-        return obj;
-      }
-      if (Array.isArray(obj)) {
-        return obj.map(cleanUrls);
-      }
-      if (typeof obj === 'object') {
-        const cleaned: any = {};
-        for (const key of Object.keys(obj)) {
-          cleaned[key] = cleanUrls(obj[key]);
-        }
-        return cleaned;
-      }
-      return obj;
-    };
-
-    dueDiligenceResult = cleanUrls(dueDiligenceResult);
-
-    // Ajouter metadata
-    dueDiligenceResult.metadata = {
-      companyName,
-      generatedAt: new Date().toISOString(),
-      searchResultsCount: dedupedResults.length,
-      aiProvider: AI_PROVIDER,
-    };
-
-    console.log(`Due Diligence complete for: ${companyName}`);
-    console.log(`Sources used: ${dueDiligenceResult.allSources?.length || 0}`);
-
-    return new Response(JSON.stringify(dueDiligenceResult), {
-      headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+    await fetch(`${SUPABASE_URL_SEARCH}/rest/v1/due_diligence_jobs`, {
+      method: "POST",
+      headers: {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY_SEARCH,
+        "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY_SEARCH}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal",
+      },
+      body: JSON.stringify({
+        id: jobIdNew,
+        company_name: companyName,
+        company_website: companyWebsite || null,
+        additional_context: additionalContext || null,
+        search_context: searchContext,
+        search_results_count: dedupedResults.length,
+        status: "search_done",
+      }),
     });
+    console.log(`Due Diligence search done for: ${companyName}, jobId: ${jobIdNew}`);
+    return new Response(
+      JSON.stringify({ jobId: jobIdNew, status: "search_done", searchResultsCount: dedupedResults.length }),
+      { headers: { ...corsHeaders(req), "Content-Type": "application/json" } }
+    );
 
   } catch (error) {
     console.error("Error in due-diligence function:", error);

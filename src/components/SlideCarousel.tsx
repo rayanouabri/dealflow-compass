@@ -146,42 +146,7 @@ export function SlideCarousel({ slides, startupName, onExport }: SlideCarouselPr
               </div>
             )}
 
-            {/* Sources Section */}
-            {slide.sources && slide.sources.length > 0 && (
-              <div className="mt-6 pt-6 border-t border-border/50">
-                <div className="flex items-center gap-2 mb-4">
-                  <BookOpen className="w-4 h-4 text-primary" />
-                  <p className="text-sm font-semibold text-foreground uppercase tracking-wider">Sources</p>
-                  <span className="text-xs text-muted-foreground">({slide.sources.length})</span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {slide.sources.map((source, idx) => (
-                    <a
-                      key={idx}
-                      href={source.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-start gap-3 p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 border border-border/50 hover:border-primary/30 transition-all group"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">
-                          {source.title}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                          {source.url}
-                        </p>
-                        <span className="inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
-                          {source.type}
-                        </span>
-                      </div>
-                      <ExternalLink className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0 mt-0.5" />
-                    </a>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Metrics - Enhanced Layout */}
+            {/* Metrics - Enhanced Layout (avant les sources) */}
             {slide.metrics && Object.keys(slide.metrics).length > 0 && (
               <div className="space-y-4">
                 <div className="flex items-center gap-2">
@@ -449,6 +414,55 @@ export function SlideCarousel({ slides, startupName, onExport }: SlideCarouselPr
                           </p>
                         )}
                       </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Sources de cette slide uniquement (contexte : équipe, marché, financements, etc.) */}
+            {slide.sources && slide.sources.length > 0 && (
+              <div className="mt-6 pt-6 border-t border-border/50">
+                <div className="flex items-center gap-2 mb-4">
+                  <BookOpen className="w-4 h-4 text-primary" />
+                  <p className="text-sm font-semibold text-foreground uppercase tracking-wider">Sources (cette page)</p>
+                  <span className="text-xs text-muted-foreground">({slide.sources.length})</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {slide.sources.map((source, idx) => {
+                    const shortUrl = (() => {
+                      try {
+                        const u = new URL(source.url);
+                        const host = u.hostname.replace("www.", "");
+                        const path = u.pathname === "/" ? "" : u.pathname;
+                        const full = host + path;
+                        return full.length > 45 ? full.slice(0, 42) + "…" : full;
+                      } catch {
+                        return source.url.length > 45 ? source.url.slice(0, 42) + "…" : source.url;
+                      }
+                    })();
+                    return (
+                      <a
+                        key={idx}
+                        href={source.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={source.url}
+                        className="flex items-start gap-3 p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 border border-border/50 hover:border-primary/30 transition-all group"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">
+                            {source.title}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-0.5 truncate" title={source.url}>
+                            {shortUrl}
+                          </p>
+                          <span className="inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+                            {source.type}
+                          </span>
+                        </div>
+                        <ExternalLink className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0 mt-0.5" />
+                      </a>
                     );
                   })}
                 </div>

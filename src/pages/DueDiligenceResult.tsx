@@ -219,68 +219,157 @@ export default function DueDiligenceResult() {
     setError(null);
     setProgress(0);
 
-    // Progress simulation
+    // Progress simulation (phase 1 = 0–45%, phase 2 = 45–90%)
     const progressInterval = setInterval(() => {
       setProgress(prev => {
         if (prev >= 90) return prev;
-        const increment = Math.random() * 8 + 2;
-        const newProgress = Math.min(prev + increment, 90);
-        
-        // Update status message based on progress
-        if (newProgress < 20) setStatusMessage("Recherche d'informations...");
-        else if (newProgress < 40) setStatusMessage("Analyse des financements...");
-        else if (newProgress < 60) setStatusMessage("Analyse de l'équipe...");
-        else if (newProgress < 80) setStatusMessage("Évaluation du marché...");
-        else setStatusMessage("Génération du rapport...");
-        
-        return newProgress;
+        const increment = Math.random() * 6 + 2;
+        return Math.min(prev + increment, 90);
       });
-    }, 800);
+    }, 600);
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/due-diligence`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          },
-          body: JSON.stringify({
-            companyName: requestPayload.companyName,
-            companyWebsite: requestPayload.companyWebsite,
-            additionalContext: requestPayload.additionalContext,
-          }),
-        }
-      );
-
-      clearInterval(progressInterval);
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Erreur ${response.status}`);
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      if (!supabaseUrl || !supabaseKey) {
+        throw new Error("Configuration Supabase manquante. Vérifiez les variables d'environnement.");
       }
 
-      const result = await response.json();
-      setData(result);
+      const headers = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${session?.access_token || supabaseKey}`,
+        "apikey": supabaseKey,
+      };
+
+      // ——— Phase 1 : recherche (reste sous 150s côté serveur) ———
+      setStatusMessage("Recherche d'informations (sources, financements, équipe…)…");
+      const controller1 = new AbortController();
+      const timeout1 = setTimeout(() => controller1.abort(), 100_000);
+      const resSearch = await fetch(`${supabaseUrl}/functions/v1/due-diligence`, {
+        method: "POST",
+        signal: controller1.signal,
+        headers,
+        body: JSON.stringify({
+          phase: "search",
+          companyName: requestPayload.companyName,
+          companyWebsite: requestPayload.companyWebsite,
+          additionalContext: requestPayload.additionalContext,
+        }),
+      });
+      clearTimeout(timeout1);
+      const textSearch = await resSearch.text();
+      let searchData: { jobId?: string; error?: string; searchResultsCount?: number } = {};
+      try {
+        searchData = textSearch ? JSON.parse(textSearch) : {};
+      } catch {
+        if (!resSearch.ok) throw new Error(textSearch || `Erreur ${resSearch.status}`);
+      }
+      if (!resSearch.ok) {
+        throw new Error(searchData.error || `Erreur ${resSearch.status}`);
+      }
+      const jobId = searchData.jobId;
+      if (!jobId) {
+        throw new Error("Réponse recherche invalide (jobId manquant).");
+      }
+      setProgress(50);
+      setStatusMessage("Analyse IA en cours (génération du rapport)…");
+
+      // ——— Phase 2 : analyse IA ———
+      const controller2 = new AbortController();
+      const timeout2 = setTimeout(() => controller2.abort(), 120_000);
+      const resAnalyze = await fetch(`${supabaseUrl}/functions/v1/due-diligence`, {
+        method: "POST",
+        signal: controller2.signal,
+        headers,
+        body: JSON.stringify({ phase: "analyze", jobId }),
+      });
+      clearTimeout(timeout2);
+      clearInterval(progressInterval);
+
+      const text = await resAnalyze.text();
+      let result: DueDiligenceData | null = null;
+      let errorData: any = {};
+      try {
+        const parsed = text ? JSON.parse(text) : null;
+        if (resAnalyze.ok) {
+          result = parsed;
+        } else {
+          errorData = parsed || {};
+          const isLikelyReport =
+            parsed &&
+            !parsed.error &&
+            (parsed.company != null || parsed.executiveSummary != null);
+          if ((resAnalyze.status === 546 || resAnalyze.status === 500) && isLikelyReport) {
+            result = parsed;
+          }
+        }
+      } catch {
+        if (!resAnalyze.ok) {
+          if (resAnalyze.status >= 500) {
+            throw new Error(`Erreur serveur (${resAnalyze.status}). Le service est temporairement indisponible.`);
+          } else if (resAnalyze.status === 429) {
+            throw new Error("Trop de requêtes. Veuillez patienter avant de réessayer.");
+          } else if (resAnalyze.status === 401 || resAnalyze.status === 403) {
+            throw new Error("Erreur d'authentification. Veuillez vous reconnecter.");
+          }
+          throw new Error(`Erreur ${resAnalyze.status}`);
+        }
+      }
+
+      if (!resAnalyze.ok && result == null) {
+        if (resAnalyze.status === 504) {
+          throw new Error("Timeout (504) : l'analyse a pris trop de temps. Réessayez dans quelques minutes ou avec une entreprise plus simple.");
+        }
+        throw new Error(errorData.error || errorData.message || `Erreur ${resAnalyze.status}`);
+      }
+
+      if (result == null) {
+        throw new Error("Réponse serveur invalide.");
+      }
+      setData(deepStripSourceInText(result));
       setProgress(100);
       setStatusMessage("Rapport terminé !");
-      
-      // Decrement trial
-      if (typeof useTrialCredit === 'function') {
+
+      if (typeof useTrialCredit === "function") {
         useTrialCredit();
       }
 
     } catch (err) {
       clearInterval(progressInterval);
       console.error("Due Diligence error:", err);
-      setError(err instanceof Error ? err.message : "Une erreur est survenue");
+      
+      let errorMessage = "Une erreur est survenue";
+      
+      // Timeout côté client (AbortController)
+      const isAbort = err instanceof DOMException && err.name === "AbortError";
+      if (isAbort) {
+        errorMessage = "L'analyse a pris trop de temps (plus de 2 minutes). Le serveur peut être surchargé.\n\nRéessayez dans quelques minutes ou choisissez une entreprise plus simple à analyser.";
+      } else if (err instanceof Error) {
+        const errMsg = err.message.toLowerCase();
+        
+        // Détecter les erreurs CORS, réseau ou timeout (504 souvent affiché comme "Failed to fetch")
+        if (errMsg.includes("failed to fetch") || errMsg.includes("networkerror") || errMsg.includes("cors")) {
+          errorMessage = "Impossible de joindre le serveur (Failed to fetch). Causes fréquentes :\n\n• Timeout (504) : l'analyse a pris trop de temps. Réessayez dans un moment ou avec une entreprise plus simple.\n• Réseau ou serveur temporairement indisponible.\n• Problème de configuration côté hébergeur.\n\nVeuillez réessayer dans quelques minutes.";
+        } else if (errMsg.includes("timeout") || errMsg.includes("timed out")) {
+          errorMessage = "La requête a expiré. L'analyse prend du temps, veuillez réessayer.";
+        } else if (errMsg.includes("429") || errMsg.includes("too many requests")) {
+          errorMessage = "Trop de requêtes simultanées. Veuillez patienter quelques instants avant de réessayer.";
+        } else if (errMsg.includes("401") || errMsg.includes("403") || errMsg.includes("unauthorized")) {
+          errorMessage = "Erreur d'authentification. Veuillez vous reconnecter.";
+        } else if (errMsg.includes("500") || errMsg.includes("502") || errMsg.includes("503") || errMsg.includes("504")) {
+          errorMessage = `Erreur serveur (${err.message}). Le service rencontre des difficultés. Veuillez réessayer dans quelques instants.`;
+        } else {
+          errorMessage = err.message;
+        }
+      }
+      
+      setError(errorMessage);
       toast({
-        title: "Erreur",
-        description: err instanceof Error ? err.message : "Une erreur est survenue",
+        title: "Erreur d'analyse",
+        description: errorMessage.split('\n')[0], // Afficher seulement la première ligne dans le toast
         variant: "destructive",
+        duration: 10000,
       });
     } finally {
       setLoading(false);
@@ -313,18 +402,131 @@ export default function DueDiligenceResult() {
     }
   };
 
+  // Retirer TOUS les "(Source: ...)" du texte (même URLs avec parenthèses) — utilisé à l'affichage
+  const stripInlineSources = (text: string | undefined | null): string => {
+    if (!text || typeof text !== "string") return "";
+    let s = text;
+    let prev = "";
+    while (prev !== s) {
+      prev = s;
+      const idx = s.toLowerCase().indexOf("(source:");
+      if (idx === -1) break;
+      const end = s.indexOf(")", idx);
+      if (end === -1) break;
+      s = (s.slice(0, idx).trimEnd() + " " + s.slice(end + 1).trimStart()).replace(/\s{2,}/g, " ").trim();
+    }
+    return s.replace(/\s{2,}/g, " ").trim();
+  };
+
+  // Nettoyer tout l'objet rapport à la réception (au cas où le backend n'a pas tout strippé)
+  function deepStripSourceInText(obj: any): any {
+    if (obj == null) return obj;
+    if (typeof obj === "string") {
+      let s = obj;
+      if (s.startsWith("http")) return s;
+      let prev = "";
+      while (prev !== s) {
+        prev = s;
+        const idx = s.toLowerCase().indexOf("(source:");
+        if (idx === -1) break;
+        const end = s.indexOf(")", idx);
+        if (end === -1) break;
+        s = (s.slice(0, idx).trimEnd() + " " + s.slice(end + 1).trimStart()).replace(/\s{2,}/g, " ").trim();
+      }
+      return s.replace(/\s{2,}/g, " ").trim();
+    }
+    if (Array.isArray(obj)) return obj.map(deepStripSourceInText);
+    if (typeof obj === "object") {
+      const out: Record<string, unknown> = {};
+      for (const k of Object.keys(obj)) {
+        if (k === "sources" || k === "allSources") {
+          out[k] = obj[k];
+          continue;
+        }
+        out[k] = deepStripSourceInText(obj[k]);
+      }
+      return out;
+    }
+    return obj;
+  }
+
+  // Agrégat de toutes les sources (allSources + sections) pour affichage en bas de page
+  const allSourcesAggregated = (() => {
+    if (!data) return [];
+    const byUrl = new Map<string, { name: string; url: string; type?: string; relevance?: string }>();
+    const add = (s: { name?: string; url?: string; type?: string; relevance?: string } | null) => {
+      if (!s?.url) return;
+      if (byUrl.has(s.url)) return;
+      byUrl.set(s.url, {
+        name: s.name || shortenUrl(s.url),
+        url: s.url,
+        type: s.type,
+        relevance: s.relevance,
+      });
+    };
+    (data.allSources || []).forEach(add);
+    [data.product?.sources, data.market?.sources, data.financials?.sources, data.team?.sources, data.competition?.sources, data.traction?.sources, data.risks?.sources, data.opportunities?.sources].forEach(arr => {
+      (arr || []).forEach((s: { name?: string; url?: string }) => add(s));
+    });
+    return Array.from(byUrl.values());
+  })();
+
+  // Fonction pour raccourcir les URLs
+  const shortenUrl = (url: string, maxLength: number = 40): string => {
+    try {
+      const urlObj = new URL(url);
+      const domain = urlObj.hostname.replace('www.', '');
+      const path = urlObj.pathname;
+      const full = domain + path;
+      
+      if (full.length <= maxLength) return full;
+      
+      // Si le chemin est trop long, garder juste le domaine
+      if (domain.length <= maxLength) return domain;
+      
+      // Sinon, tronquer le domaine
+      return domain.substring(0, maxLength - 3) + '...';
+    } catch {
+      // Si ce n'est pas une URL valide, tronquer directement
+      return url.length > maxLength ? url.substring(0, maxLength - 3) + '...' : url;
+    }
+  };
+
   const SourceLink = ({ url, name }: { url?: string; name?: string }) => {
     if (!url) return null;
+    const displayName = name || shortenUrl(url);
     return (
       <a 
         href={url} 
         target="_blank" 
         rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 hover:underline"
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 hover:text-amber-300 border border-amber-500/20 hover:border-amber-500/40 transition-all"
+        title={url}
       >
-        <ExternalLink className="w-3 h-3" />
-        {name || "Source"}
+        <LinkIcon className="w-3 h-3 flex-shrink-0" />
+        <span className="truncate max-w-[120px]">{displayName}</span>
+        <ExternalLink className="w-3 h-3 flex-shrink-0 opacity-60" />
       </a>
+    );
+  };
+
+  // Composant pour afficher les sources en bas de section
+  const SourcesFooter = ({ sources }: { sources?: { name: string; url: string }[] }) => {
+    if (!sources || sources.length === 0) return null;
+    
+    return (
+      <div className="mt-6 pt-4 border-t border-gray-700/30">
+        <div className="flex items-center gap-2 mb-3">
+          <LinkIcon className="w-3.5 h-3.5 text-muted-foreground" />
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Sources</span>
+          <span className="text-xs text-muted-foreground/60">({sources.length})</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {sources.map((s, i) => (
+            <SourceLink key={i} url={s.url} name={s.name} />
+          ))}
+        </div>
+      </div>
     );
   };
 
@@ -339,17 +541,20 @@ export default function DueDiligenceResult() {
       onSignOut={signOut}
       onUpgrade={() => {}}
     >
-      <div className="max-w-6xl mx-auto">
-        <Link
-          to="/due-diligence"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Nouvelle analyse
-        </Link>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 max-w-full overflow-x-hidden px-4 md:px-6" data-page="due-diligence-result">
+        <nav aria-label="Fil d'Ariane" className="lg:col-span-12 flex items-center gap-2 text-sm text-foreground/80 mb-6 min-w-0 overflow-x-auto py-1">
+          <Link to="/" className="hover:text-foreground transition-all duration-300 flex-shrink-0">Accueil</Link>
+          <span className="flex-shrink-0 text-foreground/50">/</span>
+          <Link to="/due-diligence" className="hover:text-foreground transition-all duration-300 flex-shrink-0">Due Diligence</Link>
+          <span className="flex-shrink-0 text-foreground/50">/</span>
+          <span className="text-foreground font-medium truncate min-w-0">
+            {requestPayload?.companyName || "Résultat"}
+          </span>
+        </nav>
 
         {/* Loading State */}
         {loading && (
+          <div className="lg:col-span-12">
           <Card className="bg-card/80 border-amber-500/30">
             <CardContent className="py-16">
               <div className="flex flex-col items-center gap-6">
@@ -370,58 +575,151 @@ export default function DueDiligenceResult() {
               </div>
             </CardContent>
           </Card>
+          </div>
         )}
 
         {/* Error State */}
         {!loading && error && (
+          <div className="lg:col-span-12">
           <Card className="bg-card/80 border-red-500/30">
-            <CardContent className="py-12">
-              <div className="flex flex-col items-center gap-4 text-center">
-                <AlertCircle className="w-12 h-12 text-red-400" />
-                <h2 className="text-xl font-semibold">Erreur d'analyse</h2>
-                <p className="text-muted-foreground max-w-md">{error}</p>
-                <Button onClick={fetchDueDiligence} variant="outline" className="mt-4">
-                  <RefreshCcw className="w-4 h-4 mr-2" />
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-red-400">
+                <AlertCircle className="w-5 h-5" />
+                Erreur d'analyse
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4">
+                <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-line">{error}</p>
+              </div>
+              
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground font-medium">Solutions possibles :</p>
+                <ul className="text-sm text-muted-foreground space-y-1 ml-4 list-disc">
+                  <li>Vérifiez votre connexion internet</li>
+                  <li>Attendez quelques instants et réessayez</li>
+                  <li>Vérifiez que les clés API sont correctement configurées</li>
+                  <li>Contactez le support si le problème persiste</li>
+                </ul>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <Button onClick={fetchDueDiligence} variant="default" className="gap-2">
+                  <RefreshCcw className="w-4 h-4" />
                   Réessayer
+                </Button>
+                <Button onClick={() => navigate("/due-diligence")} variant="outline" className="gap-2">
+                  <ArrowLeft className="w-4 h-4" />
+                  Nouvelle analyse
                 </Button>
               </div>
             </CardContent>
           </Card>
+          </div>
         )}
 
         {/* Results */}
         {!loading && !error && data && (
-          <div className="space-y-6">
+          <>
+          {/* Sidebar — style Analyse */}
+          <aside className="lg:col-span-4 xl:col-span-3 space-y-5 lg:col-start-1 lg:row-start-2 order-2 lg:order-1">
+            <Link
+              to="/due-diligence"
+              className="inline-flex items-center gap-1.5 text-sm text-foreground/70 hover:text-primary transition-all duration-300 hover:bg-primary/10 px-3 py-1.5 rounded-lg border border-gray-700 hover:border-primary/40 backdrop-blur-sm"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Nouvelle analyse
+            </Link>
+            <Card className="rounded-xl border border-primary/40 bg-card/80 backdrop-blur-sm p-5 space-y-3 shadow-lg">
+              <h3 className="text-sm font-semibold text-foreground">{data.company?.name || requestPayload?.companyName}</h3>
+              <div className="flex flex-wrap gap-2">
+                {getRecommendationBadge(data.executiveSummary?.recommendation)}
+                {data.company?.sector && <Badge variant="outline" className="text-xs font-normal">{stripInlineSources(data.company.sector)}</Badge>}
+                {data.company?.stage && <Badge variant="secondary" className="text-xs">{stripInlineSources(data.company.stage)}</Badge>}
+              </div>
+              <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-700/50">
+                {data.company?.website && (
+                  <Button variant="outline" size="sm" asChild className="border-gray-600 hover:border-primary/50 text-xs">
+                    <a href={data.company.website} target="_blank" rel="noopener noreferrer"><Globe className="w-3 h-3 mr-1" /> Site</a>
+                  </Button>
+                )}
+                {data.company?.linkedinUrl && (
+                  <Button variant="outline" size="sm" asChild className="border-gray-600 hover:border-primary/50 text-xs">
+                    <a href={data.company.linkedinUrl} target="_blank" rel="noopener noreferrer"><Linkedin className="w-3 h-3 mr-1" /> LinkedIn</a>
+                  </Button>
+                )}
+              </div>
+            </Card>
+            {/* Sources du rapport — toujours visible dans la sidebar */}
+            {allSourcesAggregated.length > 0 && (
+              <Card className="rounded-xl border border-primary/30 bg-card/80 backdrop-blur-sm shadow-lg overflow-hidden">
+                <CardHeader className="pb-2 border-b border-gray-700/50">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <LinkIcon className="w-4 h-4 text-primary" />
+                    Sources du rapport
+                    <Badge variant="outline" className="text-xs font-normal">{allSourcesAggregated.length}</Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-3 pt-3">
+                  <ScrollArea className="h-[280px] w-full pr-3">
+                    <div className="flex flex-col gap-1.5">
+                      {allSourcesAggregated.map((source, i) => (
+                        <a
+                          key={i}
+                          href={source.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs bg-gray-800/50 hover:bg-primary/20 border border-gray-700/50 hover:border-primary/40 text-foreground/90 hover:text-primary transition-all truncate"
+                          title={source.url}
+                        >
+                          <LinkIcon className="w-3 h-3 flex-shrink-0 text-muted-foreground" />
+                          <span className="truncate flex-1 min-w-0">{source.name}</span>
+                          <ExternalLink className="w-3 h-3 flex-shrink-0 opacity-60" />
+                        </a>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            )}
+          </aside>
+
+          <div className="lg:col-span-8 xl:col-span-9 lg:row-start-2 min-w-0 max-w-full overflow-x-hidden space-y-8 order-1 lg:order-2">
+            <h1 className="text-2xl md:text-3xl font-bold break-words bg-gradient-to-r from-foreground to-primary bg-clip-text text-transparent">
+              Due Diligence — {data.company?.name || requestPayload?.companyName}
+            </h1>
             {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 rounded-xl border border-primary/30 bg-card/80 backdrop-blur-sm p-6 shadow-lg">
               <div>
-                <div className="flex items-center gap-3 mb-2">
-                  <h1 className="text-2xl md:text-3xl font-bold">
+                <div className="flex items-center gap-3 mb-2 flex-wrap">
+                  <h2 className="text-xl md:text-2xl font-bold text-foreground">
                     {data.company?.name || requestPayload?.companyName}
-                  </h1>
+                  </h2>
                   {getRecommendationBadge(data.executiveSummary?.recommendation)}
                 </div>
                 {data.company?.tagline && (
-                  <p className="text-muted-foreground">{data.company.tagline}</p>
+                  <p className="text-muted-foreground leading-relaxed max-w-2xl">
+                    {stripInlineSources(data.company.tagline)}
+                  </p>
                 )}
                 <div className="flex flex-wrap items-center gap-3 mt-3">
                   {data.company?.sector && (
-                    <Badge variant="outline">{data.company.sector}</Badge>
+                    <Badge variant="outline" className="font-normal">{stripInlineSources(data.company.sector)}</Badge>
                   )}
                   {data.company?.stage && (
-                    <Badge variant="secondary">{data.company.stage}</Badge>
+                    <Badge variant="secondary">{stripInlineSources(data.company.stage)}</Badge>
                   )}
                   {data.company?.headquarters && (
                     <span className="text-sm text-muted-foreground flex items-center gap-1">
                       <Globe className="w-3 h-3" />
-                      {data.company.headquarters}
+                      {stripInlineSources(data.company.headquarters)}
                     </span>
                   )}
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-shrink-0">
                 {data.company?.website && (
-                  <Button variant="outline" size="sm" asChild>
+                  <Button variant="outline" size="sm" asChild className="border-gray-600 hover:border-primary/50">
                     <a href={data.company.website} target="_blank" rel="noopener noreferrer">
                       <Globe className="w-4 h-4 mr-2" />
                       Site web
@@ -429,7 +727,7 @@ export default function DueDiligenceResult() {
                   </Button>
                 )}
                 {data.company?.linkedinUrl && (
-                  <Button variant="outline" size="sm" asChild>
+                  <Button variant="outline" size="sm" asChild className="border-gray-600 hover:border-primary/50">
                     <a href={data.company.linkedinUrl} target="_blank" rel="noopener noreferrer">
                       <Linkedin className="w-4 h-4 mr-2" />
                       LinkedIn
@@ -440,31 +738,31 @@ export default function DueDiligenceResult() {
             </div>
 
             {/* Executive Summary Card */}
-            <Card className="bg-gradient-to-br from-amber-500/10 to-orange-500/5 border-amber-500/30">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-amber-400">
+            <Card className="rounded-xl border border-primary/30 bg-card/80 backdrop-blur-sm shadow-lg overflow-hidden">
+              <CardHeader className="pb-4 bg-gradient-to-br from-amber-500/10 to-orange-500/5 border-b border-amber-500/20">
+                <CardTitle className="flex items-center gap-2 text-amber-400 text-lg">
                   <FileSearch className="w-5 h-5" />
                   Résumé Exécutif
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-gray-300 leading-relaxed">
-                  {data.executiveSummary?.overview}
+              <CardContent className="space-y-5 pt-6">
+                <p className="text-foreground/90 leading-relaxed">
+                  {stripInlineSources(data.executiveSummary?.overview)}
                 </p>
                 
                 <div className="grid md:grid-cols-2 gap-4 mt-4">
                   {/* Key Highlights */}
                   {data.executiveSummary?.keyHighlights && data.executiveSummary.keyHighlights.length > 0 && (
-                    <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-4">
+                    <div className="bg-green-500/5 border border-green-500/20 rounded-xl p-4">
                       <h4 className="font-semibold text-green-400 mb-2 flex items-center gap-2">
                         <CheckCircle2 className="w-4 h-4" />
                         Points Forts
                       </h4>
-                      <ul className="space-y-1">
+                      <ul className="space-y-2">
                         {data.executiveSummary.keyHighlights.map((h, i) => (
-                          <li key={i} className="text-sm text-gray-300 flex items-start gap-2">
+                          <li key={i} className="text-sm text-foreground/90 flex items-start gap-2">
                             <ChevronRight className="w-3 h-3 mt-1 text-green-500 flex-shrink-0" />
-                            {h}
+                            {stripInlineSources(h)}
                           </li>
                         ))}
                       </ul>
@@ -473,16 +771,16 @@ export default function DueDiligenceResult() {
                   
                   {/* Key Risks */}
                   {data.executiveSummary?.keyRisks && data.executiveSummary.keyRisks.length > 0 && (
-                    <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-4">
+                    <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-4">
                       <h4 className="font-semibold text-red-400 mb-2 flex items-center gap-2">
                         <AlertTriangle className="w-4 h-4" />
                         Risques Clés
                       </h4>
-                      <ul className="space-y-1">
+                      <ul className="space-y-2">
                         {data.executiveSummary.keyRisks.map((r, i) => (
-                          <li key={i} className="text-sm text-gray-300 flex items-start gap-2">
+                          <li key={i} className="text-sm text-foreground/90 flex items-start gap-2">
                             <ChevronRight className="w-3 h-3 mt-1 text-red-500 flex-shrink-0" />
-                            {r}
+                            {stripInlineSources(r)}
                           </li>
                         ))}
                       </ul>
@@ -492,43 +790,43 @@ export default function DueDiligenceResult() {
               </CardContent>
             </Card>
 
-            {/* Tabs for detailed sections */}
+            {/* Tabs for detailed sections — style aligné Analyse */}
             <Tabs defaultValue="financials" className="w-full">
-              <TabsList className="w-full flex flex-wrap justify-start gap-1 bg-card/50 p-1 h-auto">
-                <TabsTrigger value="financials" className="text-xs">
-                  <DollarSign className="w-3 h-3 mr-1" />
+              <TabsList className="w-full flex flex-wrap justify-start gap-1.5 rounded-xl bg-gray-900/50 backdrop-blur-sm border border-gray-700 p-1.5 h-auto shadow-lg">
+                <TabsTrigger value="financials" className="text-xs px-3 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300 text-foreground/70 data-[state=active]:text-primary-foreground">
+                  <DollarSign className="w-3.5 h-3.5 mr-1.5" />
                   Financements
                 </TabsTrigger>
-                <TabsTrigger value="product" className="text-xs">
-                  <Target className="w-3 h-3 mr-1" />
+                <TabsTrigger value="product" className="text-xs px-3 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300 text-foreground/70 data-[state=active]:text-primary-foreground">
+                  <Target className="w-3.5 h-3.5 mr-1.5" />
                   Produit
                 </TabsTrigger>
-                <TabsTrigger value="market" className="text-xs">
-                  <BarChart3 className="w-3 h-3 mr-1" />
+                <TabsTrigger value="market" className="text-xs px-3 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300 text-foreground/70 data-[state=active]:text-primary-foreground">
+                  <BarChart3 className="w-3.5 h-3.5 mr-1.5" />
                   Marché
                 </TabsTrigger>
-                <TabsTrigger value="team" className="text-xs">
-                  <Users className="w-3 h-3 mr-1" />
+                <TabsTrigger value="team" className="text-xs px-3 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300 text-foreground/70 data-[state=active]:text-primary-foreground">
+                  <Users className="w-3.5 h-3.5 mr-1.5" />
                   Équipe
                 </TabsTrigger>
-                <TabsTrigger value="competition" className="text-xs">
-                  <Shield className="w-3 h-3 mr-1" />
+                <TabsTrigger value="competition" className="text-xs px-3 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300 text-foreground/70 data-[state=active]:text-primary-foreground">
+                  <Shield className="w-3.5 h-3.5 mr-1.5" />
                   Concurrence
                 </TabsTrigger>
-                <TabsTrigger value="traction" className="text-xs">
-                  <TrendingUp className="w-3 h-3 mr-1" />
+                <TabsTrigger value="traction" className="text-xs px-3 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300 text-foreground/70 data-[state=active]:text-primary-foreground">
+                  <TrendingUp className="w-3.5 h-3.5 mr-1.5" />
                   Traction
                 </TabsTrigger>
-                <TabsTrigger value="risks" className="text-xs">
-                  <AlertTriangle className="w-3 h-3 mr-1" />
+                <TabsTrigger value="risks" className="text-xs px-3 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300 text-foreground/70 data-[state=active]:text-primary-foreground">
+                  <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
                   Risques
                 </TabsTrigger>
-                <TabsTrigger value="recommendation" className="text-xs">
-                  <Lightbulb className="w-3 h-3 mr-1" />
+                <TabsTrigger value="recommendation" className="text-xs px-3 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300 text-foreground/70 data-[state=active]:text-primary-foreground">
+                  <Lightbulb className="w-3.5 h-3.5 mr-1.5" />
                   Recommandation
                 </TabsTrigger>
-                <TabsTrigger value="sources" className="text-xs">
-                  <LinkIcon className="w-3 h-3 mr-1" />
+                <TabsTrigger value="sources" className="text-xs px-3 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300 text-foreground/70 data-[state=active]:text-primary-foreground">
+                  <LinkIcon className="w-3.5 h-3.5 mr-1.5" />
                   Sources
                 </TabsTrigger>
               </TabsList>
@@ -536,37 +834,37 @@ export default function DueDiligenceResult() {
               {/* Financials Tab */}
               <TabsContent value="financials" className="mt-4">
                 <Card className="bg-card/80 border-gray-700/50">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center gap-2 text-lg">
                       <DollarSign className="w-5 h-5 text-green-400" />
                       Financements & Métriques
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-6">
+                  <CardContent className="space-y-6 pt-2">
                     {/* Summary metrics */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div className="bg-gray-800/50 rounded-lg p-3">
-                        <p className="text-xs text-muted-foreground mb-1">Total Levé</p>
-                        <p className="text-lg font-semibold text-green-400">
+                      <div className="bg-gradient-to-br from-gray-800/60 to-gray-800/40 rounded-lg p-4 border border-gray-700/30">
+                        <p className="text-xs text-muted-foreground mb-1.5 uppercase tracking-wider">Total Levé</p>
+                        <p className="text-xl font-bold text-green-400">
                           {data.financials?.totalFunding || "N/A"}
                         </p>
                       </div>
-                      <div className="bg-gray-800/50 rounded-lg p-3">
-                        <p className="text-xs text-muted-foreground mb-1">Valorisation</p>
-                        <p className="text-lg font-semibold text-amber-400">
+                      <div className="bg-gradient-to-br from-gray-800/60 to-gray-800/40 rounded-lg p-4 border border-gray-700/30">
+                        <p className="text-xs text-muted-foreground mb-1.5 uppercase tracking-wider">Valorisation</p>
+                        <p className="text-xl font-bold text-amber-400">
                           {data.financials?.latestValuation || "N/A"}
                         </p>
                       </div>
                       {data.financials?.metrics?.arr && (
-                        <div className="bg-gray-800/50 rounded-lg p-3">
-                          <p className="text-xs text-muted-foreground mb-1">ARR</p>
-                          <p className="text-lg font-semibold">{data.financials.metrics.arr}</p>
+                        <div className="bg-gradient-to-br from-gray-800/60 to-gray-800/40 rounded-lg p-4 border border-gray-700/30">
+                          <p className="text-xs text-muted-foreground mb-1.5 uppercase tracking-wider">ARR</p>
+                          <p className="text-xl font-bold">{data.financials.metrics.arr}</p>
                         </div>
                       )}
                       {data.financials?.metrics?.customers && (
-                        <div className="bg-gray-800/50 rounded-lg p-3">
-                          <p className="text-xs text-muted-foreground mb-1">Clients</p>
-                          <p className="text-lg font-semibold">{data.financials.metrics.customers}</p>
+                        <div className="bg-gradient-to-br from-gray-800/60 to-gray-800/40 rounded-lg p-4 border border-gray-700/30">
+                          <p className="text-xs text-muted-foreground mb-1.5 uppercase tracking-wider">Clients</p>
+                          <p className="text-xl font-bold">{data.financials.metrics.customers}</p>
                         </div>
                       )}
                     </div>
@@ -574,26 +872,25 @@ export default function DueDiligenceResult() {
                     {/* Funding History */}
                     {data.financials?.fundingHistory && data.financials.fundingHistory.length > 0 && (
                       <div>
-                        <h4 className="font-semibold mb-3">Historique des Levées</h4>
+                        <h4 className="font-semibold mb-4 text-base">Historique des Levées</h4>
                         <div className="space-y-3">
                           {data.financials.fundingHistory.map((round, i) => (
-                            <div key={i} className="bg-gray-800/30 rounded-lg p-4 border border-gray-700/50">
+                            <div key={i} className="bg-gradient-to-br from-gray-800/40 to-gray-800/20 rounded-lg p-4 border border-gray-700/40 hover:border-green-500/30 transition-colors">
                               <div className="flex justify-between items-start mb-2">
-                                <div>
-                                  <Badge variant="outline" className="mr-2">{round.round}</Badge>
-                                  <span className="text-lg font-semibold text-green-400">{round.amount}</span>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <Badge variant="outline" className="text-xs">{round.round}</Badge>
+                                  <span className="text-lg font-bold text-green-400">{round.amount}</span>
                                 </div>
-                                {round.date && <span className="text-sm text-muted-foreground">{round.date}</span>}
+                                {round.date && <span className="text-xs text-muted-foreground bg-gray-800/50 px-2 py-1 rounded">{round.date}</span>}
                               </div>
                               {round.valuation && (
-                                <p className="text-sm text-amber-400 mb-1">Valorisation: {round.valuation}</p>
+                                <p className="text-sm text-amber-400 mb-2 font-medium">Valorisation: {round.valuation}</p>
                               )}
                               {round.investors && round.investors.length > 0 && (
                                 <p className="text-sm text-muted-foreground">
-                                  Investisseurs: {round.investors.join(", ")}
+                                  <span className="font-medium text-gray-300">Investisseurs:</span> {round.investors.join(", ")}
                                 </p>
                               )}
-                              {round.source && <SourceLink url={round.source} name="Voir source" />}
                             </div>
                           ))}
                         </div>
@@ -603,14 +900,14 @@ export default function DueDiligenceResult() {
                     {/* Other metrics */}
                     {data.financials?.metrics && (
                       <div>
-                        <h4 className="font-semibold mb-3">Métriques Détaillées</h4>
+                        <h4 className="font-semibold mb-4 text-base">Métriques Détaillées</h4>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                           {Object.entries(data.financials.metrics).map(([key, value]) => (
-                            <div key={key} className="bg-gray-800/30 rounded-lg p-3">
-                              <p className="text-xs text-muted-foreground capitalize mb-1">
+                            <div key={key} className="bg-gradient-to-br from-gray-800/40 to-gray-800/20 rounded-lg p-3 border border-gray-700/30">
+                              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 font-medium">
                                 {key.replace(/([A-Z])/g, ' $1').trim()}
                               </p>
-                              <p className="text-sm">{value}</p>
+                              <p className="text-sm font-semibold text-gray-200">{value}</p>
                             </div>
                           ))}
                         </div>
@@ -618,16 +915,7 @@ export default function DueDiligenceResult() {
                     )}
 
                     {/* Sources */}
-                    {data.financials?.sources && data.financials.sources.length > 0 && (
-                      <div className="pt-4 border-t border-gray-700/50">
-                        <p className="text-xs text-muted-foreground mb-2">Sources:</p>
-                        <div className="flex flex-wrap gap-2">
-                          {data.financials.sources.map((s, i) => (
-                            <SourceLink key={i} url={s.url} name={s.name} />
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                    <SourcesFooter sources={data.financials?.sources} />
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -635,29 +923,29 @@ export default function DueDiligenceResult() {
               {/* Product Tab */}
               <TabsContent value="product" className="mt-4">
                 <Card className="bg-card/80 border-gray-700/50">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center gap-2 text-lg">
                       <Target className="w-5 h-5 text-blue-400" />
                       Produit & Technologie
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
+                  <CardContent className="space-y-5 pt-2">
                     {data.product?.description && (
                       <div>
                         <h4 className="font-semibold mb-2">Description</h4>
-                        <p className="text-gray-300 leading-relaxed">{data.product.description}</p>
+                        <p className="text-foreground/90 leading-relaxed">{stripInlineSources(data.product.description)}</p>
                       </div>
                     )}
                     {data.product?.valueProposition && (
                       <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-4">
                         <h4 className="font-semibold text-blue-400 mb-2">Proposition de Valeur</h4>
-                        <p className="text-gray-300">{data.product.valueProposition}</p>
+                        <p className="text-foreground/90">{stripInlineSources(data.product.valueProposition)}</p>
                       </div>
                     )}
                     {data.product?.technology && (
                       <div>
                         <h4 className="font-semibold mb-2">Technologie</h4>
-                        <p className="text-gray-300">{data.product.technology}</p>
+                        <p className="text-foreground/90">{stripInlineSources(data.product.technology)}</p>
                       </div>
                     )}
                     {data.product?.keyFeatures && data.product.keyFeatures.length > 0 && (
@@ -665,11 +953,13 @@ export default function DueDiligenceResult() {
                         <h4 className="font-semibold mb-2">Fonctionnalités Clés</h4>
                         <div className="flex flex-wrap gap-2">
                           {data.product.keyFeatures.map((f, i) => (
-                            <Badge key={i} variant="secondary">{f}</Badge>
+                            <Badge key={i} variant="secondary">{stripInlineSources(f)}</Badge>
                           ))}
                         </div>
                       </div>
                     )}
+                    {/* Sources */}
+                    <SourcesFooter sources={data.product?.sources} />
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -677,13 +967,13 @@ export default function DueDiligenceResult() {
               {/* Market Tab */}
               <TabsContent value="market" className="mt-4">
                 <Card className="bg-card/80 border-gray-700/50">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center gap-2 text-lg">
                       <BarChart3 className="w-5 h-5 text-purple-400" />
                       Analyse du Marché
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
+                  <CardContent className="space-y-5 pt-2">
                     {/* TAM/SAM/SOM */}
                     <div className="grid grid-cols-3 gap-4">
                       <div className="bg-purple-500/10 rounded-lg p-4 text-center">
@@ -707,7 +997,7 @@ export default function DueDiligenceResult() {
                     {data.market?.analysis && (
                       <div>
                         <h4 className="font-semibold mb-2">Analyse</h4>
-                        <p className="text-gray-300 leading-relaxed">{data.market.analysis}</p>
+                        <p className="text-foreground/90 leading-relaxed">{stripInlineSources(data.market.analysis)}</p>
                       </div>
                     )}
                     
@@ -716,14 +1006,16 @@ export default function DueDiligenceResult() {
                         <h4 className="font-semibold mb-2">Tendances</h4>
                         <ul className="space-y-1">
                           {data.market.trends.map((t, i) => (
-                            <li key={i} className="text-sm text-gray-300 flex items-start gap-2">
+                            <li key={i} className="text-sm text-foreground/90 flex items-start gap-2">
                               <TrendingUp className="w-3 h-3 mt-1 text-purple-400 flex-shrink-0" />
-                              {t}
+                              {stripInlineSources(t)}
                             </li>
                           ))}
                         </ul>
                       </div>
                     )}
+                    {/* Sources */}
+                    <SourcesFooter sources={data.market?.sources} />
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -731,20 +1023,20 @@ export default function DueDiligenceResult() {
               {/* Team Tab */}
               <TabsContent value="team" className="mt-4">
                 <Card className="bg-card/80 border-gray-700/50">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center gap-2 text-lg">
                       <Users className="w-5 h-5 text-cyan-400" />
                       Équipe & Fondateurs
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
+                  <CardContent className="space-y-5 pt-2">
                     {data.team?.overview && (
-                      <p className="text-gray-300 leading-relaxed">{data.team.overview}</p>
+                      <p className="text-foreground/90 leading-relaxed">{stripInlineSources(data.team.overview)}</p>
                     )}
                     
                     {data.team?.teamSize && (
                       <div className="bg-cyan-500/10 rounded-lg p-3 inline-block">
-                        <p className="text-sm"><strong>Taille de l'équipe:</strong> {data.team.teamSize}</p>
+                        <p className="text-sm"><strong>Taille de l'équipe:</strong> {stripInlineSources(data.team.teamSize)}</p>
                       </div>
                     )}
                     
@@ -785,6 +1077,8 @@ export default function DueDiligenceResult() {
                         </div>
                       </div>
                     )}
+                    {/* Sources */}
+                    <SourcesFooter sources={data.team?.sources} />
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -792,28 +1086,28 @@ export default function DueDiligenceResult() {
               {/* Competition Tab */}
               <TabsContent value="competition" className="mt-4">
                 <Card className="bg-card/80 border-gray-700/50">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center gap-2 text-lg">
                       <Shield className="w-5 h-5 text-orange-400" />
                       Analyse Concurrentielle
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
+                  <CardContent className="space-y-5 pt-2">
                     {data.competition?.landscape && (
-                      <p className="text-gray-300 leading-relaxed">{data.competition.landscape}</p>
+                      <p className="text-foreground/90 leading-relaxed">{stripInlineSources(data.competition.landscape)}</p>
                     )}
                     
                     {data.competition?.competitiveAdvantage && (
                       <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-4">
                         <h4 className="font-semibold text-orange-400 mb-2">Avantage Concurrentiel</h4>
-                        <p className="text-gray-300">{data.competition.competitiveAdvantage}</p>
+                        <p className="text-foreground/90">{stripInlineSources(data.competition.competitiveAdvantage)}</p>
                       </div>
                     )}
                     
                     {data.competition?.moat && (
                       <div>
                         <h4 className="font-semibold mb-2">Moat</h4>
-                        <p className="text-gray-300">{data.competition.moat}</p>
+                        <p className="text-foreground/90">{stripInlineSources(data.competition.moat)}</p>
                       </div>
                     )}
                     
@@ -851,6 +1145,8 @@ export default function DueDiligenceResult() {
                         </div>
                       </div>
                     )}
+                    {/* Sources */}
+                    <SourcesFooter sources={data.competition?.sources} />
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -858,15 +1154,15 @@ export default function DueDiligenceResult() {
               {/* Traction Tab */}
               <TabsContent value="traction" className="mt-4">
                 <Card className="bg-card/80 border-gray-700/50">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center gap-2 text-lg">
                       <TrendingUp className="w-5 h-5 text-green-400" />
                       Traction & Milestones
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
+                  <CardContent className="space-y-5 pt-2">
                     {data.traction?.overview && (
-                      <p className="text-gray-300 leading-relaxed">{data.traction.overview}</p>
+                      <p className="text-foreground/90 leading-relaxed">{stripInlineSources(data.traction.overview)}</p>
                     )}
                     
                     {data.traction?.customers && (
@@ -896,12 +1192,11 @@ export default function DueDiligenceResult() {
                         <div className="space-y-2">
                           {data.traction.keyMilestones.map((m, i) => (
                             <div key={i} className="flex items-start gap-3 bg-gray-800/20 rounded-lg p-3">
-                              <div className="w-2 h-2 rounded-full bg-green-400 mt-2" />
+                              <div className="w-2 h-2 rounded-full bg-green-400 mt-2 flex-shrink-0" />
                               <div className="flex-1">
-                                <p className="text-sm">{m.milestone}</p>
+                                <p className="text-sm text-gray-300">{m.milestone}</p>
                                 {m.date && <p className="text-xs text-muted-foreground mt-1">{m.date}</p>}
                               </div>
-                              {m.source && <SourceLink url={m.source} />}
                             </div>
                           ))}
                         </div>
@@ -932,6 +1227,8 @@ export default function DueDiligenceResult() {
                         </ul>
                       </div>
                     )}
+                    {/* Sources */}
+                    <SourcesFooter sources={data.traction?.sources} />
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -939,8 +1236,8 @@ export default function DueDiligenceResult() {
               {/* Risks Tab */}
               <TabsContent value="risks" className="mt-4">
                 <Card className="bg-card/80 border-gray-700/50">
-                  <CardHeader>
-                    <CardTitle className="flex items-center justify-between">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center justify-between text-lg">
                       <span className="flex items-center gap-2">
                         <AlertTriangle className="w-5 h-5 text-red-400" />
                         Analyse des Risques
@@ -948,7 +1245,7 @@ export default function DueDiligenceResult() {
                       {getRiskBadge(data.risks?.overallRiskLevel)}
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
+                  <CardContent className="space-y-5 pt-2">
                     <div className="grid md:grid-cols-2 gap-4">
                       {data.risks?.marketRisks && data.risks.marketRisks.length > 0 && (
                         <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-4">
@@ -1008,6 +1305,8 @@ export default function DueDiligenceResult() {
                         </ul>
                       </div>
                     )}
+                    {/* Sources */}
+                    <SourcesFooter sources={data.risks?.sources} />
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -1015,8 +1314,8 @@ export default function DueDiligenceResult() {
               {/* Recommendation Tab */}
               <TabsContent value="recommendation" className="mt-4">
                 <Card className="bg-gradient-to-br from-amber-500/10 to-orange-500/5 border-amber-500/30">
-                  <CardHeader>
-                    <CardTitle className="flex items-center justify-between">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center justify-between text-lg">
                       <span className="flex items-center gap-2">
                         <Lightbulb className="w-5 h-5 text-amber-400" />
                         Recommandation d'Investissement
@@ -1024,11 +1323,11 @@ export default function DueDiligenceResult() {
                       {getRecommendationBadge(data.investmentRecommendation?.recommendation)}
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
+                  <CardContent className="space-y-5 pt-2">
                     {data.investmentRecommendation?.rationale && (
                       <div>
                         <h4 className="font-semibold mb-2">Justification</h4>
-                        <p className="text-gray-300 leading-relaxed">{data.investmentRecommendation.rationale}</p>
+                        <p className="text-foreground/90 leading-relaxed">{stripInlineSources(data.investmentRecommendation.rationale)}</p>
                       </div>
                     )}
                     
@@ -1110,33 +1409,36 @@ export default function DueDiligenceResult() {
               {/* Sources Tab */}
               <TabsContent value="sources" className="mt-4">
                 <Card className="bg-card/80 border-gray-700/50">
-                  <CardHeader>
-                    <CardTitle className="flex items-center justify-between">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center justify-between text-lg">
                       <span className="flex items-center gap-2">
                         <LinkIcon className="w-5 h-5 text-gray-400" />
                         Toutes les Sources
                       </span>
-                      <Badge variant="outline">{data.allSources?.length || 0} sources</Badge>
+                      <Badge variant="outline" className="text-xs">{allSourcesAggregated.length || data.allSources?.length || 0} sources</Badge>
                     </CardTitle>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="pt-2">
                     {data.dataQuality && (
-                      <div className="mb-4 p-4 bg-gray-800/30 rounded-lg">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-medium">Qualité des Données</span>
+                      <div className="mb-6 p-4 bg-gray-800/30 rounded-lg border border-gray-700/30">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-sm font-medium text-gray-200">Qualité des Données</span>
                           <Badge variant={
                             data.dataQuality.overallScore === "excellent" ? "default" :
                             data.dataQuality.overallScore === "good" ? "secondary" : "outline"
-                          }>
+                          } className="text-xs">
                             {data.dataQuality.overallScore}
                           </Badge>
                         </div>
                         {data.dataQuality.limitations && data.dataQuality.limitations.length > 0 && (
-                          <div className="text-xs text-muted-foreground mt-2">
-                            <p className="font-medium mb-1">Limitations:</p>
-                            <ul>
+                          <div className="text-xs text-muted-foreground mt-3 pt-3 border-t border-gray-700/30">
+                            <p className="font-medium mb-2 text-gray-300">Limitations:</p>
+                            <ul className="space-y-1">
                               {data.dataQuality.limitations.map((l, i) => (
-                                <li key={i}>• {l}</li>
+                                <li key={i} className="flex items-start gap-2">
+                                  <span className="text-muted-foreground/60 mt-0.5">•</span>
+                                  <span>{l}</span>
+                                </li>
                               ))}
                             </ul>
                           </div>
@@ -1144,30 +1446,36 @@ export default function DueDiligenceResult() {
                       </div>
                     )}
                     
-                    <ScrollArea className="h-[400px]">
+                    <ScrollArea className="h-[500px] pr-4">
                       <div className="space-y-2">
-                        {data.allSources?.map((source, i) => (
+                        {(allSourcesAggregated.length > 0 ? allSourcesAggregated : data.allSources || []).filter((s) => !!s?.url).map((source, i) => (
                           <a
                             key={i}
                             href={source.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="block p-3 bg-gray-800/30 rounded-lg hover:bg-gray-800/50 transition-colors"
+                            className="block p-3 bg-gray-800/30 rounded-lg hover:bg-gray-800/50 border border-gray-700/30 hover:border-amber-500/30 transition-all group"
                           >
-                            <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-start justify-between gap-3">
                               <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium truncate">{source.name}</p>
-                                <p className="text-xs text-muted-foreground truncate">{source.url}</p>
+                                <div className="flex items-center gap-2 mb-1">
+                                  <p className="text-sm font-medium text-gray-200 group-hover:text-amber-400 transition-colors truncate">
+                                    {source.name}
+                                  </p>
+                                  {source.type && (
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 flex-shrink-0">
+                                      {source.type}
+                                    </Badge>
+                                  )}
+                                </div>
+                                <p className="text-xs text-muted-foreground truncate" title={source.url}>
+                                  {source.url ? shortenUrl(source.url, 60) : ""}
+                                </p>
                                 {source.relevance && (
-                                  <p className="text-xs text-gray-400 mt-1">{source.relevance}</p>
+                                  <p className="text-xs text-gray-400 mt-1.5 line-clamp-2">{source.relevance}</p>
                                 )}
                               </div>
-                              <div className="flex items-center gap-2">
-                                {source.type && (
-                                  <Badge variant="outline" className="text-xs">{source.type}</Badge>
-                                )}
-                                <ExternalLink className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                              </div>
+                              <ExternalLink className="w-4 h-4 text-muted-foreground group-hover:text-amber-400 transition-colors flex-shrink-0 mt-0.5" />
                             </div>
                           </a>
                         ))}
@@ -1177,6 +1485,56 @@ export default function DueDiligenceResult() {
                 </Card>
               </TabsContent>
             </Tabs>
+
+            {/* Bloc Sources en bas de page — liens cliquables, toujours visible */}
+            <section id="sources-du-rapport" aria-label="Sources du rapport">
+            {allSourcesAggregated.length > 0 ? (
+              <Card className="rounded-xl border border-primary/30 bg-card/80 backdrop-blur-sm shadow-lg overflow-hidden">
+                <CardHeader className="pb-3 border-b border-gray-700/50">
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <LinkIcon className="w-5 h-5 text-primary" />
+                    Sources du rapport
+                    <Badge variant="outline" className="ml-2 text-xs font-normal">
+                      {allSourcesAggregated.length} source{allSourcesAggregated.length > 1 ? "s" : ""}
+                    </Badge>
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Toutes les sources utilisées pour cette analyse, en un seul endroit.
+                  </p>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <div className="flex flex-wrap gap-2">
+                    {allSourcesAggregated.map((source, i) => (
+                      <a
+                        key={i}
+                        href={source.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm bg-gray-800/50 hover:bg-primary/20 border border-gray-700/50 hover:border-primary/40 text-foreground/90 hover:text-primary transition-all"
+                        title={source.url}
+                      >
+                        <LinkIcon className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
+                        <span className="truncate max-w-[200px]">{source.name}</span>
+                        <ExternalLink className="w-3 h-3 flex-shrink-0 opacity-60" />
+                      </a>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="rounded-xl border border-gray-700/50 bg-card/60 backdrop-blur-sm overflow-hidden">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-base text-muted-foreground">
+                    <LinkIcon className="w-4 h-4" />
+                    Sources du rapport
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-2">
+                  <p className="text-sm text-muted-foreground">Aucune source listée pour ce rapport.</p>
+                </CardContent>
+              </Card>
+            )}
+            </section>
 
             {/* Footer metadata */}
             {data.metadata && (
@@ -1188,6 +1546,7 @@ export default function DueDiligenceResult() {
               </div>
             )}
           </div>
+          </>
         )}
       </div>
     </AppLayout>

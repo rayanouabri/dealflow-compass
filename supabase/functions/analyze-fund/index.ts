@@ -251,11 +251,10 @@ async function enrichStartupData(startup: any): Promise<any> {
   
   const combinedResults = await braveSearch(
     `${name} startup funding revenue ARR investors LinkedIn Crunchbase 2024`, 
-    15
+    12
   );
   
-  // Attendre 2 secondes avant la prochaine startup
-  await sleep(2000);
+  await sleep(1800);
   
   // Séparer les résultats par type
   const generalResults = combinedResults.filter(r => 
@@ -1070,31 +1069,29 @@ serve(async (req) => {
     const numberOfStartups = Math.min(Math.max(params.numberOfStartups || 1, 1), 5);
 
 
-    // Step 1: Search for fund investment thesis and criteria (to understand what startups to source)
+    // Step 1 & 2 en parallèle pour rester sous les limites (546 = CPU/mémoire)
     let fundThesisContext = "";
     let fundSources: { name: string; url: string }[] = [];
-    let investmentCriteria = {
-      sectors: [] as string[],
-      stage: "",
-      geography: "",
-      ticketSize: "",
-      focus: ""
-    };
-    
-    if (fundName) {
-      // Search for fund investment thesis and criteria
-      const fundResults = await braveSearch(`${fundName} investment thesis criteria sectors stage geography ticket size`, 8);
-      fundThesisContext = fundResults.map(r => `${r.title}: ${r.description}`).join("\n");
-      fundSources = fundResults.slice(0, 4).map(r => ({ name: r.title.substring(0, 60), url: r.url }));
-      
-      // Additional search for portfolio examples to understand their focus
-      const portfolioResults = await braveSearch(`${fundName} portfolio companies investments 2023 2024`, 5);
-      fundThesisContext += "\n\nPORTFOLIO EXAMPLES:\n" + portfolioResults.map(r => `${r.title}: ${r.description}`).join("\n");
-    }
-
-    // Step 2: Search for market data and potential startups
     const primarySector = customThesis?.sectors?.[0] || "technology startups";
-    const marketData = await enrichMarketData(primarySector, customThesis?.geography || "global");
+
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const [fundData, marketData] = await Promise.all([
+      fundName
+        ? (async () => {
+            const fundResults = await braveSearch(`${fundName} investment thesis criteria sectors stage geography ticket size`, 6);
+            await sleep(1100);
+            const portfolioResults = await braveSearch(`${fundName} portfolio companies investments 2023 2024`, 4);
+            return {
+              fundThesisContext: fundResults.map(r => `${r.title}: ${r.description}`).join("\n") + "\n\nPORTFOLIO EXAMPLES:\n" + portfolioResults.map(r => `${r.title}: ${r.description}`).join("\n"),
+              fundSources: fundResults.slice(0, 4).map(r => ({ name: r.title.substring(0, 60), url: r.url })),
+            };
+          })()
+        : Promise.resolve({ fundThesisContext: "", fundSources: [] as { name: string; url: string }[] }),
+      enrichMarketData(primarySector, customThesis?.geography || "global"),
+    ]);
+
+    if (fundData.fundThesisContext) fundThesisContext = fundData.fundThesisContext;
+    if (fundData.fundSources.length) fundSources = fundData.fundSources;
     
     // Step 2.5: Use DigitalOcean Agent for enhanced sourcing (if configured)
     // TEMPORAIREMENT DÉSACTIVÉ - L'API DO retourne 405 Method Not Allowed
@@ -1208,8 +1205,6 @@ serve(async (req) => {
       }
     });
     
-    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-    
     // OPTIMISATION: Réduire drastiquement les requêtes Brave (plan Free = 1 req/sec, 2000/mois)
     // On fait seulement 3-4 requêtes bien ciblées au lieu de 20+
     
@@ -1220,97 +1215,93 @@ serve(async (req) => {
     const keywords = getSearchKeywords(mainSector);
     const mainKeyword = keywords[0];
     
-    // Requête 1: Startups récentes dans le secteur
     console.log(`[Brave] Recherche 1: ${mainKeyword} ${stage} startup ${geography}`);
-    const results1 = await braveSearch(`${mainKeyword} ${stage} startup ${geography} 2024 2025 funding`, 10);
+    const results1 = await braveSearch(`${mainKeyword} ${stage} startup ${geography} 2024 2025 funding`, 8);
     startupSearchResults.push(...results1);
-    await sleep(2000); // 2 secondes entre requêtes pour être sûr
+    await sleep(1500);
     
-    // Requête 2: Best startups du secteur
     console.log(`[Brave] Recherche 2: best ${mainKeyword} startups`);
-    const results2 = await braveSearch(`best ${mainKeyword} startups ${geography} 2024 emerging`, 10);
+    const results2 = await braveSearch(`best ${mainKeyword} startups ${geography} 2024 emerging`, 8);
     startupSearchResults.push(...results2);
-    await sleep(2000);
+    await sleep(1500);
     
-    // Requête 3: Funding récent dans le secteur
     console.log(`[Brave] Recherche 3: ${mainKeyword} funding`);
-    const results3 = await braveSearch(`${mainKeyword} startup funding round ${geography} 2024`, 10);
+    const results3 = await braveSearch(`${mainKeyword} startup funding round ${geography} 2024`, 8);
     startupSearchResults.push(...results3);
     
     console.log(`[Brave] Total résultats: ${startupSearchResults.length}`);
     
-    // Skip les recherches additionnelles si on a déjà assez de résultats
-    if (startupSearchResults.length < 10) {
-      await sleep(2000);
-      // Requête 4 (optionnelle): Recherche plus large
-      const results4 = await braveSearch(`${mainSector} company ${geography} innovative 2024`, 10);
+    if (startupSearchResults.length < 8) {
+      await sleep(1500);
+      const results4 = await braveSearch(`${mainSector} company ${geography} innovative 2024`, 6);
       startupSearchResults.push(...results4);
     }
     
-    // COUCHE 4 : Deep dive — actualités secteur, concurrence, régulation
     const deepQueries = [
       `${primarySector} news 2024 2025 trends`,
       `${primarySector} competitors landscape 2024`,
-      `${primarySector} regulation compliance 2024`,
     ];
     for (const q of deepQueries) {
+      const results = await braveSearch(q, 3);
+      startupSearchResults.push(...results);
+      await sleep(1100);
+    }
+
+    // COUCHE 4b : Propriété intellectuelle & signaux d'innovation (brevets, dépôts, spin-offs)
+    const ipInnovationQueries = [
+      `${mainKeyword} startup patent filing 2024 2025 ${geography}`,
+      `${primarySector} patent portfolio company funding`,
+      `${mainKeyword} university spin-off research startup ${geography} 2024`,
+    ];
+    let ipInnovationContext = "";
+    for (const q of ipInnovationQueries) {
       const results = await braveSearch(q, 4);
       startupSearchResults.push(...results);
-      await sleep(1200); // Rate limit Brave Free: 1 req/sec, on attend 1.2s pour être sûr
-    }
-    
-    // COUCHE 5 : Reflection — L'IA suggère des requêtes Brave supplémentaires, on les exécute
-    let reflectionContext = "";
-    try {
-      const refPrompt = `Tu es un assistant VC spécialisé dans le sourcing. Fonds: "${fundName || "thèse personnalisée"}". 
-Secteurs recherchés: ${sectors.join(", ")}
-Géographie: ${geography}
-Stade: ${stage}
-
-Contexte thèse:\n${fundThesisContext.slice(0, 800)}\n\nContexte marché:\n${marketData.marketContext?.slice(0, 500) || ""}\n\nStartups déjà trouvées (extraits):\n${startupSearchResults.slice(0, 8).map(r => r.title + " " + r.description).join("\n")}
-
-Propose EXACTEMENT 5 requêtes de recherche web (en anglais, courtes, spécifiques au secteur "${sectors[0] || "technology"}") pour trouver d'AUTRES startups ou données complémentaires. 
-Ces requêtes doivent cibler des VRAIES startups dans le secteur demandé (pas de SaaS générique si le secteur est différent).
-Réponds UNIQUEMENT avec un JSON: {"queries": ["query1", "query2", ...]}`;
-      
-      const refEndpoint = await getAIEndpoint();
-      const refBody = AI_PROVIDER === "vertex"
-        ? {
-            contents: [{ role: "user", parts: [{ text: refPrompt }] }],
-            generationConfig: { temperature: 0.3, maxOutputTokens: 512 },
-          }
-        : {
-            contents: [{ parts: [{ text: refPrompt }] }],
-            generationConfig: { temperature: 0.3, maxOutputTokens: 512, responseMimeType: "application/json" },
-          };
-      
-      const refRes = await fetch(refEndpoint.url, {
-        method: "POST",
-        headers: refEndpoint.headers,
-        body: JSON.stringify(refBody),
-      });
-      if (refRes.ok) {
-        const refData = await refRes.json();
-        const refText = refData.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        const refJson = refText.replace(/```json?\s*/g, "").trim();
-        const parsed = JSON.parse(refJson);
-        const queries: string[] = Array.isArray(parsed?.queries) ? parsed.queries.slice(0, 5) : [];
-        for (const q of queries) {
-          const results = await braveSearch(String(q).trim(), 3);
-          startupSearchResults.push(...results);
-          await sleep(1200); // Rate limit Brave Free: 1 req/sec, on attend 1.2s pour être sûr
-        }
-        reflectionContext = queries.length ? `\n\n=== REQUÊTES ADDITIONNELLES (réflexion) ===\nRésultats des requêtes suggérées: ${queries.join("; ")}` : "";
+      if (results.length > 0) {
+        ipInnovationContext += results.map(r => `${r.title}: ${r.description} | ${r.url}`).join("\n") + "\n";
       }
-    } catch (e) {
-      console.warn("Reflection layer skipped:", e);
+      await sleep(1100);
+    }
+    if (ipInnovationContext) {
+      ipInnovationContext = `\n\n=== PROPRIÉTÉ INTELLECTUELLE & INNOVATION (brevets, dépôts, spin-offs) ===\n${ipInnovationContext.slice(0, 2000)}`;
+    }
+
+    // COUCHE 5 : Reflection — seulement si peu de résultats (évite dépassement 546)
+    let reflectionContext = "";
+    if (startupSearchResults.length < 12) {
+      try {
+        const refPrompt = `Tu es un assistant VC spécialisé dans le sourcing. Fonds: "${fundName || "thèse personnalisée"}". 
+Secteurs: ${sectors.join(", ")}. Géographie: ${geography}. Stade: ${stage}
+
+Contexte thèse (extrait):\n${fundThesisContext.slice(0, 600)}\n\nStartups trouvées (extraits):\n${startupSearchResults.slice(0, 6).map(r => r.title + " " + r.description).join("\n")}
+
+Propose EXACTEMENT 3 requêtes (en anglais, courtes) pour trouver d'autres startups ou données : au moins une ciblant brevets/propriété intellectuelle ou spin-offs recherche (ex: "patent [sector] startup", "university spin-off [sector]"). Réponds UNIQUEMENT avec un JSON: {"queries": ["q1", "q2", "q3"]}`;
+        const refEndpoint = await getAIEndpoint();
+        const refBody = AI_PROVIDER === "vertex"
+          ? { contents: [{ role: "user", parts: [{ text: refPrompt }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 400 } }
+          : { contents: [{ parts: [{ text: refPrompt }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 400, responseMimeType: "application/json" as const } };
+        const refRes = await fetch(refEndpoint.url, { method: "POST", headers: refEndpoint.headers, body: JSON.stringify(refBody) });
+        if (refRes.ok) {
+          const refData = await refRes.json();
+          const refText = refData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+          const parsed = JSON.parse(refText.replace(/```json?\s*/g, "").trim());
+          const queries: string[] = Array.isArray(parsed?.queries) ? parsed.queries.slice(0, 3) : [];
+          for (const q of queries) {
+            const results = await braveSearch(String(q).trim(), 3);
+            startupSearchResults.push(...results);
+            await sleep(1000);
+          }
+          reflectionContext = queries.length ? `\n\n=== REQUÊTES ADDITIONNELLES ===\n${queries.join("; ")}` : "";
+        }
+      } catch (e) {
+        console.warn("Reflection layer skipped:", e);
+      }
     }
     
-    // Combine all sourcing results
     let startupSearchContext = startupSearchResults
-      .slice(0, 25)
+      .slice(0, 18)
       .map(r => `${r.title}: ${r.description} | URL: ${r.url}`)
-      .join("\n") + reflectionContext;
+      .join("\n") + ipInnovationContext + reflectionContext;
     
     // Add DigitalOcean Agent results if available
     if (doAgentSourcingResult) {
@@ -1329,7 +1320,7 @@ Réponds UNIQUEMENT avec un JSON: {"queries": ["query1", "query2", ...]}`;
 - Si une startup n'a pas assez de données vérifiables, TROUVE-EN UNE AUTRE dans les résultats de recherche
 - NE JAMAIS utiliser une startup si tu ne peux pas vérifier son existence réelle avec au moins 2 sources
 
-⚠️ RÉFLEXION : Réfléchis étape par étape avant de conclure. Utilise TOUTES les couches de recherche fournies (thèse fonds, marché, startups classiques, ninja sourcing, deep dive actualités/concurrence/régulation, requêtes additionnelles). Croise les données avant de produire ton analyse.
+⚠️ RÉFLEXION : Utilise TOUTES les couches fournies : thèse fonds, marché, startups, actualités/concurrence, et surtout la section PROPRIÉTÉ INTELLECTUELLE & INNOVATION (brevets, dépôts, spin-offs universitaires). Priorise les startups avec des signaux IP (brevets déposés, technologies protégées) ou issues de la recherche. Croise les données avant de produire ton analyse.
 
 ⚠️ ATTENTION : TU NE DOIS PAS ANALYSER LE FONDS, MAIS SOURCER DES STARTUPS QUI CORRESPONDENT À SA THÈSE ⚠️
 
@@ -1364,11 +1355,10 @@ FORMAT DES MÉTRIQUES :
 - Indique clairement "(estimation)" pour les métriques estimées
 
 ${fundThesisContext ? `
-=== THÈSE D'INVESTISSEMENT DU FONDS (pour comprendre quoi chercher) ===
-${fundThesisContext}
+=== THÈSE DU FONDS (critères à matcher) ===
+${fundThesisContext.slice(0, 1000)}
 
-⚠️ IMPORTANT : Ces informations servent UNIQUEMENT à comprendre les critères d'investissement du fonds.
-Tu dois maintenant SOURCER des startups RÉELLES qui correspondent à ces critères, PAS analyser le fonds.
+⚠️ Utilise cette thèse pour SOURCER des startups qui correspondent. N'analyse pas le fonds.
 ` : ''}
 
 ${startupSearchContext ? `
@@ -1378,80 +1368,26 @@ ${startupSearchContext}
 ⚠️ UTILISE CES RÉSULTATS pour identifier des startups RÉELLES à analyser.
 Chaque startup doit être une entreprise EXISTANTE avec un site web, des données vérifiables.
 
-🚫 RÈGLE ABSOLUE SUR LES URLs :
-- N'utilise UNIQUEMENT que les URLs trouvées dans les résultats de recherche web fournis ci-dessus
-- NE JAMAIS inventer, créer ou deviner des URLs
-- Si une URL n'est pas dans les résultats de recherche, ne l'inclus PAS dans ta réponse
-- Les URLs doivent être exactement telles que trouvées dans les résultats (sans modification)
-- Si aucune URL n'est trouvée pour un site web/LinkedIn/Crunchbase, laisse le champ vide ou null
+🚫 URLs : utilise UNIQUEMENT les URLs des résultats ci-dessus (y compris brevets, Google Patents, bases IP, articles sur dépôts). Ne jamais inventer d'URL. Sinon champ vide/null.
 
-🎯 SOURCING NINJA : Ces résultats incluent des entreprises trouvées AVANT qu'elles ne soient sur Crunchbase/Pitchbook via :
-- Signaux RH (recrutement massif de postes critiques)
-- Propriété Intellectuelle (brevets et citations par géants tech)
-- Spinoffs universitaires (chercheurs qui fondent des startups)
-
-Ces startups sont souvent en phase pré-levée ou très récente, ce qui représente des opportunités d'investissement précoces.
+💡 PROPRIÉTÉ INTELLECTUELLE : Si la section "Propriété intellectuelle & innovation" est présente, utilise-la pour identifier des startups avec brevets/dépôts ou spin-offs recherche. Cite les sources (patents.google.com, INPI, EPO, articles sur dépôts) dans le rapport quand tu as ces données.
 ` : ''}
 
-=== DONNÉES MARCHÉ (source: Brave Search) ===
-${marketData.marketContext}
+=== DONNÉES MARCHÉ ===
+${(marketData.marketContext || "").slice(0, 500)}
 
-=== MOYENNES DU MARCHÉ PAR STADE (pour estimations intelligentes) ===
+=== BENCHMARKS (estimations si données manquantes) ===
+SAAS: Seed ARR $0-500K CAC $500-1500 Churn 5-10% | Series A ARR $500K-2M CAC $1-2K Churn 3-7% NRR 100-120% | Series B+ ARR $2M+
+MARKETPLACE: Seed GMV $0-2M | Series A GMV $2-10M take rate 15-25%
+FINTECH: Seed ARR $0-1M | Series A ARR $1-5M
+Adapte les métriques au secteur (ARR/MRR pour SaaS, revenus/contrats pour industriel). Utilise ces benchmarks pour estimations si données manquantes.
 
-SAAS (Software as a Service) :
-- Seed: ARR $0-500K, MRR $0-40K, CAC $500-1500, Churn 5-10%/mois, NRR 80-100%, Marge brute 70-85%
-- Series A: ARR $500K-2M, MRR $40K-170K, CAC $1000-2000, Churn 3-7%/mois, NRR 100-120%, Marge brute 75-90%
-- Series B: ARR $2M-10M, MRR $170K-830K, CAC $1500-3000, Churn 2-5%/mois, NRR 110-130%, Marge brute 80-92%
-- Series C+: ARR $10M+, MRR $830K+, CAC $2000-5000, Churn 1-3%/mois, NRR 120-150%, Marge brute 85-95%
-
-MARKETPLACE :
-- Seed: GMV $0-2M, Take rate 10-20%, CAC $50-200, Churn 10-20%/mois
-- Series A: GMV $2M-10M, Take rate 15-25%, CAC $100-300, Churn 8-15%/mois
-- Series B+: GMV $10M+, Take rate 20-30%, CAC $150-400, Churn 5-12%/mois
-
-FINTECH :
-- Seed: ARR $0-1M, CAC $200-800, Churn 4-8%/mois, NRR 90-110%
-- Series A: ARR $1M-5M, CAC $500-1500, Churn 3-6%/mois, NRR 100-115%
-- Series B+: ARR $5M+, CAC $800-2500, Churn 2-5%/mois, NRR 110-130%
-
-HEALTHCARE IT :
-- Seed: ARR $0-800K, CAC $1000-3000, Churn 2-5%/mois (plus bas que SaaS)
-- Series A: ARR $800K-3M, CAC $2000-5000, Churn 1-4%/mois
-- Series B+: ARR $3M+, CAC $3000-8000, Churn 1-3%/mois
-
-DEFENSE / AEROSPACE / GOVTECH :
-- Seed: Revenus $0-2M (contrats pilotes), Cycles de vente 12-24 mois, Marges brutes 30-50%
-- Series A: Revenus $2M-10M, Contrats gouvernementaux, Cycles 18-36 mois
-- Series B+: Revenus $10M+, Contrats majeurs (>$1M), Marge brute 40-60%
-- Spécificités: Long cycle de vente, certifications requises (FedRAMP, NATO, etc.), contrats récurrents multi-années
-
-LOGISTICS / SUPPLY CHAIN :
-- Seed: Volume traité $0-5M/an, Marge par transaction 5-15%
-- Series A: Volume $5M-50M/an, Clients enterprise, Marge 8-20%
-- Series B+: Volume $50M+/an, Contrats multi-régions, Marge 10-25%
-
-CLEANTECH / ENERGY :
-- Seed: Revenus $0-500K, Projets pilotes, Subventions R&D
-- Series A: Revenus $500K-5M, Premiers clients industriels, PPA (Power Purchase Agreements)
-- Series B+: Revenus $5M+, Déploiement à l'échelle, Contrats long-terme 10-20 ans
-
-MANUFACTURING / INDUSTRIAL :
-- Seed: Revenus $0-1M, Prototypes et POC avec industriels
-- Series A: Revenus $1M-5M, Production pilote, Partenariats industriels
-- Series B+: Revenus $5M+, Production à l'échelle, Certifications industrielles
-
-PROPTECH / REAL ESTATE :
-- Seed: ARR $0-300K, GMV $0-10M
-- Series A: ARR $300K-2M, GMV $10M-100M
-- Series B+: ARR $2M+, GMV $100M+, Marge 15-30%
-
-AGRITECH / FOODTECH :
-- Seed: Revenus $0-500K, Surfaces pilotes <1000 ha ou volumes <1000 tonnes
-- Series A: Revenus $500K-3M, Expansion régionale, Partenariats distributeurs
-- Series B+: Revenus $3M+, Couverture nationale/internationale
-
-⚠️ UTILISE CES MOYENNES pour faire des estimations intelligentes quand les données réelles ne sont pas disponibles.
-⚠️ ADAPTE les métriques au secteur demandé (pas de ARR/MRR pour les secteurs industriels, utilise plutôt les revenus récurrents ou les contrats)
+📚 SOURCES: Chaque slide 5-10 sources pertinentes au thème (marché = rapports Gartner/McKinsey/Statista; équipe = LinkedIn/Crunchbase; financements = presse/Crunchbase). Varie les types. URLs uniquement depuis les résultats fournis.
+- Pour Team Assessment: Inclus LinkedIn de TOUS les fondateurs + articles/interviews sur l'équipe + podcasts + annonces de recrutements clés
+- Pour Business Metrics: Inclus Crunchbase + benchmarks multiples (OpenView, Bessemer, a16z, NFX) + articles de presse sur les métriques
+- Pour Competitive Analysis: Inclus sites de TOUS les concurrents majeurs + comparatifs (G2, Capterra) + articles d'analyse
+- Pour Product & Technology: Inclus site officiel (plusieurs pages), GitHub, Product Hunt, G2, Capterra, brevets, blogs techniques
+- NE JAMAIS répéter les mêmes sources dans plusieurs slides - chaque slide doit avoir ses propres sources uniques
 
 ⚠️ RÈGLES DE TYPES — NE JAMAIS MÉLANGER ⚠️
 - SCORES (fitScore, pmfScore) : TOUJOURS un nombre ENTRE 1-10 (fitScore) ou 0-100 (pmfScore). JAMAIS de millions, $, M, €, K. Ex: fitScore 7 ✓ | fitScore "60 millions" ✗ | fitScore "201M" ✗.
@@ -1466,6 +1402,13 @@ THÈSE D'INVESTISSEMENT PERSONNALISÉE:
 - Géographie: ${customThesis.geography || 'Non spécifié'}
 - Taille de ticket: ${customThesis.ticketSize || 'Non spécifié'}
 - Description: ${customThesis.description || 'Non spécifiée'}
+${customThesis.specificCriteria ? `- Critères spécifiques: ${customThesis.specificCriteria}` : ''}
+${customThesis.sourcingInstructions ? `
+📋 INSTRUCTIONS DE SOURCING PERSONNALISÉES:
+${customThesis.sourcingInstructions}
+
+⚠️ APPLIQUE ces instructions de sourcing pour trouver les startups les plus pertinentes!
+` : ''}
 ` : ''}
 
 Tu dois répondre avec un objet JSON valide contenant:
@@ -1493,6 +1436,7 @@ Tu dois répondre avec un objet JSON valide contenant:
    - "competitors": Concurrents principaux avec leurs données (nom, funding, taille)
    - "moat": Avantage compétitif détaillé
    - "fundingHistory": Historique COMPLET de levées avec montants, dates, investisseurs, sources URL
+   - "patents" ou "ip": Si trouvé dans la section Propriété intellectuelle & innovation : nombre de brevets, liens patents.google.com/EPO/INPI ou résumé des dépôts (avec URL source). Sinon omettre.
    - "website": Site web RÉEL (URL complète) - UNIQUEMENT si trouvé dans les recherches web. NE PAS inventer d'URLs.
    - "linkedin": URL LinkedIn de la startup - UNIQUEMENT si trouvé dans les recherches web. NE PAS inventer d'URLs.
    - "crunchbaseUrl": URL Crunchbase si disponible - UNIQUEMENT si trouvé dans les recherches web. NE PAS inventer d'URLs.
@@ -1522,6 +1466,15 @@ Tu dois répondre avec un objet JSON valide contenant:
 4. "dueDiligenceReports": Array de ${numberOfStartups} rapport(s):
    Chaque rapport est un Array de slides:
    
+   ⚠️ CRITIQUE: Chaque slide DOIT avoir un champ "sources" avec des sources PERTINENTES À CE SLIDE UNIQUEMENT.
+   - Slide "Team Assessment" / "Équipe" → UNIQUEMENT sources fondateurs, équipe, LinkedIn profils, articles sur l'équipe.
+   - Slide "Business Metrics & Traction" / "Financements" → UNIQUEMENT sources levées, Crunchbase, presse finance, benchmarks.
+   - Slide "Market Analysis" → UNIQUEMENT sources marché, TAM/SAM, rapports secteur.
+   - Slide "Product & Technology" → UNIQUEMENT sources produit, site, comparatifs, brevets.
+   - Slide "Competitive Analysis" → UNIQUEMENT sources concurrents, comparatifs, cartes marché.
+   - Slide "Investment Recommendation" → sources synthèse (Crunchbase, Dealroom, presse analyse).
+   Ne pas dupliquer les mêmes sources sur toutes les slides : chaque page affiche uniquement les sources qui concernent son thème (min 5-8 par slide).
+   
    [
      {
        "title": "Executive Summary",
@@ -1530,9 +1483,18 @@ Tu dois répondre avec un objet JSON valide contenant:
        "metrics": { 
          "valuation": "Valorisation en $ avec source (ex: $15M)", 
          "askAmount": "Montant demandé en $ (ex: $2M)", 
-         "fitScore": "Nombre ENTRE 1 ET 10 UNIQUEMENT (ex: 7). JAMAIS 60, 60M, millions, $",
-         "sources": ["source1", "source2"]
-       }
+         "fitScore": "Nombre ENTRE 1 ET 10 UNIQUEMENT (ex: 7). JAMAIS 60, 60M, millions, $"
+       },
+       "sources": [
+         { "title": "Crunchbase - Startup Profile", "url": "https://crunchbase.com/...", "type": "Crunchbase" },
+         { "title": "Site officiel - About", "url": "https://startup.com/about", "type": "Site officiel" },
+         { "title": "Article TechCrunch - Funding", "url": "https://techcrunch.com/...", "type": "Presse" },
+         { "title": "LinkedIn - Company Page", "url": "https://linkedin.com/company/...", "type": "LinkedIn" },
+         { "title": "Article Sifted - Startup", "url": "https://sifted.eu/...", "type": "Presse" },
+         { "title": "Dealroom - Company Data", "url": "https://dealroom.co/...", "type": "Base de données" },
+         { "title": "Article The Information", "url": "https://theinformation.com/...", "type": "Presse" },
+         { "title": "Product Hunt Launch", "url": "https://producthunt.com/...", "type": "Plateforme" }
+       ]
      },
      {
        "title": "Market Analysis",
@@ -1542,9 +1504,22 @@ Tu dois répondre avec un objet JSON valide contenant:
          "tam": "TAM avec source (ex: $50B - Grand View Research 2024)", 
          "sam": "SAM avec source", 
          "som": "SOM avec source", 
-         "cagr": "CAGR avec source",
-         "sources": ["url1", "url2"]
-       }
+         "cagr": "CAGR avec source"
+       },
+       "sources": [
+         { "title": "Grand View Research - Market Report 2024", "url": "https://grandviewresearch.com/...", "type": "Rapport marché" },
+         { "title": "Statista - Industry Size & Growth", "url": "https://statista.com/...", "type": "Statistiques" },
+         { "title": "McKinsey - Industry Analysis", "url": "https://mckinsey.com/...", "type": "Rapport industrie" },
+         { "title": "Gartner - Market Forecast", "url": "https://gartner.com/...", "type": "Rapport marché" },
+         { "title": "CB Insights - Sector Report", "url": "https://cbinsights.com/...", "type": "Rapport secteur" },
+         { "title": "Forrester - Market Trends", "url": "https://forrester.com/...", "type": "Rapport industrie" },
+         { "title": "IDC - Market Sizing", "url": "https://idc.com/...", "type": "Rapport marché" },
+         { "title": "PwC - Industry Report", "url": "https://pwc.com/...", "type": "Rapport industrie" },
+         { "title": "Deloitte - Sector Analysis", "url": "https://deloitte.com/...", "type": "Rapport secteur" },
+         { "title": "BCG - Market Study", "url": "https://bcg.com/...", "type": "Rapport marché" },
+         { "title": "Article TechCrunch - Market Trends", "url": "https://techcrunch.com/...", "type": "Presse" },
+         { "title": "Research Paper - Academic", "url": "https://...", "type": "Recherche académique" }
+       ]
      },
      {
        "title": "Product & Technology",
@@ -1554,7 +1529,19 @@ Tu dois répondre avec un objet JSON valide contenant:
          "techStack": "Stack technique", 
          "patents": "Nombre de brevets (entier, ex: 3)", 
          "pmfScore": "Nombre ENTRE 0 ET 100 UNIQUEMENT (ex: 75). JAMAIS 60M, millions, $" 
-       }
+       },
+       "sources": [
+         { "title": "Site officiel - Product Page", "url": "https://startup.com/product", "type": "Site officiel" },
+         { "title": "Site officiel - Features", "url": "https://startup.com/features", "type": "Site officiel" },
+         { "title": "GitHub Repository", "url": "https://github.com/...", "type": "GitHub" },
+         { "title": "Product Hunt - Launch", "url": "https://producthunt.com/...", "type": "Plateforme" },
+         { "title": "G2 Crowd - Reviews", "url": "https://g2.com/...", "type": "Comparatif" },
+         { "title": "Capterra - Product Info", "url": "https://capterra.com/...", "type": "Comparatif" },
+         { "title": "Article - Product Review", "url": "https://...", "type": "Presse" },
+         { "title": "Google Patents - Brevets", "url": "https://patents.google.com/...", "type": "Brevets" },
+         { "title": "Blog - Technical Deep Dive", "url": "https://startup.com/blog/...", "type": "Blog" },
+         { "title": "Demo Video - YouTube", "url": "https://youtube.com/...", "type": "Vidéo" }
+       ]
      },
      {
        "title": "Business Metrics & Traction",
@@ -1572,9 +1559,22 @@ Tu dois répondre avec un objet JSON valide contenant:
          "churn": "Churn mensuel en % avec source OU estimation (moyenne SaaS: Seed 5-10%, Series A 3-7%, etc.)",
          "burnRate": "Burn rate mensuel en $ avec source OU estimation. Estime basé sur équipe et stade.",
          "runway": "Runway en mois avec source OU estimation. Calcule: cash / burn rate si données disponibles.",
-         "grossMargin": "Marge brute en % avec source OU estimation (SaaS typique: 70-90%)",
-         "sources": ["source1", "source2", "source3"]
-       }
+         "grossMargin": "Marge brute en % avec source OU estimation (SaaS typique: 70-90%)"
+       },
+       "sources": [
+         { "title": "Crunchbase - Financials & Funding", "url": "https://crunchbase.com/...", "type": "Crunchbase" },
+         { "title": "OpenView - SaaS Benchmarks 2024", "url": "https://openview.com/benchmarks", "type": "Benchmark" },
+         { "title": "Bessemer - Cloud Index", "url": "https://bvp.com/...", "type": "Benchmark" },
+         { "title": "Article TechCrunch - Funding", "url": "https://techcrunch.com/...", "type": "Presse" },
+         { "title": "Article The Information - Metrics", "url": "https://theinformation.com/...", "type": "Presse" },
+         { "title": "Dealroom - Financial Data", "url": "https://dealroom.co/...", "type": "Base de données" },
+         { "title": "PitchBook - Company Metrics", "url": "https://pitchbook.com/...", "type": "Base de données" },
+         { "title": "Article Sifted - Traction", "url": "https://sifted.eu/...", "type": "Presse" },
+         { "title": "a16z - Market Benchmarks", "url": "https://a16z.com/...", "type": "Benchmark" },
+         { "title": "NFX - Startup Metrics", "url": "https://nfx.com/...", "type": "Benchmark" },
+         { "title": "Article - Customer Case Study", "url": "https://...", "type": "Presse" },
+         { "title": "LinkedIn - Growth Announcement", "url": "https://linkedin.com/...", "type": "LinkedIn" }
+       ]
      },
      {
        "title": "Competitive Analysis",
@@ -1583,7 +1583,19 @@ Tu dois répondre avec un objet JSON valide contenant:
        "metrics": { 
          "marketShare": "Part de marché en % (0-100%, ex: '5.2%' ou '5.2' - JAMAIS avec $, JAMAIS '1$' ou '$1')", 
          "competitorCount": "Nombre de concurrents (entier, ex: 10, 25 - JAMAIS avec $, JAMAIS '10$' ou '$10')" 
-       }
+       },
+       "sources": [
+         { "title": "G2 Crowd - Comparison Matrix", "url": "https://g2.com/...", "type": "Comparatif" },
+         { "title": "Capterra - Competitor Analysis", "url": "https://capterra.com/...", "type": "Comparatif" },
+         { "title": "Concurrent 1 - Site officiel", "url": "https://competitor1.com", "type": "Site concurrent" },
+         { "title": "Concurrent 2 - Site officiel", "url": "https://competitor2.com", "type": "Site concurrent" },
+         { "title": "Concurrent 3 - Crunchbase", "url": "https://crunchbase.com/...", "type": "Crunchbase" },
+         { "title": "Article - Competitive Landscape", "url": "https://...", "type": "Presse" },
+         { "title": "CB Insights - Market Map", "url": "https://cbinsights.com/...", "type": "Rapport secteur" },
+         { "title": "LinkedIn - Competitor Updates", "url": "https://linkedin.com/...", "type": "LinkedIn" },
+         { "title": "Product Hunt - Competitor Launch", "url": "https://producthunt.com/...", "type": "Plateforme" },
+         { "title": "Article - Market Analysis", "url": "https://...", "type": "Presse" }
+       ]
      },
      {
        "title": "Team Assessment",
@@ -1593,7 +1605,21 @@ Tu dois répondre avec un objet JSON valide contenant:
          "founders": [{ "name": "Nom", "role": "Rôle", "linkedin": "URL LinkedIn - UNIQUEMENT si trouvée dans les recherches web, sinon null" }],
          "teamSize": "Taille équipe",
          "advisors": ["Advisor 1", ...]
-       }
+       },
+       "sources": [
+         { "title": "LinkedIn - CEO Profile", "url": "https://linkedin.com/in/...", "type": "LinkedIn" },
+         { "title": "LinkedIn - CTO Profile", "url": "https://linkedin.com/in/...", "type": "LinkedIn" },
+         { "title": "LinkedIn - COO Profile", "url": "https://linkedin.com/in/...", "type": "LinkedIn" },
+         { "title": "LinkedIn - Company Page", "url": "https://linkedin.com/company/...", "type": "LinkedIn" },
+         { "title": "Article - Founder Interview", "url": "https://...", "type": "Presse" },
+         { "title": "Podcast - Founder Story", "url": "https://...", "type": "Podcast" },
+         { "title": "Article TechCrunch - Team", "url": "https://techcrunch.com/...", "type": "Presse" },
+         { "title": "Crunchbase - Team Section", "url": "https://crunchbase.com/...", "type": "Crunchbase" },
+         { "title": "Article - Key Hire Announcement", "url": "https://...", "type": "Presse" },
+         { "title": "Twitter/X - Founder Account", "url": "https://twitter.com/...", "type": "Réseau social" },
+         { "title": "Article - Team Background", "url": "https://...", "type": "Presse" },
+         { "title": "LinkedIn - Advisor Profiles", "url": "https://linkedin.com/in/...", "type": "LinkedIn" }
+       ]
      },
      {
        "title": "Investment Recommendation",
@@ -1604,7 +1630,19 @@ Tu dois répondre avec un objet JSON valide contenant:
          "targetReturn": "Multiple cible",
          "riskLevel": "high" | "medium" | "low",
          "suggestedTicket": "Ticket suggéré"
-       }
+       },
+       "sources": [
+         { "title": "Crunchbase - Full Profile", "url": "https://crunchbase.com/...", "type": "Crunchbase" },
+         { "title": "Dealroom - Company Analysis", "url": "https://dealroom.co/...", "type": "Base de données" },
+         { "title": "Article - Investment Thesis", "url": "https://...", "type": "Presse" },
+         { "title": "Article - Risk Analysis", "url": "https://...", "type": "Presse" },
+         { "title": "CB Insights - Sector Report", "url": "https://cbinsights.com/...", "type": "Rapport secteur" },
+         { "title": "Article - Market Opportunity", "url": "https://...", "type": "Presse" },
+         { "title": "LinkedIn - Company Updates", "url": "https://linkedin.com/...", "type": "LinkedIn" },
+         { "title": "Article - Industry Trends", "url": "https://...", "type": "Presse" },
+         { "title": "Research - Market Validation", "url": "https://...", "type": "Recherche" },
+         { "title": "Article - Competitive Advantage", "url": "https://...", "type": "Presse" }
+       ]
      }
    ]
 
@@ -1762,14 +1800,15 @@ IMPORTANT :
     const aiEndpoint = await getAIEndpoint(); // Utilise le modèle configuré
     
     // Format du corps différent pour Vertex AI (nécessite role: "user")
+    const maxOutputTokens = 20480;
     const aiBody = AI_PROVIDER === "vertex" 
       ? {
           contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\n${userPrompt}\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.` }] }],
-          generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens: 32768 },
+          generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens },
         }
       : {
           contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.` }] }],
-          generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens: 32768, responseMimeType: "application/json" as const },
+          generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens, responseMimeType: "application/json" as const },
         };
 
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -1850,9 +1889,19 @@ IMPORTANT :
     }
 
 
+    // Réduire la taille en mémoire pour éviter 546 (limite mémoire) — garder un JSON valide
+    let contentToParse = content;
+    if (content.length > 1_200_000) {
+      const maxLen = 1_100_000;
+      const truncated = content.slice(0, maxLen);
+      const lastBrace = truncated.lastIndexOf("}");
+      contentToParse = lastBrace > maxLen - 50000 ? truncated.slice(0, lastBrace + 1) : truncated;
+      console.log(`[546 mitigation] Response truncated from ${content.length} to ${contentToParse.length} chars for parsing`);
+    }
+
     let analysisResult;
     try {
-      analysisResult = parseJSONResponse(content);
+      analysisResult = parseJSONResponse(contentToParse);
     } catch (parseError) {
       console.error("Failed to parse Gemini response:", parseError);
       console.error("Content length:", content.length);
@@ -2025,11 +2074,25 @@ IMPORTANT :
 
     analysisResult.dueDiligenceReports = (analysisResult.dueDiligenceReports as any[]).map((r) =>
       normalizeReportToSlides(r).map((s) => {
+        // Extraire et valider les sources
+        let sources: Array<{title: string; url: string; type: string}> = [];
+        if (Array.isArray((s as any).sources)) {
+          sources = (s as any).sources
+            .filter((src: any) => src && typeof src === 'object' && src.url)
+            .map((src: any) => ({
+              title: String(src.title || src.name || 'Source'),
+              url: validateAndCleanUrl(String(src.url)) || src.url,
+              type: String(src.type || 'Source')
+            }))
+            .filter((src: any) => src.url && src.url.startsWith('http'));
+        }
+        
         const slide = {
           title: String((s as any).title ?? ""),
           content: String((s as any).content ?? ""),
           keyPoints: Array.isArray((s as any).keyPoints) ? (s as any).keyPoints : [],
           metrics: (s as any).metrics && typeof (s as any).metrics === "object" ? (s as any).metrics : undefined,
+          sources: sources.length > 0 ? sources : undefined,
         };
         sanitizeSlideMetrics(slide);
         return slide;
