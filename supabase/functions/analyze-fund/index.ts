@@ -245,35 +245,41 @@ async function enrichStartupData(startup: any): Promise<any> {
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-  // OPTIMISATION: UNE SEULE requête Brave par startup (plan Free = 1 req/sec)
-  // On combine toutes les infos dans une seule recherche
+  // Enrichissement approfondi (comme Due Diligence) : plusieurs angles de recherche
   console.log(`[Enrich] Enrichissement de: ${name}`);
   
-  const combinedResults = await braveSearch(
-    `${name} startup funding revenue ARR investors LinkedIn Crunchbase 2024`, 
-    12
-  );
+  const combinedQuery = `${name} startup funding revenue ARR investors LinkedIn Crunchbase 2024`;
+  const teamQuery = `${name} founders CEO team LinkedIn background`;
+  const combinedResults = await braveSearch(combinedQuery, 18);
+  await sleep(1200);
+  const teamResults = await braveSearch(teamQuery, 10);
+  await sleep(1200);
+  const allCombined = [...combinedResults, ...teamResults];
   
-  await sleep(1800);
-  
-  // Séparer les résultats par type
-  const generalResults = combinedResults.filter(r => 
+  // Séparer les résultats par type (dédupliquer par URL)
+  const seen = new Set<string>();
+  const deduped = allCombined.filter(r => {
+    if (!r.url || seen.has(r.url)) return false;
+    seen.add(r.url);
+    return true;
+  });
+  const generalResults = deduped.filter(r => 
     !r.url.includes("linkedin") && 
     !r.url.includes("crunchbase")
   );
-  const fundingResults = combinedResults.filter(r => 
+  const fundingResults = deduped.filter(r => 
     r.description.toLowerCase().includes("funding") ||
     r.description.toLowerCase().includes("raised") ||
     r.description.toLowerCase().includes("series")
   );
-  const metricsResults = combinedResults.filter(r => 
+  const metricsResults = deduped.filter(r => 
     r.description.toLowerCase().includes("revenue") ||
     r.description.toLowerCase().includes("arr") ||
     r.description.toLowerCase().includes("growth")
   );
-  const financialResults = metricsResults; // Même chose
-  const linkedinResults = combinedResults.filter(r => r.url.includes("linkedin"));
-  const crunchbaseResults = combinedResults.filter(r => r.url.includes("crunchbase"));
+  const financialResults = metricsResults;
+  const linkedinResults = deduped.filter(r => r.url.includes("linkedin"));
+  const crunchbaseResults = deduped.filter(r => r.url.includes("crunchbase"));
 
   // Extract URLs - combine all search results
   const allResults = [
@@ -363,17 +369,26 @@ async function enrichStartupData(startup: any): Promise<any> {
   };
 }
 
-// Enrich market data with real TAM/SAM/SOM figures
+// Enrich market data with real TAM/SAM/SOM figures (recherche approfondie comme Due Diligence)
 async function enrichMarketData(sector: string, geography: string): Promise<any> {
-  
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
   const marketResults = await braveSearch(
-    `${sector} market size TAM SAM 2024 2025 billion growth rate CAGR`, 
-    5
+    `${sector} market size TAM SAM 2024 2025 billion growth rate CAGR`,
+    12
+  );
+  await sleep(1100);
+  const reportResults = await braveSearch(
+    `${sector} market report ${geography} 2024 2025 industry analysis`,
+    8
   );
 
-  const snippets = marketResults.flatMap(r => [r.description, ...(r.extra_snippets || [])]).filter(Boolean);
-  
-  const sources = marketResults.slice(0, 3).map(r => ({
+  const allMarket = [...marketResults, ...reportResults];
+  const seen = new Set<string>();
+  const deduped = allMarket.filter(r => r.url && !seen.has(r.url) && (seen.add(r.url), true));
+
+  const snippets = deduped.flatMap(r => [r.description, ...(r.extra_snippets || [])]).filter(Boolean);
+  const sources = deduped.slice(0, 6).map(r => ({
     name: r.title.substring(0, 50),
     url: r.url,
   }));
@@ -1078,12 +1093,14 @@ serve(async (req) => {
     const [fundData, marketData] = await Promise.all([
       fundName
         ? (async () => {
-            const fundResults = await braveSearch(`${fundName} investment thesis criteria sectors stage geography ticket size`, 6);
+            const fundResults = await braveSearch(`${fundName} investment thesis criteria sectors stage geography ticket size`, 12);
+            await sleep(1200);
+            const portfolioResults = await braveSearch(`${fundName} portfolio companies investments 2023 2024`, 8);
             await sleep(1100);
-            const portfolioResults = await braveSearch(`${fundName} portfolio companies investments 2023 2024`, 4);
+            const teamResults = await braveSearch(`${fundName} team partners investors`, 6);
             return {
-              fundThesisContext: fundResults.map(r => `${r.title}: ${r.description}`).join("\n") + "\n\nPORTFOLIO EXAMPLES:\n" + portfolioResults.map(r => `${r.title}: ${r.description}`).join("\n"),
-              fundSources: fundResults.slice(0, 4).map(r => ({ name: r.title.substring(0, 60), url: r.url })),
+              fundThesisContext: fundResults.map(r => `${r.title}: ${r.description}`).join("\n") + "\n\nPORTFOLIO EXAMPLES:\n" + portfolioResults.map(r => `${r.title}: ${r.description}`).join("\n") + (teamResults.length ? "\n\nFUND TEAM/PARTNERS:\n" + teamResults.map(r => `${r.title}: ${r.description}`).join("\n") : ""),
+              fundSources: [...fundResults, ...portfolioResults].slice(0, 8).map(r => ({ name: r.title.substring(0, 60), url: r.url })),
             };
           })()
         : Promise.resolve({ fundThesisContext: "", fundSources: [] as { name: string; url: string }[] }),
@@ -1215,34 +1232,48 @@ serve(async (req) => {
     const keywords = getSearchKeywords(mainSector);
     const mainKeyword = keywords[0];
     
+    const RESULTS_PER_QUERY = 15;
+    const BATCH_DELAY_MS = 1200;
+
     console.log(`[Brave] Recherche 1: ${mainKeyword} ${stage} startup ${geography}`);
-    const results1 = await braveSearch(`${mainKeyword} ${stage} startup ${geography} 2024 2025 funding`, 8);
+    const results1 = await braveSearch(`${mainKeyword} ${stage} startup ${geography} 2024 2025 funding`, RESULTS_PER_QUERY);
     startupSearchResults.push(...results1);
-    await sleep(1500);
-    
+    await sleep(BATCH_DELAY_MS);
+
     console.log(`[Brave] Recherche 2: best ${mainKeyword} startups`);
-    const results2 = await braveSearch(`best ${mainKeyword} startups ${geography} 2024 emerging`, 8);
+    const results2 = await braveSearch(`best ${mainKeyword} startups ${geography} 2024 emerging`, RESULTS_PER_QUERY);
     startupSearchResults.push(...results2);
-    await sleep(1500);
-    
+    await sleep(BATCH_DELAY_MS);
+
     console.log(`[Brave] Recherche 3: ${mainKeyword} funding`);
-    const results3 = await braveSearch(`${mainKeyword} startup funding round ${geography} 2024`, 8);
+    const results3 = await braveSearch(`${mainKeyword} startup funding round ${geography} 2024`, RESULTS_PER_QUERY);
     startupSearchResults.push(...results3);
-    
+    await sleep(BATCH_DELAY_MS);
+
+    console.log(`[Brave] Recherche 4: ${mainKeyword} founders traction`);
+    const results4 = await braveSearch(`${mainKeyword} ${stage} startup founders CEO team ${geography} 2024`, RESULTS_PER_QUERY);
+    startupSearchResults.push(...results4);
+    await sleep(BATCH_DELAY_MS);
+
+    console.log(`[Brave] Recherche 5: ${mainKeyword} traction metrics`);
+    const results5 = await braveSearch(`${mainKeyword} startup traction revenue growth metrics ${geography} 2024`, RESULTS_PER_QUERY);
+    startupSearchResults.push(...results5);
+
     console.log(`[Brave] Total résultats: ${startupSearchResults.length}`);
-    
-    if (startupSearchResults.length < 8) {
-      await sleep(1500);
-      const results4 = await braveSearch(`${mainSector} company ${geography} innovative 2024`, 6);
-      startupSearchResults.push(...results4);
+
+    if (startupSearchResults.length < 20) {
+      await sleep(BATCH_DELAY_MS);
+      const results6 = await braveSearch(`${mainSector} company ${geography} innovative 2024`, 10);
+      startupSearchResults.push(...results6);
     }
-    
+
     const deepQueries = [
       `${primarySector} news 2024 2025 trends`,
       `${primarySector} competitors landscape 2024`,
+      `${mainKeyword} LinkedIn Crunchbase company profile`,
     ];
     for (const q of deepQueries) {
-      const results = await braveSearch(q, 3);
+      const results = await braveSearch(q, 6);
       startupSearchResults.push(...results);
       await sleep(1100);
     }
@@ -1255,7 +1286,7 @@ serve(async (req) => {
     ];
     let ipInnovationContext = "";
     for (const q of ipInnovationQueries) {
-      const results = await braveSearch(q, 4);
+      const results = await braveSearch(q, 6);
       startupSearchResults.push(...results);
       if (results.length > 0) {
         ipInnovationContext += results.map(r => `${r.title}: ${r.description} | ${r.url}`).join("\n") + "\n";
@@ -1266,9 +1297,13 @@ serve(async (req) => {
       ipInnovationContext = `\n\n=== PROPRIÉTÉ INTELLECTUELLE & INNOVATION (brevets, dépôts, spin-offs) ===\n${ipInnovationContext.slice(0, 2000)}`;
     }
 
+    // Dédupliquer par URL pour éviter doublons dans le contexte
+    const searchSeen = new Set<string>();
+    const uniqueSearchResults = startupSearchResults.filter(r => r.url && !searchSeen.has(r.url) && (searchSeen.add(r.url), true));
+
     // COUCHE 5 : Reflection — seulement si peu de résultats (évite dépassement 546)
     let reflectionContext = "";
-    if (startupSearchResults.length < 12) {
+    if (uniqueSearchResults.length < 25) {
       try {
         const refPrompt = `Tu es un assistant VC spécialisé dans le sourcing. Fonds: "${fundName || "thèse personnalisée"}". 
 Secteurs: ${sectors.join(", ")}. Géographie: ${geography}. Stade: ${stage}
@@ -1287,7 +1322,7 @@ Propose EXACTEMENT 3 requêtes (en anglais, courtes) pour trouver d'autres start
           const parsed = JSON.parse(refText.replace(/```json?\s*/g, "").trim());
           const queries: string[] = Array.isArray(parsed?.queries) ? parsed.queries.slice(0, 3) : [];
           for (const q of queries) {
-            const results = await braveSearch(String(q).trim(), 3);
+            const results = await braveSearch(String(q).trim(), 5);
             startupSearchResults.push(...results);
             await sleep(1000);
           }
@@ -1297,9 +1332,13 @@ Propose EXACTEMENT 3 requêtes (en anglais, courtes) pour trouver d'autres start
         console.warn("Reflection layer skipped:", e);
       }
     }
-    
-    let startupSearchContext = startupSearchResults
-      .slice(0, 18)
+
+    // Liste finale dédupliquée (après reflection, au cas où des résultats ont été ajoutés)
+    const finalSeen = new Set<string>();
+    const finalUnique = startupSearchResults.filter(r => r.url && !finalSeen.has(r.url) && (finalSeen.add(r.url), true));
+    const maxResultsForContext = 35;
+    let startupSearchContext = finalUnique
+      .slice(0, maxResultsForContext)
       .map(r => `${r.title}: ${r.description} | URL: ${r.url}`)
       .join("\n") + ipInnovationContext + reflectionContext;
     
