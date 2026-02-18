@@ -1173,60 +1173,80 @@ export default function DueDiligenceResult() {
                             <p className="text-xl font-semibold text-green-400">{data.traction.customers.count}</p>
                           </div>
                         )}
-                        {data.traction.customers.notable && data.traction.customers.notable.length > 0 && (
-                          <div className="bg-gray-800/30 rounded-lg p-4">
-                            <p className="text-xs text-muted-foreground mb-2">Clients Notables</p>
-                            <div className="flex flex-wrap gap-2">
-                              {data.traction.customers.notable.map((c, i) => (
-                                <Badge key={i} variant="secondary">{c}</Badge>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    
-                    {data.traction?.keyMilestones && data.traction.keyMilestones.length > 0 && (
-                      <div>
-                        <h4 className="font-semibold mb-3">Milestones Clés</h4>
-                        <div className="space-y-2">
-                          {data.traction.keyMilestones.map((m, i) => (
-                            <div key={i} className="flex items-start gap-3 bg-gray-800/20 rounded-lg p-3">
-                              <div className="w-2 h-2 rounded-full bg-green-400 mt-2 flex-shrink-0" />
-                              <div className="flex-1">
-                                <p className="text-sm text-gray-300">{m.milestone}</p>
-                                {m.date && <p className="text-xs text-muted-foreground mt-1">{m.date}</p>}
+                        {(() => {
+                          const notable = data.traction?.customers?.notable;
+                          const list = Array.isArray(notable) ? notable : (typeof notable === "string" ? [notable] : []);
+                          if (list.length === 0) return null;
+                          return (
+                            <div className="bg-gray-800/30 rounded-lg p-4">
+                              <p className="text-xs text-muted-foreground mb-2">Clients Notables</p>
+                              <div className="flex flex-wrap gap-2">
+                                {list.map((c, i) => (
+                                  <Badge key={i} variant="secondary">{typeof c === "string" ? c : String(c ?? "")}</Badge>
+                                ))}
                               </div>
                             </div>
-                          ))}
-                        </div>
+                          );
+                        })()}
                       </div>
                     )}
                     
-                    {data.traction?.partnerships && data.traction.partnerships.length > 0 && (
-                      <div>
-                        <h4 className="font-semibold mb-2">Partenariats</h4>
-                        <div className="flex flex-wrap gap-2">
-                          {data.traction.partnerships.map((p, i) => (
-                            <Badge key={i} variant="outline">{p}</Badge>
-                          ))}
+                    {(() => {
+                      const km = data.traction?.keyMilestones;
+                      const list = Array.isArray(km) ? km : [];
+                      if (list.length === 0) return null;
+                      return (
+                        <div>
+                          <h4 className="font-semibold mb-3">Milestones Clés</h4>
+                          <div className="space-y-2">
+                            {list.map((m, i) => (
+                              <div key={i} className="flex items-start gap-3 bg-gray-800/20 rounded-lg p-3">
+                                <div className="w-2 h-2 rounded-full bg-green-400 mt-2 flex-shrink-0" />
+                                <div className="flex-1">
+                                  <p className="text-sm text-gray-300">{typeof m?.milestone === "string" ? m.milestone : (m?.milestone ? String(m.milestone) : "")}</p>
+                                  {m?.date && <p className="text-xs text-muted-foreground mt-1">{m.date}</p>}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
                     
-                    {data.traction?.awards && data.traction.awards.length > 0 && (
-                      <div>
-                        <h4 className="font-semibold mb-2 flex items-center gap-2">
-                          <Award className="w-4 h-4 text-amber-400" />
-                          Récompenses
-                        </h4>
-                        <ul className="space-y-1">
-                          {data.traction.awards.map((a, i) => (
-                            <li key={i} className="text-sm text-gray-300">• {a}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
+                    {(() => {
+                      const p = data.traction?.partnerships;
+                      const list = Array.isArray(p) ? p : (typeof p === "string" ? [p] : []);
+                      if (list.length === 0) return null;
+                      return (
+                        <div>
+                          <h4 className="font-semibold mb-2">Partenariats</h4>
+                          <div className="flex flex-wrap gap-2">
+                            {list.map((item, i) => (
+                              <Badge key={i} variant="outline">{typeof item === "string" ? item : String(item ?? "")}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    
+                    {(() => {
+                      const aw = data.traction?.awards;
+                      const list = Array.isArray(aw) ? aw : (typeof aw === "string" ? [aw] : []);
+                      if (list.length === 0) return null;
+                      return (
+                        <div>
+                          <h4 className="font-semibold mb-2 flex items-center gap-2">
+                            <Award className="w-4 h-4 text-amber-400" />
+                            Récompenses
+                          </h4>
+                          <ul className="space-y-1">
+                            {list.map((a, i) => (
+                              <li key={i} className="text-sm text-gray-300">• {typeof a === "string" ? a : String(a ?? "")}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      );
+                    })()}
                     {/* Sources */}
                     <SourcesFooter sources={data.traction?.sources} />
                   </CardContent>
