@@ -994,9 +994,122 @@ serve(async (req) => {
         aiEndpointA = { url: `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL_A}:generateContent?key=${GEMINI_API_KEY_A}`, headers: { "Content-Type": "application/json" } };
       }
       const maxOutputTokensA = 20480;
+      const sleepA = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+      // ——— Boucle IA ↔ recherche : détection des lacunes puis recherches ciblées (solidifiée) ———
+      let enrichedUserPrompt = userPrompt;
+      const MAX_GAP_QUERIES = 10;
+      const MAX_EXTRA_CONTEXT_CHARS = 5000;
+      const MAX_EXTRA_CONTEXT_CHARS_ROUND2 = 3500;
+      const GAP_QUERY_MIN_LEN = 8;
+      const GAP_QUERY_MAX_LEN = 120;
+      const MAX_GAP_QUERIES_ROUND2 = 4;
+
+      const extractJsonObject = (raw: string): string | null => {
+        const noMarkdown = raw.replace(/```json?\s*/gi, "").trim();
+        const start = noMarkdown.indexOf("{");
+        if (start === -1) return null;
+        let depth = 0;
+        let end = -1;
+        for (let i = start; i < noMarkdown.length; i++) {
+          if (noMarkdown[i] === "{") depth++;
+          if (noMarkdown[i] === "}") { depth--; if (depth === 0) { end = i; break; } }
+        }
+        return end > start ? noMarkdown.slice(start, end + 1) : null;
+      };
+
+      const runGapSearch = async (queries: string[], maxChars: number): Promise<string> => {
+        const extraLines: string[] = [];
+        const seenUrl = new Set<string>();
+        for (const q of queries) {
+          try {
+            const results = await braveSearch(q, 6);
+            for (const r of results) {
+              if (r?.url && !seenUrl.has(r.url)) {
+                seenUrl.add(r.url);
+                const line = `${r.title || ""}: ${r.description || ""} | ${r.url}`.trim();
+                if (line.length > 20) extraLines.push(line);
+              }
+            }
+            await sleepA(1200);
+          } catch (_) {}
+        }
+        return extraLines.join("\n").slice(0, maxChars);
+      };
+
+      try {
+        const contextExtract = userPrompt.slice(0, 7200);
+        const gapPrompt = `Tu es un analyste VC. Contexte de recherche ci-dessous pour sourcer/analyser des startups.
+
+CONTEXTE :
+${contextExtract}
+
+TÂCHE : Identifie 2 à 5 thèmes où les infos sont INSUFFISANTES ou MANQUANTES (ex: équipe/fondateurs LinkedIn, métriques traction ARR MRR, concurrence, financements, brevets). Pour chaque thème, propose 1 à 2 requêtes de recherche web PRÉCISES :
+- En ANGLAIS, courtes (mots-clés).
+- Inclure les noms de startups ou de fondateurs si déjà connus dans le contexte (ex: "John Doe CEO [startup] LinkedIn").
+Réponds UNIQUEMENT par un JSON valide, sans markdown :
+{"gaps":[{"label":"équipe","queries":["founder name LinkedIn","company team size"]}]}
+Règles : max 5 gaps, max 2 queries par gap. Si le contexte suffit, retourne {"gaps":[]}.`;
+
+        const gapBody = AI_PROVIDER_A === "vertex"
+          ? { contents: [{ role: "user", parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 800 } }
+          : { contents: [{ parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 800, responseMimeType: "application/json" as const } };
+        const gapRes = await fetch(aiEndpointA.url, { method: "POST", headers: aiEndpointA.headers, body: JSON.stringify(gapBody) });
+        if (!gapRes.ok) {
+          const errText = await gapRes.text();
+          console.warn("[Analyze] Appel détection lacunes échoué:", gapRes.status, errText.slice(0, 200));
+        } else {
+          const gapData = await gapRes.json();
+          const gapText: string = gapData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+          let gaps: { label?: string; queries?: string[] }[] = [];
+
+          if (gapText) {
+            const jsonStr = extractJsonObject(gapText);
+            if (jsonStr) {
+              try {
+                const parsed = JSON.parse(jsonStr);
+                gaps = Array.isArray(parsed?.gaps) ? parsed.gaps : [];
+              } catch (_) {
+                console.warn("[Analyze] Parse JSON gaps échoué");
+              }
+            }
+          }
+
+          const normalizeQuery = (q: string): string => String(q).trim().slice(0, GAP_QUERY_MAX_LEN);
+          const allQueries: string[] = [];
+          for (const g of gaps.slice(0, 5)) {
+            const qs = (Array.isArray(g.queries) ? g.queries : [])
+              .map((x: string) => normalizeQuery(x))
+              .filter((x: string) => x.length >= GAP_QUERY_MIN_LEN);
+            allQueries.push(...qs.slice(0, 2));
+          }
+          const seenQ = new Set<string>();
+          const uniqueQueries = allQueries.filter((q) => {
+            const k = q.toLowerCase().replace(/\s+/g, " ");
+            if (seenQ.has(k)) return false;
+            seenQ.add(k);
+            return true;
+          }).slice(0, MAX_GAP_QUERIES);
+
+          if (uniqueQueries.length > 0) {
+            const extraContext = await runGapSearch(uniqueQueries, MAX_EXTRA_CONTEXT_CHARS);
+            if (extraContext) {
+              enrichedUserPrompt = `${userPrompt}\n\n=== RECHERCHES COMPLÉMENTAIRES (lacunes identifiées — à utiliser en priorité pour combler les manques) ===\n${extraContext}`;
+              console.log(`[Analyze] Enrichissement 1: ${uniqueQueries.length} requêtes`);
+            }
+          }
+        }
+      } catch (gapErr) {
+        console.warn("[Analyze] Boucle lacunes ignorée:", gapErr);
+      }
+
+      const useEnriched = enrichedUserPrompt !== userPrompt;
+      const finalInstruction = useEnriched
+        ? "\n\n⚠️ Utilise OBLIGATOIREMENT la section « RECHERCHES COMPLÉMENTAIRES » pour compléter les données manquantes (équipe, métriques, financements, etc.). Intègre ces sources dans ton analyse.\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown."
+        : "\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.";
       const aiBodyA = AI_PROVIDER_A === "vertex"
-        ? { contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\n${userPrompt}\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.` }] }], generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens: maxOutputTokensA } }
-        : { contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.` }] }], generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens: maxOutputTokensA, responseMimeType: "application/json" as const } };
+        ? { contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\n${enrichedUserPrompt}${finalInstruction}` }] }], generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens: maxOutputTokensA } }
+        : { contents: [{ parts: [{ text: `${systemPrompt}\n\n${enrichedUserPrompt}${finalInstruction}` }] }], generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens: maxOutputTokensA, responseMimeType: "application/json" as const } };
       const responseA = await fetch(aiEndpointA.url, { method: "POST", headers: aiEndpointA.headers, body: JSON.stringify(aiBodyA) });
       const dataA = await responseA.json();
       const contentA: string = dataA.candidates?.[0]?.content?.parts?.[0]?.text || "";
@@ -1010,6 +1123,78 @@ serve(async (req) => {
       }
       let analysisResultA = parseJSONResponse(contentA);
       if (!Array.isArray(analysisResultA.startups)) analysisResultA.startups = analysisResultA.startup ? [analysisResultA.startup] : [];
+      // ——— 2e itération : lacunes sur le rapport → recherches ciblées → enrichissement ———
+      try {
+        const startupsList = (analysisResultA.startups || []).slice(0, 5).map((s: any) => s?.name || "").filter(Boolean).join(", ");
+        const reportSummary = typeof analysisResultA.dueDiligenceReports !== "undefined"
+          ? JSON.stringify(analysisResultA.dueDiligenceReports).slice(0, 3500)
+          : (JSON.stringify(analysisResultA).slice(0, 3500));
+        const gapPrompt2 = `Tu es un analyste VC. Voici un RAPPORT D'ANALYSE (brouillon) sur les startups : ${startupsList || "N/A"}.
+
+EXTRAIT DU RAPPORT :
+${reportSummary}
+
+TÂCHE : Identifie 1 à 3 thèmes où des infos manquent encore (ex: équipe/fondateurs, métriques précises, financements, concurrence). Pour chaque thème, propose 1 requête de recherche web en ANGLAIS, courte, avec noms de startups ou fondateurs si présents ci-dessus.
+Réponds UNIQUEMENT par un JSON valide : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 3 gaps, 1-2 queries par gap. Si rien à compléter : {"gaps":[]}.`;
+
+        const gapBody2 = AI_PROVIDER_A === "vertex"
+          ? { contents: [{ role: "user", parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 500 } }
+          : { contents: [{ parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 500, responseMimeType: "application/json" as const } };
+        const gapRes2 = await fetch(aiEndpointA.url, { method: "POST", headers: aiEndpointA.headers, body: JSON.stringify(gapBody2) });
+        if (gapRes2.ok) {
+          const gapData2 = await gapRes2.json();
+          const gapText2: string = gapData2.candidates?.[0]?.content?.parts?.[0]?.text || "";
+          let gaps2: { queries?: string[] }[] = [];
+          if (gapText2) {
+            const jsonStr2 = extractJsonObject(gapText2);
+            if (jsonStr2) {
+              try {
+                const parsed2 = JSON.parse(jsonStr2);
+                gaps2 = Array.isArray(parsed2?.gaps) ? parsed2.gaps : [];
+              } catch (_) {}
+            }
+          }
+          const queries2: string[] = [];
+          for (const g of gaps2.slice(0, 3)) {
+            const qs = (Array.isArray(g.queries) ? g.queries : []).map((x: string) => String(x).trim().slice(0, GAP_QUERY_MAX_LEN)).filter((x: string) => x.length >= GAP_QUERY_MIN_LEN);
+            queries2.push(...qs.slice(0, 2));
+          }
+          const seenQ2 = new Set<string>();
+          const uniqueQueries2 = queries2.filter((q) => {
+            const k = q.toLowerCase().replace(/\s+/g, " ");
+            if (seenQ2.has(k)) return false;
+            seenQ2.add(k);
+            return true;
+          }).slice(0, MAX_GAP_QUERIES_ROUND2);
+          if (uniqueQueries2.length > 0) {
+            const extraContext2 = await runGapSearch(uniqueQueries2, MAX_EXTRA_CONTEXT_CHARS_ROUND2);
+            if (extraContext2) {
+              const enrichPrompt = `Tu as un rapport d'analyse (JSON) et des DONNÉES COMPLÉMENTAIRES. Intègre ces nouvelles données dans le rapport où elles sont pertinentes (équipe, métriques, financements, etc.). Retourne le JSON COMPLET avec la même structure, enrichi. Pas de texte avant/après.
+
+RAPPORT ACTUEL (JSON) :
+${JSON.stringify(analysisResultA).slice(0, 28000)}
+
+DONNÉES COMPLÉMENTAIRES :
+${extraContext2}`;
+              const enrichBody = AI_PROVIDER_A === "vertex"
+                ? { contents: [{ role: "user", parts: [{ text: enrichPrompt + "\n\nRéponds UNIQUEMENT avec le JSON complet." }] }], generationConfig: { temperature: 0.1, maxOutputTokens: maxOutputTokensA } }
+                : { contents: [{ parts: [{ text: enrichPrompt + "\n\nRéponds UNIQUEMENT avec le JSON complet." }] }], generationConfig: { temperature: 0.1, maxOutputTokens: maxOutputTokensA, responseMimeType: "application/json" as const } };
+              const enrichRes = await fetch(aiEndpointA.url, { method: "POST", headers: aiEndpointA.headers, body: JSON.stringify(enrichBody) });
+              if (enrichRes.ok) {
+                const enrichData = await enrichRes.json();
+                const enrichText: string = enrichData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+                if (enrichText) {
+                  analysisResultA = parseJSONResponse(enrichText);
+                  if (!Array.isArray(analysisResultA.startups)) analysisResultA.startups = analysisResultA.startup ? [analysisResultA.startup] : [];
+                  console.log("[Analyze] Enrichissement 2 (rapport) appliqué");
+                }
+              }
+            }
+          }
+        }
+      } catch (round2Err) {
+        console.warn("[Analyze] 2e itération ignorée:", round2Err);
+      }
       const enrichedA = await Promise.all(analysisResultA.startups.map((s: any) => enrichStartupData(s)));
       const validatedA = enrichedA.map((s: any) => ({ ...s, reliabilityScore: 8, reliabilityStatus: "reliable", missingData: [] }));
       analysisResultA.startups = validatedA;

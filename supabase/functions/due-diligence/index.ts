@@ -482,11 +482,95 @@ Tu dois produire un rapport de due diligence COMPLET et PROFESSIONNEL sur l'entr
 
 Réponds UNIQUEMENT avec du JSON valide.`;
 
+      const sleepAnalyze = (ms: number) => new Promise((r) => setTimeout(r, ms));
+      const MAX_GAP_QUERIES_DD = 8;
+      const GAP_QUERY_MIN_LEN = 8;
+      const GAP_QUERY_MAX_LEN = 120;
+      const extractJsonObject = (raw: string): string | null => {
+        const noMarkdown = raw.replace(/```json?\s*/gi, "").trim();
+        const start = noMarkdown.indexOf("{");
+        if (start === -1) return null;
+        let depth = 0;
+        let end = -1;
+        for (let i = start; i < noMarkdown.length; i++) {
+          if (noMarkdown[i] === "{") depth++;
+          if (noMarkdown[i] === "}") { depth--; if (depth === 0) { end = i; break; } }
+        }
+        return end > start ? noMarkdown.slice(start, end + 1) : null;
+      };
+      let enrichedAnalyzeContext = analyzeContext;
+      try {
+        const aiEndpointGap = await getAIEndpoint();
+        const contextExtract = typeof analyzeContext === "string" ? analyzeContext.slice(0, 7000) : "";
+        const gapPrompt = `Tu es un analyste VC. Contexte de recherche pour une due diligence sur "${companyName}".
+
+CONTEXTE :
+${contextExtract}
+
+TÂCHE : Identifie 2 à 4 thèmes où les infos sont INSUFFISANTES (ex: équipe/fondateurs LinkedIn, financements, métriques, concurrence). Pour chaque thème, propose 1 à 2 requêtes de recherche web PRÉCISES, en ANGLAIS, courtes ; inclure le nom de l'entreprise si pertinent (ex: "${companyName} founder LinkedIn").
+Réponds UNIQUEMENT par un JSON valide : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 4 gaps, 2 queries par gap. Si suffisant : {"gaps":[]}.`;
+
+        const gapBody = AI_PROVIDER === "vertex"
+          ? { contents: [{ role: "user", parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 600 } }
+          : { contents: [{ parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 600, responseMimeType: "application/json" as const } };
+        const gapRes = await fetch(aiEndpointGap.url, { method: "POST", headers: aiEndpointGap.headers, body: JSON.stringify(gapBody) });
+        if (gapRes.ok) {
+          const gapData = await gapRes.json();
+          const gapText: string = gapData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+          let gaps: { queries?: string[] }[] = [];
+          if (gapText) {
+            const jsonStr = extractJsonObject(gapText);
+            if (jsonStr) {
+              try {
+                const parsed = JSON.parse(jsonStr);
+                gaps = Array.isArray(parsed?.gaps) ? parsed.gaps : [];
+              } catch (_) {}
+            }
+          }
+          const allQueries: string[] = [];
+          for (const g of gaps.slice(0, 4)) {
+            const qs = (Array.isArray(g.queries) ? g.queries : []).map((x: string) => String(x).trim().slice(0, GAP_QUERY_MAX_LEN)).filter((x: string) => x.length >= GAP_QUERY_MIN_LEN);
+            allQueries.push(...qs.slice(0, 2));
+          }
+          const seenQ = new Set<string>();
+          const uniqueQueries = allQueries.filter((q) => {
+            const k = q.toLowerCase().replace(/\s+/g, " ");
+            if (seenQ.has(k)) return false;
+            seenQ.add(k);
+            return true;
+          }).slice(0, MAX_GAP_QUERIES_DD);
+          if (uniqueQueries.length > 0) {
+            const extraLines: string[] = [];
+            const seenUrl = new Set<string>();
+            for (const q of uniqueQueries) {
+              try {
+                const results = await braveSearch(q, 6);
+                for (const r of results) {
+                  if (r?.url && !seenUrl.has(r.url)) {
+                    seenUrl.add(r.url);
+                    const line = `${r.title || ""}: ${r.description || ""} | ${r.url}`.trim();
+                    if (line.length > 20) extraLines.push(line);
+                  }
+                }
+                await sleepAnalyze(1200);
+              } catch (_) {}
+            }
+            const extraContext = extraLines.join("\n").slice(0, 4500);
+            if (extraContext) {
+              enrichedAnalyzeContext = `${analyzeContext}\n\n=== RECHERCHES COMPLÉMENTAIRES (lacunes — à utiliser en priorité) ===\n${extraContext}`;
+              console.log(`[DueDiligence] Enrichissement 1: ${uniqueQueries.length} requêtes`);
+            }
+          }
+        }
+      } catch (gapErr) {
+        console.warn("[DueDiligence] Boucle lacunes ignorée:", gapErr);
+      }
+
       const userPromptAnalyze = `Effectue une due diligence COMPLÈTE sur l'entreprise "${companyName}".
 
 Voici TOUTES les données collectées par nos recherches web. Utilise-les pour produire un rapport exhaustif :
 
-${analyzeContext}
+${enrichedAnalyzeContext}
 
 ⚠️ RAPPELS CRITIQUES :
 1. NE METS AUCUNE URL dans le texte. Toutes les URLs vont UNIQUEMENT dans "sources" et "allSources".
@@ -496,6 +580,7 @@ ${analyzeContext}
 5. keyMilestones[].milestone, partnerships[], awards[] : uniquement des chaînes de caractères, jamais d'objets.
 6. Équipe / fondateurs : remplis au maximum à partir des recherches ; sinon "Non disponible" ou estimation explicitement indiquée.
 7. Sois exhaustif et professionnel.
+${enrichedAnalyzeContext !== analyzeContext ? "\n8. Utilise OBLIGATOIREMENT la section « RECHERCHES COMPLÉMENTAIRES » pour compléter les données manquantes." : ""}
 
 Réponds UNIQUEMENT avec du JSON valide.`;
 
@@ -642,6 +727,103 @@ Réponds UNIQUEMENT avec du JSON valide.`;
         if (!ir.suggestedTicket || typeof ir.suggestedTicket !== "string") ir.suggestedTicket = "Non disponible";
       }
       dueDiligenceResult.metadata = { companyName, generatedAt: new Date().toISOString(), searchResultsCount: analyzeSearchCount, aiProvider: AI_PROVIDER };
+
+      // ——— 2e itération : lacunes sur le rapport → recherches → enrichissement ———
+      try {
+        const reportSummary = JSON.stringify(dueDiligenceResult).slice(0, 4000);
+        const gapPrompt2 = `Rapport de due diligence (brouillon) sur "${companyName}". Extrait : ${reportSummary}
+Identifie 1 à 3 thèmes où des infos manquent encore (équipe, financements, métriques, concurrence). Pour chaque thème, 1 requête de recherche en anglais, courte ; inclure "${companyName}" si pertinent.
+Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 3 gaps, 1-2 queries chacun. Si rien : {"gaps":[]}.`;
+
+        const aiEndpointGap2 = await getAIEndpoint();
+        const gapBody2 = AI_PROVIDER === "vertex"
+          ? { contents: [{ role: "user", parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 500 } }
+          : { contents: [{ parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 500, responseMimeType: "application/json" as const } };
+        const gapRes2 = await fetch(aiEndpointGap2.url, { method: "POST", headers: aiEndpointGap2.headers, body: JSON.stringify(gapBody2) });
+        if (gapRes2.ok) {
+          const gapData2 = await gapRes2.json();
+          const gapText2: string = gapData2.candidates?.[0]?.content?.parts?.[0]?.text || "";
+          let gaps2: { queries?: string[] }[] = [];
+          if (gapText2) {
+            const jsonStr2 = extractJsonObject(gapText2);
+            if (jsonStr2) {
+              try {
+                const parsed2 = JSON.parse(jsonStr2);
+                gaps2 = Array.isArray(parsed2?.gaps) ? parsed2.gaps : [];
+              } catch (_) {}
+            }
+          }
+          const queries2: string[] = [];
+          for (const g of gaps2.slice(0, 3)) {
+            const qs = (Array.isArray(g.queries) ? g.queries : []).map((x: string) => String(x).trim().slice(0, 120)).filter((x: string) => x.length >= 8);
+            queries2.push(...qs.slice(0, 2));
+          }
+          const seenQ2 = new Set<string>();
+          const uniqueQueries2 = queries2.filter((q) => {
+            const k = q.toLowerCase().replace(/\s+/g, " ");
+            if (seenQ2.has(k)) return false;
+            seenQ2.add(k);
+            return true;
+          }).slice(0, 4);
+          if (uniqueQueries2.length > 0) {
+            const extraLines2: string[] = [];
+            const seenUrl2 = new Set<string>();
+            for (const q of uniqueQueries2) {
+              try {
+                const results = await braveSearch(q, 5);
+                for (const r of results) {
+                  if (r?.url && !seenUrl2.has(r.url)) {
+                    seenUrl2.add(r.url);
+                    const line = `${r.title || ""}: ${r.description || ""} | ${r.url}`.trim();
+                    if (line.length > 20) extraLines2.push(line);
+                  }
+                }
+                await sleepAnalyze(1200);
+              } catch (_) {}
+            }
+            const extraContext2 = extraLines2.join("\n").slice(0, 3500);
+            if (extraContext2) {
+              const enrichPrompt = `Rapport de due diligence (JSON) et données complémentaires. Intègre les nouvelles données où pertinent. Retourne le JSON COMPLET, même structure.
+
+RAPPORT ACTUEL :
+${JSON.stringify(dueDiligenceResult).slice(0, 26000)}
+
+DONNÉES COMPLÉMENTAIRES :
+${extraContext2}
+
+Réponds UNIQUEMENT avec le JSON complet.`;
+              const enrichBody = AI_PROVIDER === "vertex"
+                ? { contents: [{ role: "user", parts: [{ text: enrichPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 32768 } }
+                : { contents: [{ parts: [{ text: enrichPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 32768, responseMimeType: "application/json" as const } };
+              const enrichRes = await fetch(aiEndpointGap2.url, { method: "POST", headers: aiEndpointGap2.headers, body: JSON.stringify(enrichBody) });
+              if (enrichRes.ok) {
+                const enrichData = await enrichRes.json();
+                const enrichText: string = enrichData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+                if (enrichText) {
+                  let enriched = parseJSONResponse(enrichText);
+                  if (enriched && typeof enriched === "object") {
+                    enriched = cleanUrlsAnalyze(stripSrc(enriched));
+                    if (enriched.traction?.keyMilestones) {
+                      enriched.traction.keyMilestones = (enriched.traction.keyMilestones as any[]).map((m: any) => ({ date: typeof m?.date === "string" ? m.date : "", milestone: toStr(m?.milestone ?? m) })).filter((m: any) => m.milestone);
+                    }
+                    if (enriched.investmentRecommendation) {
+                      const ir = enriched.investmentRecommendation;
+                      if (!ir.targetReturn || typeof ir.targetReturn !== "string") ir.targetReturn = "Non disponible";
+                      if (!ir.investmentHorizon || typeof ir.investmentHorizon !== "string") ir.investmentHorizon = "Non disponible";
+                      if (!ir.suggestedTicket || typeof ir.suggestedTicket !== "string") ir.suggestedTicket = "Non disponible";
+                    }
+                    enriched.metadata = dueDiligenceResult.metadata;
+                    dueDiligenceResult = enriched;
+                    console.log("[DueDiligence] Enrichissement 2 (rapport) appliqué");
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (round2Err) {
+        console.warn("[DueDiligence] 2e itération ignorée:", round2Err);
+      }
 
       await fetch(`${SUPABASE_URL}/rest/v1/due_diligence_jobs?id=eq.${encodeURIComponent(jobId)}`, {
         method: "PATCH",
