@@ -2,11 +2,21 @@
 
 Ce guide explique comment configurer le provider AI (Gemini ou Vertex AI) et choisir le modèle.
 
+## 🆓 Résumé rapide : Quel agent IA gratuit ?
+
+**Question** : "Quel meilleur IA est bon pour cette tâche ? Quel agent gratuit par exemple ?"
+
+**Réponse** : **Gemini 2.5-Pro** - 100% gratuit, excellente performance, facile à configurer.
+
+👉 **Guide complet** : Voir [AGENTS_IA_GRATUITS.md](./AGENTS_IA_GRATUITS.md)
+
+---
+
 ## 📋 Vue d'ensemble
 
 Le système supporte deux providers :
-- **Gemini** (par défaut, gratuit via API key)
-- **Vertex AI** (Google Cloud, nécessite un projet GCP)
+- **Gemini** (par défaut, **gratuit** via API key) ⭐ **Recommandé**
+- **Vertex AI** (Google Cloud, nécessite un projet GCP, payant)
 
 ## 🔧 Configuration dans Supabase
 
@@ -139,15 +149,24 @@ Ou via le Dashboard Supabase → Edge Functions → Deploy
 
 ## ❓ Questions fréquentes
 
+**Q: Quel est le meilleur agent IA gratuit ?**
+- **Gemini 2.5-Pro** : 100% gratuit, excellente qualité, facile à configurer
+- Voir le [guide complet des agents IA gratuits](./AGENTS_IA_GRATUITS.md)
+
 **Q: Quel provider choisir ?**
-- **Gemini** : Plus simple, gratuit, parfait pour commencer
-- **Vertex AI** : Si vous avez déjà un compte GCP, meilleure intégration entre services
+- **Gemini** : 🟢 **Plus simple, GRATUIT, parfait pour commencer** ⭐ Recommandé
+- **Vertex AI** : 🟡 Payant - Si vous avez déjà un compte GCP, meilleure intégration entre services
 
 **Q: Quel modèle Gemini choisir ?**
-- **gemini-2.5-pro** : Recommandé - Le plus puissant et performant disponible (par défaut)
-- **gemini-2.0-flash** : Si vous avez besoin de rapidité maximale
-- **gemini-1.5-pro** : Alternative puissante (via Vertex AI)
+- **gemini-2.5-pro** : 🥇 Recommandé - Le plus puissant et performant disponible (par défaut, GRATUIT)
+- **gemini-2.0-flash** : 🥈 Si vous avez besoin de rapidité maximale (GRATUIT)
+- **gemini-1.5-pro** : 🥉 Alternative puissante (via Vertex AI, payant)
 - ⚠️ **gemini-3.0-pro** : Pas encore disponible via l'API publique (erreur 404)
+
+**Q: Gemini est-il vraiment gratuit ?**
+- Oui ! L'API Google AI Studio est gratuite avec des quotas généreux (60 req/minute)
+- Pas de carte bancaire requise
+- Idéal pour commencer et pour un usage normal de l'application
 
 **Q: Puis-je utiliser Vertex AI avec une clé API ?**
 - Non, Vertex AI nécessite un projet GCP et des credentials de service account
