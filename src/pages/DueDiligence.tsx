@@ -81,7 +81,6 @@ export default function DueDiligence() {
       hasTrialRemaining={hasTrialRemaining}
       onLogin={handleLogin}
       onSignOut={signOut}
-      onUpgrade={() => setShowPaywall(true)}
     >
       <div className="max-w-2xl mx-auto">
         <Link
@@ -211,13 +210,13 @@ export default function DueDiligence() {
             </div>
           </div>
 
-          {/* Submit Button */}
+          {/* Submit Button — actif dès qu'un nom est saisi ; crédits / auth gérés dans handleSubmit */}
           <Button
             type="button"
             size="lg"
             className="w-full h-14 text-base font-medium bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-[0_0_30px_rgba(245,158,11,0.3)]"
             onClick={handleSubmit}
-            disabled={!hasTrialRemaining || !companyName.trim()}
+            disabled={!companyName.trim()}
           >
             <FileSearch className="w-5 h-5 mr-2" />
             Lancer la Due Diligence

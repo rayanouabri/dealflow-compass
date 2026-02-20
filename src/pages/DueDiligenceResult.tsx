@@ -528,6 +528,180 @@ export default function DueDiligenceResult() {
     );
   };
 
+  /** Exporte l'intégralité du rapport (analyse + sources) en fichier Markdown */
+  const exportFullReport = () => {
+    if (!data) return;
+    const companyName = data.company?.name || requestPayload?.companyName || "Rapport";
+    const safeName = companyName.replace(/[^\w\s-]/g, "").replace(/\s+/g, "-").slice(0, 60);
+    const date = new Date().toISOString().slice(0, 10);
+    const lines: string[] = [];
+
+    const h1 = (t: string) => lines.push("\n# " + t + "\n");
+    const h2 = (t: string) => lines.push("\n## " + t + "\n");
+    const h3 = (t: string) => lines.push("\n### " + t + "\n");
+    const p = (t: string) => { if (t) lines.push(stripInlineSources(t) + "\n"); };
+    const li = (t: string) => { if (t) lines.push("- " + stripInlineSources(t)); };
+    const src = (sources?: { name: string; url: string }[]) => {
+      if (!sources?.length) return;
+      lines.push("\n*Sources :*");
+      sources.forEach((s) => lines.push(`- [${s.name || s.url}](${s.url})`));
+      lines.push("");
+    };
+
+    h1(`Due Diligence — ${companyName}`);
+    lines.push(`*Exporté le ${new Date().toLocaleDateString("fr-FR", { dateStyle: "long" })}*\n`);
+
+    h2("Entreprise");
+    p(data.company?.tagline);
+    if (data.company?.website) lines.push(`- **Site :** ${data.company.website}`);
+    if (data.company?.linkedinUrl) lines.push(`- **LinkedIn :** ${data.company.linkedinUrl}`);
+    if (data.company?.founded) lines.push(`- **Fondée :** ${stripInlineSources(data.company.founded)}`);
+    if (data.company?.headquarters) lines.push(`- **Siège :** ${stripInlineSources(data.company.headquarters)}`);
+    if (data.company?.sector) lines.push(`- **Secteur :** ${stripInlineSources(data.company.sector)}`);
+    if (data.company?.stage) lines.push(`- **Stage :** ${stripInlineSources(data.company.stage)}`);
+    if (data.company?.employeeCount) lines.push(`- **Effectifs :** ${stripInlineSources(data.company.employeeCount)}`);
+    lines.push("");
+
+    h2("Résumé exécutif");
+    p(data.executiveSummary?.overview);
+    if (data.executiveSummary?.recommendation) lines.push(`**Recommandation :** ${stripInlineSources(data.executiveSummary.recommendation)}`);
+    if (data.executiveSummary?.confidenceLevel) lines.push(`**Niveau de confiance :** ${stripInlineSources(data.executiveSummary.confidenceLevel)}`);
+    if (data.executiveSummary?.keyHighlights?.length) { h3("Points forts"); data.executiveSummary.keyHighlights.forEach(li); }
+    if (data.executiveSummary?.keyRisks?.length) { h3("Risques clés"); data.executiveSummary.keyRisks.forEach(li); }
+    lines.push("");
+
+    h2("Financements");
+    p(data.financials?.totalFunding ? `**Financement total :** ${stripInlineSources(data.financials.totalFunding)}` : undefined);
+    if (data.financials?.latestValuation) lines.push(`**Dernière valorisation :** ${stripInlineSources(data.financials.latestValuation)}`);
+    if (data.financials?.fundingHistory?.length) {
+      h3("Historique des levées");
+      data.financials.fundingHistory.forEach((r) => {
+        const parts = [r.round, r.amount, r.date].filter(Boolean).map((x) => stripInlineSources(String(x)));
+        if (r.investors?.length) parts.push("Investisseurs : " + r.investors.map(stripInlineSources).join(", "));
+        lines.push("- " + parts.join(" — "));
+      });
+    }
+    if (data.financials?.metrics && Object.keys(data.financials.metrics).length) {
+      h3("Métriques");
+      Object.entries(data.financials.metrics).forEach(([k, v]) => lines.push(`- **${k} :** ${stripInlineSources(v)}`));
+    }
+    src(data.financials?.sources);
+
+    h2("Produit");
+    p(data.product?.description);
+    if (data.product?.valueProposition) { h3("Proposition de valeur"); p(data.product.valueProposition); }
+    if (data.product?.technology) { h3("Technologie"); p(data.product.technology); }
+    if (data.product?.patents) { h3("Brevets"); p(data.product.patents); }
+    if (data.product?.keyFeatures?.length) { h3("Fonctionnalités clés"); data.product.keyFeatures.forEach(li); }
+    src(data.product?.sources);
+
+    h2("Marché");
+    if (data.market?.tam) lines.push(`- **TAM :** ${stripInlineSources(data.market.tam)}`);
+    if (data.market?.sam) lines.push(`- **SAM :** ${stripInlineSources(data.market.sam)}`);
+    if (data.market?.som) lines.push(`- **SOM :** ${stripInlineSources(data.market.som)}`);
+    if (data.market?.cagr) lines.push(`- **CAGR :** ${stripInlineSources(data.market.cagr)}`);
+    if (data.market?.trends?.length) { h3("Tendances"); data.market.trends.forEach(li); }
+    p(data.market?.analysis);
+    src(data.market?.sources);
+
+    h2("Équipe");
+    p(data.team?.overview);
+    if (data.team?.teamSize) lines.push(`**Taille :** ${stripInlineSources(data.team.teamSize)}`);
+    if (data.team?.founders?.length) {
+      h3("Fondateurs");
+      data.team.founders.forEach((f) => {
+        lines.push(`- **${stripInlineSources(f.name || "")}** — ${stripInlineSources(f.role || "")}`);
+        if (f.background) p(f.background);
+        if (f.linkedin) lines.push(`  LinkedIn : ${f.linkedin}`);
+      });
+    }
+    if (data.team?.keyExecutives?.length) {
+      h3("Dirigeants clés");
+      data.team.keyExecutives.forEach((e) => lines.push(`- **${stripInlineSources(e.name || "")}** — ${stripInlineSources(e.role || "")} — ${stripInlineSources(e.background || "")}`));
+    }
+    if (data.team?.culture) { h3("Culture"); p(data.team.culture); }
+    if (data.team?.hiringTrends) { h3("Recrutement"); p(data.team.hiringTrends); }
+    src(data.team?.sources);
+
+    h2("Concurrence");
+    p(data.competition?.landscape);
+    if (data.competition?.competitiveAdvantage) { h3("Avantage concurrentiel"); p(data.competition.competitiveAdvantage); }
+    if (data.competition?.moat) { h3("Moat"); p(data.competition.moat); }
+    if (data.competition?.competitors?.length) {
+      h3("Concurrents");
+      data.competition.competitors.forEach((c) => {
+        lines.push(`- **${stripInlineSources(c.name)}**${c.funding ? ` — ${stripInlineSources(c.funding)}` : ""}`);
+        if (c.description) p("  " + c.description);
+      });
+    }
+    src(data.competition?.sources);
+
+    h2("Traction & Jalons");
+    p(data.traction?.overview);
+    if (data.traction?.customers) {
+      const c = data.traction.customers;
+      if (c.count) lines.push(`- **Clients :** ${stripInlineSources(c.count)}`);
+      if (c.notable?.length) lines.push(`- **Clients notables :** ${c.notable.map(stripInlineSources).join(", ")}`);
+      if (c.segments) lines.push(`- **Segments :** ${stripInlineSources(c.segments)}`);
+    }
+    if (data.traction?.keyMilestones?.length) {
+      h3("Jalons clés");
+      data.traction.keyMilestones.forEach((m) => lines.push(`- ${stripInlineSources(m.date || "")} — ${stripInlineSources(m.milestone || "")}`));
+    }
+    if (data.traction?.partnerships?.length) { h3("Partenariats"); data.traction.partnerships.forEach(li); }
+    if (data.traction?.awards?.length) { h3("Prix / Récompenses"); data.traction.awards.forEach(li); }
+    src(data.traction?.sources);
+
+    h2("Risques");
+    (["marketRisks", "executionRisks", "financialRisks", "competitiveRisks", "regulatoryRisks"] as const).forEach((key) => {
+      const arr = data.risks?.[key];
+      if (Array.isArray(arr) && arr.length) {
+        h3(key.replace(/([A-Z])/g, " $1").trim());
+        (arr as string[]).forEach(li);
+      }
+    });
+    if (data.risks?.mitigations?.length) { h3("Mitigations"); data.risks.mitigations.forEach(li); }
+    if (data.risks?.overallRiskLevel) lines.push(`**Niveau de risque global :** ${stripInlineSources(data.risks.overallRiskLevel)}`);
+    src(data.risks?.sources);
+
+    if (data.opportunities) {
+      h2("Opportunités");
+      if (data.opportunities.growthOpportunities?.length) { h3("Croissance"); data.opportunities.growthOpportunities.forEach(li); }
+      p(data.opportunities.marketExpansion ? "**Expansion marché :** " + stripInlineSources(data.opportunities.marketExpansion) : undefined);
+      p(data.opportunities.productExpansion ? "**Expansion produit :** " + stripInlineSources(data.opportunities.productExpansion) : undefined);
+      p(data.opportunities.strategicValue);
+      src(data.opportunities.sources);
+    }
+
+    h2("Recommandation d'investissement");
+    const rec = data.investmentRecommendation;
+    if (rec?.recommendation) lines.push(`**Recommandation :** ${stripInlineSources(rec.recommendation)}`);
+    if (rec?.rationale) p(rec.rationale);
+    if (rec?.strengths?.length) { h3("Points forts"); rec.strengths.forEach(li); }
+    if (rec?.weaknesses?.length) { h3("Points faibles"); rec.weaknesses.forEach(li); }
+    if (rec?.keyQuestions?.length) { h3("Questions clés"); rec.keyQuestions.forEach(li); }
+    if (rec?.suggestedNextSteps?.length) { h3("Prochaines étapes"); rec.suggestedNextSteps.forEach(li); }
+    if (rec?.targetReturn) lines.push(`- **Rendement cible :** ${stripInlineSources(rec.targetReturn)}`);
+    if (rec?.investmentHorizon) lines.push(`- **Horizon :** ${stripInlineSources(rec.investmentHorizon)}`);
+    if (rec?.suggestedTicket) lines.push(`- **Ticket suggéré :** ${stripInlineSources(rec.suggestedTicket)}`);
+    lines.push("");
+
+    h2("Toutes les sources du rapport");
+    lines.push(`*${allSourcesAggregated.length} source(s) utilisée(s) pour cette analyse.*\n`);
+    (allSourcesAggregated.length > 0 ? allSourcesAggregated : (data.allSources || [])).forEach((s, i) => {
+      if (s?.url) lines.push(`${i + 1}. [${s.name || s.url}](${s.url})`);
+    });
+
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Due-Diligence-${safeName}-${date}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: "Export effectué", description: "Le rapport complet a été téléchargé (Markdown).", variant: "default" });
+  };
+
   // Composant pour afficher les sources en bas de section
   const SourcesFooter = ({ sources }: { sources?: { name: string; url: string }[] }) => {
     if (!sources || sources.length === 0) return null;
@@ -557,7 +731,6 @@ export default function DueDiligenceResult() {
       hasTrialRemaining={hasTrialRemaining}
       onLogin={() => {}}
       onSignOut={signOut}
-      onUpgrade={() => {}}
     >
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 max-w-full overflow-x-hidden px-4 md:px-6" data-page="due-diligence-result">
         <nav aria-label="Fil d'Ariane" className="lg:col-span-12 flex items-center gap-2 text-sm text-foreground/80 mb-6 min-w-0 overflow-x-auto py-1">
@@ -641,13 +814,24 @@ export default function DueDiligenceResult() {
           <>
           {/* Sidebar — style Analyse */}
           <aside className="lg:col-span-4 xl:col-span-3 space-y-5 lg:col-start-1 lg:row-start-2 order-2 lg:order-1">
-            <Link
-              to="/due-diligence"
-              className="inline-flex items-center gap-1.5 text-sm text-foreground/70 hover:text-primary transition-all duration-300 hover:bg-primary/10 px-3 py-1.5 rounded-lg border border-gray-700 hover:border-primary/40 backdrop-blur-sm"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Nouvelle analyse
-            </Link>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Link
+                to="/due-diligence"
+                className="inline-flex items-center justify-center gap-1.5 text-sm text-foreground/70 hover:text-primary transition-all duration-300 hover:bg-primary/10 px-3 py-1.5 rounded-lg border border-gray-700 hover:border-primary/40 backdrop-blur-sm"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Nouvelle analyse
+              </Link>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={exportFullReport}
+                className="gap-1.5 border-gray-600 hover:border-primary/50 text-foreground/90"
+              >
+                <Download className="w-4 h-4" />
+                Exporter le rapport
+              </Button>
+            </div>
             <Card className="rounded-xl border border-primary/40 bg-card/80 backdrop-blur-sm p-5 space-y-3 shadow-lg">
               <h3 className="text-sm font-semibold text-foreground">{data.company?.name || requestPayload?.companyName}</h3>
               <div className="flex flex-wrap gap-2">
@@ -735,7 +919,16 @@ export default function DueDiligenceResult() {
                   )}
                 </div>
               </div>
-              <div className="flex gap-2 flex-shrink-0">
+              <div className="flex flex-wrap gap-2 flex-shrink-0">
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={exportFullReport}
+                  className="gap-2 bg-primary hover:bg-primary/90"
+                >
+                  <Download className="w-4 h-4" />
+                  Exporter le rapport
+                </Button>
                 {data.company?.website && (
                   <Button variant="outline" size="sm" asChild className="border-gray-600 hover:border-primary/50">
                     <a href={data.company.website} target="_blank" rel="noopener noreferrer">
@@ -807,6 +1000,20 @@ export default function DueDiligenceResult() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Export bar — toujours visible au-dessus des onglets */}
+            <div className="flex flex-wrap items-center justify-between gap-3 py-3 px-4 rounded-xl bg-primary/10 border border-primary/30 mb-4">
+              <span className="text-sm font-medium text-foreground">Exporter l&apos;analyse complète (rapport + sources)</span>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={exportFullReport}
+                className="gap-2 bg-primary hover:bg-primary/90 shrink-0"
+              >
+                <Download className="w-4 h-4" />
+                Exporter en texte (.md)
+              </Button>
+            </div>
 
             {/* Tabs for detailed sections — style aligné Analyse */}
             <Tabs defaultValue="financials" className="w-full">

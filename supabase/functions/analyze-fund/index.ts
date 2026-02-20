@@ -9,9 +9,9 @@ const ALLOWED_ORIGINS = [
   "http://127.0.0.1:5173",
 ];
 
-function corsHeaders(req: Request): Record<string, string> {
-  const origin = req.headers.get("origin") ?? "";
-  const allow = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+function corsHeaders(req: Request | null): Record<string, string> {
+  const origin = req?.headers?.get?.("origin") ?? "";
+  const allow = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
   return {
     "Access-Control-Allow-Origin": allow,
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -899,15 +899,16 @@ function sanitizeSlideMetrics(slide: { metrics?: Record<string, unknown> }): voi
   }
 }
 
-serve(async (req) => {
-  // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { 
-      status: 204,
-      headers: corsHeaders(req) 
+serve((req) => {
+  // CORS preflight (recommandation Supabase : retourner 200 + headers pour invocation depuis le navigateur)
+  if (req.method === "OPTIONS") {
+    return new Response("ok", {
+      status: 200,
+      headers: { ...corsHeaders(req), "Content-Type": "text/plain" },
     });
   }
 
+  return (async (): Promise<Response> => {
   try {
     let requestData: AnalysisRequest;
     try {
@@ -993,17 +994,17 @@ serve(async (req) => {
         if (!GEMINI_API_KEY_A) throw new Error("GEMINI_API_KEY requis");
         aiEndpointA = { url: `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL_A}:generateContent?key=${GEMINI_API_KEY_A}`, headers: { "Content-Type": "application/json" } };
       }
-      const maxOutputTokensA = 20480;
+      const maxOutputTokensA = 16384;
       const sleepA = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-      // ——— Boucle IA ↔ recherche : détection des lacunes puis recherches ciblées (solidifiée) ———
+      // ——— Boucle IA ↔ recherche (limites réduites pour éviter 546) ———
       let enrichedUserPrompt = userPrompt;
-      const MAX_GAP_QUERIES = 10;
-      const MAX_EXTRA_CONTEXT_CHARS = 5000;
-      const MAX_EXTRA_CONTEXT_CHARS_ROUND2 = 3500;
+      const MAX_GAP_QUERIES = 4;
+      const MAX_EXTRA_CONTEXT_CHARS = 2800;
+      const MAX_EXTRA_CONTEXT_CHARS_ROUND2 = 2000;
       const GAP_QUERY_MIN_LEN = 8;
       const GAP_QUERY_MAX_LEN = 120;
-      const MAX_GAP_QUERIES_ROUND2 = 4;
+      const MAX_GAP_QUERIES_ROUND2 = 0;
 
       const extractJsonObject = (raw: string): string | null => {
         const noMarkdown = raw.replace(/```json?\s*/gi, "").trim();
@@ -1023,7 +1024,7 @@ serve(async (req) => {
         const seenUrl = new Set<string>();
         for (const q of queries) {
           try {
-            const results = await braveSearch(q, 6);
+            const results = await braveSearch(q, 5);
             for (const r of results) {
               if (r?.url && !seenUrl.has(r.url)) {
                 seenUrl.add(r.url);
@@ -1031,25 +1032,21 @@ serve(async (req) => {
                 if (line.length > 20) extraLines.push(line);
               }
             }
-            await sleepA(1200);
+            await sleepA(1000);
           } catch (_) {}
         }
         return extraLines.join("\n").slice(0, maxChars);
       };
 
       try {
-        const contextExtract = userPrompt.slice(0, 7200);
+        const contextExtract = userPrompt.slice(0, 5500);
         const gapPrompt = `Tu es un analyste VC. Contexte de recherche ci-dessous pour sourcer/analyser des startups.
 
 CONTEXTE :
 ${contextExtract}
 
-TÂCHE : Identifie 2 à 5 thèmes où les infos sont INSUFFISANTES ou MANQUANTES (ex: équipe/fondateurs LinkedIn, métriques traction ARR MRR, concurrence, financements, brevets). Pour chaque thème, propose 1 à 2 requêtes de recherche web PRÉCISES :
-- En ANGLAIS, courtes (mots-clés).
-- Inclure les noms de startups ou de fondateurs si déjà connus dans le contexte (ex: "John Doe CEO [startup] LinkedIn").
-Réponds UNIQUEMENT par un JSON valide, sans markdown :
-{"gaps":[{"label":"équipe","queries":["founder name LinkedIn","company team size"]}]}
-Règles : max 5 gaps, max 2 queries par gap. Si le contexte suffit, retourne {"gaps":[]}.`;
+TÂCHE : Identifie 2 à 3 thèmes où les infos sont INSUFFISANTES (ex: équipe/fondateurs LinkedIn, métriques traction, financements). Pour chaque thème, 1 à 2 requêtes en ANGLAIS, courtes ; inclure noms startups/fondateurs si connus.
+Réponds UNIQUEMENT par un JSON valide : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 3 gaps, 2 queries par gap. Si suffisant : {"gaps":[]}.`;
 
         const gapBody = AI_PROVIDER_A === "vertex"
           ? { contents: [{ role: "user", parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 800 } }
@@ -1077,7 +1074,7 @@ Règles : max 5 gaps, max 2 queries par gap. Si le contexte suffit, retourne {"g
 
           const normalizeQuery = (q: string): string => String(q).trim().slice(0, GAP_QUERY_MAX_LEN);
           const allQueries: string[] = [];
-          for (const g of gaps.slice(0, 5)) {
+          for (const g of gaps.slice(0, 3)) {
             const qs = (Array.isArray(g.queries) ? g.queries : [])
               .map((x: string) => normalizeQuery(x))
               .filter((x: string) => x.length >= GAP_QUERY_MIN_LEN);
@@ -1107,9 +1104,13 @@ Règles : max 5 gaps, max 2 queries par gap. Si le contexte suffit, retourne {"g
       const finalInstruction = useEnriched
         ? "\n\n⚠️ Utilise OBLIGATOIREMENT la section « RECHERCHES COMPLÉMENTAIRES » pour compléter les données manquantes (équipe, métriques, financements, etc.). Intègre ces sources dans ton analyse.\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown."
         : "\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.";
+      const maxPromptSystem = 22000;
+      const maxPromptUser = 26000;
+      const systemTrunc = systemPrompt.length > maxPromptSystem ? systemPrompt.slice(0, maxPromptSystem) + "\n\n[Contexte tronqué pour limite ressources.]" : systemPrompt;
+      const userTrunc = enrichedUserPrompt.length > maxPromptUser ? enrichedUserPrompt.slice(0, maxPromptUser) + "\n\n[Contexte tronqué.]" : enrichedUserPrompt;
       const aiBodyA = AI_PROVIDER_A === "vertex"
-        ? { contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\n${enrichedUserPrompt}${finalInstruction}` }] }], generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens: maxOutputTokensA } }
-        : { contents: [{ parts: [{ text: `${systemPrompt}\n\n${enrichedUserPrompt}${finalInstruction}` }] }], generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens: maxOutputTokensA, responseMimeType: "application/json" as const } };
+        ? { contents: [{ role: "user", parts: [{ text: `${systemTrunc}\n\n${userTrunc}${finalInstruction}` }] }], generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens: maxOutputTokensA } }
+        : { contents: [{ parts: [{ text: `${systemTrunc}\n\n${userTrunc}${finalInstruction}` }] }], generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens: maxOutputTokensA, responseMimeType: "application/json" as const } };
       const responseA = await fetch(aiEndpointA.url, { method: "POST", headers: aiEndpointA.headers, body: JSON.stringify(aiBodyA) });
       const dataA = await responseA.json();
       const contentA: string = dataA.candidates?.[0]?.content?.parts?.[0]?.text || "";
@@ -1123,77 +1124,79 @@ Règles : max 5 gaps, max 2 queries par gap. Si le contexte suffit, retourne {"g
       }
       let analysisResultA = parseJSONResponse(contentA);
       if (!Array.isArray(analysisResultA.startups)) analysisResultA.startups = analysisResultA.startup ? [analysisResultA.startup] : [];
-      // ——— 2e itération : lacunes sur le rapport → recherches ciblées → enrichissement ———
-      try {
-        const startupsList = (analysisResultA.startups || []).slice(0, 5).map((s: any) => s?.name || "").filter(Boolean).join(", ");
-        const reportSummary = typeof analysisResultA.dueDiligenceReports !== "undefined"
-          ? JSON.stringify(analysisResultA.dueDiligenceReports).slice(0, 3500)
-          : (JSON.stringify(analysisResultA).slice(0, 3500));
-        const gapPrompt2 = `Tu es un analyste VC. Voici un RAPPORT D'ANALYSE (brouillon) sur les startups : ${startupsList || "N/A"}.
+      // ——— 2e itération désactivée (MAX_GAP_QUERIES_ROUND2=0) pour limiter 546 ———
+      if (MAX_GAP_QUERIES_ROUND2 > 0) {
+        try {
+          const startupsList = (analysisResultA.startups || []).slice(0, 5).map((s: any) => s?.name || "").filter(Boolean).join(", ");
+          const reportSummary = typeof analysisResultA.dueDiligenceReports !== "undefined"
+            ? JSON.stringify(analysisResultA.dueDiligenceReports).slice(0, 3500)
+            : (JSON.stringify(analysisResultA).slice(0, 3500));
+          const gapPrompt2 = `Tu es un analyste VC. Voici un RAPPORT D'ANALYSE (brouillon) sur les startups : ${startupsList || "N/A"}.
 
 EXTRAIT DU RAPPORT :
 ${reportSummary}
 
-TÂCHE : Identifie 1 à 3 thèmes où des infos manquent encore (ex: équipe/fondateurs, métriques précises, financements, concurrence). Pour chaque thème, propose 1 requête de recherche web en ANGLAIS, courte, avec noms de startups ou fondateurs si présents ci-dessus.
-Réponds UNIQUEMENT par un JSON valide : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 3 gaps, 1-2 queries par gap. Si rien à compléter : {"gaps":[]}.`;
+TÂCHE : Identifie 1 à 2 thèmes où des infos manquent encore. Pour chaque thème, 1 requête en anglais, courte (noms startups/fondateurs si ci-dessus).
+Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 2 gaps, 1 query par gap. Si rien : {"gaps":[]}.`;
 
-        const gapBody2 = AI_PROVIDER_A === "vertex"
-          ? { contents: [{ role: "user", parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 500 } }
-          : { contents: [{ parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 500, responseMimeType: "application/json" as const } };
-        const gapRes2 = await fetch(aiEndpointA.url, { method: "POST", headers: aiEndpointA.headers, body: JSON.stringify(gapBody2) });
-        if (gapRes2.ok) {
-          const gapData2 = await gapRes2.json();
-          const gapText2: string = gapData2.candidates?.[0]?.content?.parts?.[0]?.text || "";
-          let gaps2: { queries?: string[] }[] = [];
-          if (gapText2) {
-            const jsonStr2 = extractJsonObject(gapText2);
-            if (jsonStr2) {
-              try {
-                const parsed2 = JSON.parse(jsonStr2);
-                gaps2 = Array.isArray(parsed2?.gaps) ? parsed2.gaps : [];
-              } catch (_) {}
+          const gapBody2 = AI_PROVIDER_A === "vertex"
+            ? { contents: [{ role: "user", parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 500 } }
+            : { contents: [{ parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 500, responseMimeType: "application/json" as const } };
+          const gapRes2 = await fetch(aiEndpointA.url, { method: "POST", headers: aiEndpointA.headers, body: JSON.stringify(gapBody2) });
+          if (gapRes2.ok) {
+            const gapData2 = await gapRes2.json();
+            const gapText2: string = gapData2.candidates?.[0]?.content?.parts?.[0]?.text || "";
+            let gaps2: { queries?: string[] }[] = [];
+            if (gapText2) {
+              const jsonStr2 = extractJsonObject(gapText2);
+              if (jsonStr2) {
+                try {
+                  const parsed2 = JSON.parse(jsonStr2);
+                  gaps2 = Array.isArray(parsed2?.gaps) ? parsed2.gaps : [];
+                } catch (_) {}
+              }
             }
-          }
-          const queries2: string[] = [];
-          for (const g of gaps2.slice(0, 3)) {
-            const qs = (Array.isArray(g.queries) ? g.queries : []).map((x: string) => String(x).trim().slice(0, GAP_QUERY_MAX_LEN)).filter((x: string) => x.length >= GAP_QUERY_MIN_LEN);
-            queries2.push(...qs.slice(0, 2));
-          }
-          const seenQ2 = new Set<string>();
-          const uniqueQueries2 = queries2.filter((q) => {
-            const k = q.toLowerCase().replace(/\s+/g, " ");
-            if (seenQ2.has(k)) return false;
-            seenQ2.add(k);
-            return true;
-          }).slice(0, MAX_GAP_QUERIES_ROUND2);
-          if (uniqueQueries2.length > 0) {
-            const extraContext2 = await runGapSearch(uniqueQueries2, MAX_EXTRA_CONTEXT_CHARS_ROUND2);
-            if (extraContext2) {
-              const enrichPrompt = `Tu as un rapport d'analyse (JSON) et des DONNÉES COMPLÉMENTAIRES. Intègre ces nouvelles données dans le rapport où elles sont pertinentes (équipe, métriques, financements, etc.). Retourne le JSON COMPLET avec la même structure, enrichi. Pas de texte avant/après.
+            const queries2: string[] = [];
+            for (const g of gaps2.slice(0, 2)) {
+              const qs = (Array.isArray(g.queries) ? g.queries : []).map((x: string) => String(x).trim().slice(0, GAP_QUERY_MAX_LEN)).filter((x: string) => x.length >= GAP_QUERY_MIN_LEN);
+              queries2.push(...qs.slice(0, 1));
+            }
+            const seenQ2 = new Set<string>();
+            const uniqueQueries2 = queries2.filter((q) => {
+              const k = q.toLowerCase().replace(/\s+/g, " ");
+              if (seenQ2.has(k)) return false;
+              seenQ2.add(k);
+              return true;
+            }).slice(0, MAX_GAP_QUERIES_ROUND2);
+            if (uniqueQueries2.length > 0) {
+              const extraContext2 = await runGapSearch(uniqueQueries2, MAX_EXTRA_CONTEXT_CHARS_ROUND2);
+              if (extraContext2) {
+                const enrichPrompt = `Tu as un rapport d'analyse (JSON) et des DONNÉES COMPLÉMENTAIRES. Intègre les nouvelles données où pertinent. Retourne le JSON COMPLET, même structure.
 
 RAPPORT ACTUEL (JSON) :
-${JSON.stringify(analysisResultA).slice(0, 28000)}
+${JSON.stringify(analysisResultA).slice(0, 20000)}
 
 DONNÉES COMPLÉMENTAIRES :
 ${extraContext2}`;
-              const enrichBody = AI_PROVIDER_A === "vertex"
-                ? { contents: [{ role: "user", parts: [{ text: enrichPrompt + "\n\nRéponds UNIQUEMENT avec le JSON complet." }] }], generationConfig: { temperature: 0.1, maxOutputTokens: maxOutputTokensA } }
-                : { contents: [{ parts: [{ text: enrichPrompt + "\n\nRéponds UNIQUEMENT avec le JSON complet." }] }], generationConfig: { temperature: 0.1, maxOutputTokens: maxOutputTokensA, responseMimeType: "application/json" as const } };
-              const enrichRes = await fetch(aiEndpointA.url, { method: "POST", headers: aiEndpointA.headers, body: JSON.stringify(enrichBody) });
-              if (enrichRes.ok) {
-                const enrichData = await enrichRes.json();
-                const enrichText: string = enrichData.candidates?.[0]?.content?.parts?.[0]?.text || "";
-                if (enrichText) {
-                  analysisResultA = parseJSONResponse(enrichText);
-                  if (!Array.isArray(analysisResultA.startups)) analysisResultA.startups = analysisResultA.startup ? [analysisResultA.startup] : [];
-                  console.log("[Analyze] Enrichissement 2 (rapport) appliqué");
+                const enrichBody = AI_PROVIDER_A === "vertex"
+                  ? { contents: [{ role: "user", parts: [{ text: enrichPrompt + "\n\nRéponds UNIQUEMENT avec le JSON complet." }] }], generationConfig: { temperature: 0.1, maxOutputTokens: maxOutputTokensA } }
+                  : { contents: [{ parts: [{ text: enrichPrompt + "\n\nRéponds UNIQUEMENT avec le JSON complet." }] }], generationConfig: { temperature: 0.1, maxOutputTokens: maxOutputTokensA, responseMimeType: "application/json" as const } };
+                const enrichRes = await fetch(aiEndpointA.url, { method: "POST", headers: aiEndpointA.headers, body: JSON.stringify(enrichBody) });
+                if (enrichRes.ok) {
+                  const enrichData = await enrichRes.json();
+                  const enrichText: string = enrichData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+                  if (enrichText) {
+                    analysisResultA = parseJSONResponse(enrichText);
+                    if (!Array.isArray(analysisResultA.startups)) analysisResultA.startups = analysisResultA.startup ? [analysisResultA.startup] : [];
+                    console.log("[Analyze] Enrichissement 2 (rapport) appliqué");
+                  }
                 }
               }
             }
           }
+        } catch (round2Err) {
+          console.warn("[Analyze] 2e itération ignorée:", round2Err);
         }
-      } catch (round2Err) {
-        console.warn("[Analyze] 2e itération ignorée:", round2Err);
       }
       const enrichedA = await Promise.all(analysisResultA.startups.map((s: any) => enrichStartupData(s)));
       const validatedA = enrichedA.map((s: any) => ({ ...s, reliabilityScore: 8, reliabilityStatus: "reliable", missingData: [] }));
@@ -2587,4 +2590,13 @@ IMPORTANT :
       headers: { ...corsHeaders(req), "Content-Type": "application/json" },
     });
   }
+  })().catch((err) => {
+    console.error("Unhandled rejection in analyze-fund:", err);
+    return new Response(JSON.stringify({
+      error: err instanceof Error ? err.message : "Internal server error",
+    }), {
+      status: 500,
+      headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+    });
+  });
 });

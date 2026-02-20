@@ -111,24 +111,19 @@ export function StartupCard({ startup }: StartupCardProps) {
               <span className="flex items-center gap-1.5">
                 <Users className="w-3.5 h-3.5 text-chart-green" />
                 {(() => {
-                  // Formater teamSize correctement (ne jamais afficher en millions)
                   const teamSize = startup.teamSize;
+                  if (teamSize == null || String(teamSize).toLowerCase() === "undefined" || String(teamSize).trim() === "") return "—";
                   if (typeof teamSize === "number") {
-                    if (teamSize > 0 && teamSize <= 50000) {
-                      return `${Math.round(teamSize)} employees`;
-                    }
+                    if (teamSize > 0 && teamSize <= 50000) return `${Math.round(teamSize)} employés`;
                     return "N/A";
                   }
                   const str = String(teamSize).trim();
-                  // Extraire uniquement le nombre, pas d'unité M/K
                   const numMatch = str.match(/(\d+)/);
                   if (numMatch) {
                     const num = parseInt(numMatch[1], 10);
-                    if (num > 0 && num <= 50000) {
-                      return `${num} employees`;
-                    }
+                    if (num > 0 && num <= 50000) return `${num} employés`;
                   }
-                  return str.includes("N/A") || str.includes("n/a") ? "N/A" : `${str} employees`;
+                  return str.includes("N/A") || str.includes("n/a") ? "N/A" : `${str} employés`;
                 })()}
               </span>
               {startup.revenue && (

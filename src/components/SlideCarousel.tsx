@@ -1,21 +1,30 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { ChevronLeft, ChevronRight, Download, FileText, ExternalLink, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 interface Source {
-  title: string;
+  title?: string;
+  name?: string;
   url: string;
-  type: string;
+  type?: string;
 }
 
 interface Slide {
+  title?: string;
+  content?: string;
+  keyPoints?: string[] | unknown;
+  metrics?: Record<string, string | number>;
+  sources?: Source[];
+}
+
+interface NormalizedSlide {
   title: string;
   content: string;
   keyPoints: string[];
   metrics?: Record<string, string | number>;
-  sources?: Source[];
+  sources?: { title: string; url: string; type: string }[];
 }
 
 interface SlideCarouselProps {
@@ -35,17 +44,60 @@ const SLIDE_ICONS = [
   "✅", // Recommendation
 ];
 
-export function SlideCarousel({ slides, startupName, onExport }: SlideCarouselProps) {
+function normalizeSlides(slides: Slide[]): NormalizedSlide[] {
+  if (!Array.isArray(slides)) return [];
+  return slides.map((s) => {
+    const keyPoints = Array.isArray(s.keyPoints)
+      ? s.keyPoints.filter((p): p is string => typeof p === "string")
+      : [];
+    const sources = Array.isArray(s.sources)
+      ? s.sources
+          .filter((src) => src && typeof src === "object" && src.url)
+          .map((src) => ({
+            title: String(src.title ?? src.name ?? "Source"),
+            url: String(src.url),
+            type: String(src.type ?? "Source"),
+          }))
+      : undefined;
+    const metrics =
+      s.metrics && typeof s.metrics === "object" && !Array.isArray(s.metrics) ? s.metrics : undefined;
+    return {
+      title: String(s.title ?? ""),
+      content: String(s.content ?? ""),
+      keyPoints,
+      metrics,
+      sources: sources && sources.length > 0 ? sources : undefined,
+    };
+  });
+}
+
+export function SlideCarousel({ slides: rawSlides, startupName, onExport }: SlideCarouselProps) {
+  const slides = useMemo(() => normalizeSlides(rawSlides ?? []), [rawSlides]);
   const [currentSlide, setCurrentSlide] = useState(0);
 
-  // Guard against empty or invalid slides
+  useEffect(() => {
+    if (currentSlide >= slides.length && slides.length > 0) {
+      setCurrentSlide(Math.max(0, slides.length - 1));
+    }
+  }, [slides.length, currentSlide]);
+
+  // Guard against empty or invalid slides — afficher message + bouton Export pour exporter le fallback côté parent
   if (!slides || slides.length === 0) {
     return (
-      <Card className="bg-card border-border p-8 text-center">
-        <p className="text-muted-foreground">No slides available</p>
+      <Card className="bg-card border-border p-8">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <p className="text-muted-foreground">Aucune slide disponible. Utilisez le bouton ci-dessous pour exporter les données de la startup.</p>
+          <Button variant="default" size="sm" className="gap-2" onClick={onExport}>
+            <Download className="w-4 h-4" />
+            Exporter le rapport (texte)
+          </Button>
+        </div>
       </Card>
     );
   }
+
+  const safeIndex = Math.min(currentSlide, slides.length - 1);
+  const slide = slides[safeIndex];
 
   const goToPrevious = () => {
     setCurrentSlide((prev) => (prev === 0 ? slides.length - 1 : prev - 1));
@@ -54,8 +106,6 @@ export function SlideCarousel({ slides, startupName, onExport }: SlideCarouselPr
   const goToNext = () => {
     setCurrentSlide((prev) => (prev === slides.length - 1 ? 0 : prev + 1));
   };
-
-  const slide = slides[currentSlide] || { title: "", content: "", keyPoints: [] };
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -67,7 +117,7 @@ export function SlideCarousel({ slides, startupName, onExport }: SlideCarouselPr
             Due Diligence Report: {startupName}
           </h2>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Slide {currentSlide + 1} of {slides.length}
+            Slide {safeIndex + 1} of {slides.length}
           </p>
         </div>
         <Button variant="terminal" size="sm" onClick={onExport}>
@@ -81,13 +131,15 @@ export function SlideCarousel({ slides, startupName, onExport }: SlideCarouselPr
         {slides.map((_, index) => (
           <button
             key={index}
+            type="button"
             onClick={() => setCurrentSlide(index)}
             className={cn(
               "w-2.5 h-2.5 rounded-full transition-all duration-300",
-              index === currentSlide
+              index === safeIndex
                 ? "bg-primary w-8"
                 : "bg-muted hover:bg-muted-foreground/50"
             )}
+            aria-label={`Slide ${index + 1}`}
           />
         ))}
       </div>
@@ -98,12 +150,12 @@ export function SlideCarousel({ slides, startupName, onExport }: SlideCarouselPr
         <CardContent className="p-8 md:p-10 min-h-[650px]">
           <div className="flex items-start gap-6 mb-8">
             <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center flex-shrink-0 border border-primary/20">
-              <span className="text-3xl">{SLIDE_ICONS[currentSlide] || "📄"}</span>
+              <span className="text-3xl">{SLIDE_ICONS[safeIndex] || "📄"}</span>
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-2">
                 <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">
-                  Slide {currentSlide + 1} / {slides.length}
+                  Slide {safeIndex + 1} / {slides.length}
                 </p>
                 <div className="h-1 w-1 rounded-full bg-muted-foreground" />
                 <p className="text-xs text-muted-foreground">
@@ -147,7 +199,7 @@ export function SlideCarousel({ slides, startupName, onExport }: SlideCarouselPr
             )}
 
             {/* Metrics - Enhanced Layout (avant les sources) */}
-            {slide.metrics && Object.keys(slide.metrics).length > 0 && (
+            {slide.metrics && typeof slide.metrics === "object" && !Array.isArray(slide.metrics) && Object.keys(slide.metrics).length > 0 && (
               <div className="space-y-4">
                 <div className="flex items-center gap-2">
                   <div className="w-1 h-6 bg-accent rounded-full" />

@@ -146,7 +146,6 @@ export default function Analyser() {
       hasTrialRemaining={hasTrialRemaining}
       onLogin={handleLogin}
       onSignOut={signOut}
-      onUpgrade={() => setShowPaywall(true)}
     >
       <div className="max-w-2xl mx-auto">
         <Link

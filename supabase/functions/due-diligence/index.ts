@@ -444,7 +444,14 @@ Tu dois produire un rapport de due diligence COMPLET et PROFESSIONNEL sur l'entr
    - Pour investmentRecommendation : targetReturn, investmentHorizon, suggestedTicket doivent TOUJOURS être remplis. Si pas de donnée : "Non disponible" ou "Estimation : [fourchette ou description]".
    - keyMilestones : chaque élément doit avoir "milestone" (chaîne de caractères, pas un objet) et optionnellement "date". partnerships et awards : tableaux de CHAÎNES uniquement (ex: ["Partenaire A", "Prix X"]), jamais d'objets.
 
-3. FORMAT DU RAPPORT :
+3. EXHAUSTIVITÉ — AUCUNE SECTION MINIMALE :
+   - Chaque section doit être RÉELLEMENT REMPLIE. Interdire les sections vagues ou une seule ligne "Non disponible" sans effort d'analyse.
+   - MARCHÉ (market) : Analyse COMPLÈTE obligatoire : TAM/SAM/SOM avec chiffres et sources ou estimations (ex: "TAM estimé 50B$ en 2030, CAGR 8%"). Inclure : évolution du marché (croissance estimée, tendances), problèmes et défis du secteur, régulation, acteurs clés. Si données absentes : estimation explicite "Estimation (benchmarks secteur) : ...".
+   - ÉQUIPE (team) : Pour CHAQUE fondateur : name, role, background (parcours, formation, expériences passées), linkedin si trouvé. overview = synthèse de la complémentarité et de la capacité à exécuter. teamSize, culture, hiringTrends remplis (ou estimation). Ne pas laisser "Non disponible" sans avoir cherché dans les recherches.
+   - TRACTION (traction) : customers.count, customers.notable, customers.segments TOUJOURS remplis : soit données trouvées, soit "Estimation d'après contexte : [ex: clients miniers, institutions]" ou "Non identifié dans les recherches (secteur B2B early-stage)". partnerships et awards : listes remplies à partir des recherches ; si rien trouvé : ["Aucun partenariat identifié"] / ["Aucun prix identifié"] plutôt qu'un champ vide.
+   - Autres sections (product, competition, financials, risks, opportunities) : même exigence d'exhaustivité ; privilégier estimation + mention "estimation" plutôt que "Non disponible" seul.
+
+4. FORMAT DU RAPPORT :
    Tu dois retourner un objet JSON avec la structure suivante (tous les champs sont requis):
 
 {
@@ -468,11 +475,11 @@ Tu dois produire un rapport de due diligence COMPLET et PROFESSIONNEL sur l'entr
     "confidenceLevel": "high | medium | low"
   },
   "product": { "description": "...", "valueProposition": "...", "technology": "...", "patents": "...", "keyFeatures": [], "sources": [] },
-  "market": { "tam": "...", "sam": "...", "som": "...", "cagr": "...", "trends": [], "analysis": "...", "sources": [] },
+  "market": { "tam": "... (chiffre + évolution si dispo)", "sam": "...", "som": "...", "cagr": "...", "trends": ["tendance 1", "..."], "analysis": "Analyse complète : taille marché, croissance estimée, problèmes/défis du secteur, régulation, acteurs.", "sources": [] },
   "competition": { "landscape": "...", "competitors": [], "competitiveAdvantage": "...", "moat": "...", "sources": [] },
   "financials": { "fundingHistory": [], "totalFunding": "...", "latestValuation": "...", "metrics": {}, "sources": [] },
-  "team": { "overview": "...", "founders": [], "keyExecutives": [], "teamSize": "...", "culture": "...", "hiringTrends": "...", "sources": [] },
-  "traction": { "overview": "...", "keyMilestones": [ { "date": "YYYY ou texte", "milestone": "texte seul (obligatoire)" } ], "customers": { "count": "...", "notable": ["string", "string"], "segments": "..." }, "partnerships": ["string", "string"], "awards": ["string"], "sources": [] },
+  "team": { "overview": "Synthèse équipe et complémentarité des profils.", "founders": [{"name": "...", "role": "...", "background": "Parcours détaillé, formation, expériences.", "linkedin": "url ou vide"}], "keyExecutives": [], "teamSize": "...", "culture": "...", "hiringTrends": "...", "sources": [] },
+  "traction": { "overview": "...", "keyMilestones": [ { "date": "YYYY ou texte", "milestone": "texte seul (obligatoire)" } ], "customers": { "count": "Nombre ou estimation (ex: '10-50' / 'Estimation: early adopters')", "notable": ["client 1 si trouvé", "sinon estimation courte"], "segments": "Segments cibles (ex: minier, institutions)" }, "partnerships": ["nom partenaire ou 'Aucun identifié'"], "awards": ["prix ou 'Aucun identifié'"], "sources": [] },
   "risks": { "marketRisks": [], "executionRisks": [], "financialRisks": [], "competitiveRisks": [], "regulatoryRisks": [], "mitigations": [], "overallRiskLevel": "...", "sources": [] },
   "opportunities": { "growthOpportunities": [], "marketExpansion": "...", "productExpansion": "...", "strategicValue": "...", "sources": [] },
   "investmentRecommendation": { "recommendation": "...", "rationale": "...", "strengths": [], "weaknesses": [], "keyQuestions": [], "suggestedNextSteps": [], "targetReturn": "texte (obligatoire; si inconnu: 'Non disponible' ou 'Estimation: ...')", "investmentHorizon": "texte (obligatoire)", "suggestedTicket": "texte (obligatoire)" },
@@ -507,8 +514,8 @@ Réponds UNIQUEMENT avec du JSON valide.`;
 CONTEXTE :
 ${contextExtract}
 
-TÂCHE : Identifie 2 à 4 thèmes où les infos sont INSUFFISANTES (ex: équipe/fondateurs LinkedIn, financements, métriques, concurrence). Pour chaque thème, propose 1 à 2 requêtes de recherche web PRÉCISES, en ANGLAIS, courtes ; inclure le nom de l'entreprise si pertinent (ex: "${companyName} founder LinkedIn").
-Réponds UNIQUEMENT par un JSON valide : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 4 gaps, 2 queries par gap. Si suffisant : {"gaps":[]}.`;
+TÂCHE : Identifie 2 à 4 thèmes où les infos sont INSUFFISANTES pour remplir le rapport. Priorité : (1) équipe/fondateurs (LinkedIn, parcours, formation), (2) marché (TAM/SAM, évolution, tendances, acteurs), (3) clients/traction (customers, partenariats, chiffres), (4) financements/métriques. Pour chaque thème, 1 à 2 requêtes web en ANGLAIS, courtes ; inclure "${companyName}" (ex: "${companyName} founder LinkedIn", "${companyName} market size TAM").
+Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 4 gaps, 2 queries par gap. Si suffisant : {"gaps":[]}.`;
 
         const gapBody = AI_PROVIDER === "vertex"
           ? { contents: [{ role: "user", parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 600 } }
@@ -574,13 +581,14 @@ ${enrichedAnalyzeContext}
 
 ⚠️ RAPPELS CRITIQUES :
 1. NE METS AUCUNE URL dans le texte. Toutes les URLs vont UNIQUEMENT dans "sources" et "allSources".
-2. allSources doit contenir 15–25 entrées minimum avec name, url, type, relevance.
-3. N'invente AUCUNE URL. Pour les données manquantes : indique "Non disponible" ou fournis une estimation en la préfixant par "Estimation :" ou "Estimation (secteur comparable) :".
-4. Remplis TOUJOURS targetReturn, investmentHorizon, suggestedTicket (au minimum "Non disponible" si aucune donnée).
-5. keyMilestones[].milestone, partnerships[], awards[] : uniquement des chaînes de caractères, jamais d'objets.
-6. Équipe / fondateurs : remplis au maximum à partir des recherches ; sinon "Non disponible" ou estimation explicitement indiquée.
-7. Sois exhaustif et professionnel.
-${enrichedAnalyzeContext !== analyzeContext ? "\n8. Utilise OBLIGATOIREMENT la section « RECHERCHES COMPLÉMENTAIRES » pour compléter les données manquantes." : ""}
+2. allSources : 15–25 entrées minimum. N'invente AUCUNE URL.
+3. Pour toute donnée manquante : privilégier "Estimation (secteur / benchmarks) : ..." plutôt que "Non disponible" seul.
+4. MARCHÉ : fournis une analyse complète (TAM/SAM/SOM, évolution, CAGR, tendances, problèmes du secteur, régulation). Jamais une ligne vide.
+5. ÉQUIPE : chaque fondateur avec name, role, background détaillé (formation, parcours), linkedin. overview = complémentarité et capacité d'exécution.
+6. TRACTION : customers.count, notable, segments TOUJOURS remplis (données ou "Estimation d'après contexte : ..."). partnerships et awards en listes (ou ["Aucun identifié"] si rien trouvé).
+7. keyMilestones[].milestone, partnerships[], awards[] : chaînes uniquement. targetReturn, investmentHorizon, suggestedTicket toujours remplis.
+8. Sois EXHAUSTIF : aucune section ne doit rester superficielle ou vide.
+${enrichedAnalyzeContext !== analyzeContext ? "\n9. Utilise OBLIGATOIREMENT la section « RECHERCHES COMPLÉMENTAIRES » pour compléter les données manquantes." : ""}
 
 Réponds UNIQUEMENT avec du JSON valide.`;
 

@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { BarChart3, Crown, LogOut, User, Sparkles, Search, FileSearch } from "lucide-react";
+import { BarChart3, LogOut, User, Sparkles, Search, FileSearch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -10,7 +10,6 @@ interface AppLayoutProps {
   hasTrialRemaining: boolean;
   onLogin: () => void;
   onSignOut: () => void;
-  onUpgrade: () => void;
 }
 
 export function AppLayout({
@@ -20,7 +19,6 @@ export function AppLayout({
   hasTrialRemaining,
   onLogin,
   onSignOut,
-  onUpgrade,
 }: AppLayoutProps) {
   const { pathname } = useLocation();
   const isAnalyser = pathname === "/analyser" || pathname === "/analyse";
@@ -109,10 +107,6 @@ export function AppLayout({
                   Connexion
                 </Button>
               )}
-              <Button size="sm" className="gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground glow-ai-vc" onClick={onUpgrade}>
-                <Crown className="w-4 h-4" />
-                <span className="hidden sm:inline">Upgrade</span>
-              </Button>
             </div>
           </div>
         </div>

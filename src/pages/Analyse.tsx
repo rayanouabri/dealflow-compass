@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, AlertCircle, RefreshCcw } from "lucide-react";
+import { ArrowLeft, AlertCircle, RefreshCcw, Download } from "lucide-react";
 
 interface Slide {
   title: string;
@@ -40,6 +40,47 @@ interface Startup {
   businessModel?: string;
   competitors?: string;
   moat?: string;
+}
+
+/** Génère un rapport de secours (slides) à partir des données startup quand l'IA ne renvoie pas de slides. Accepte camelCase ou snake_case (API). */
+function buildFallbackSlidesFromStartup(startup: Startup | Record<string, unknown>): Slide[] {
+  const s = startup as Record<string, unknown>;
+  const name = String(s?.name ?? s?.companyName ?? "Startup").trim() || "Startup";
+  const tagline = String(s?.tagline ?? s?.tag_line ?? "").trim();
+  const sector = String(s?.sector ?? "").trim();
+  const stage = String(s?.stage ?? "").trim();
+  const location = String(s?.location ?? s?.headquarters ?? "").trim();
+  const founded = s?.founded != null ? String(s.founded) : "";
+  const teamSize = s?.teamSize ?? s?.team_size;
+  const problem = String(s?.problem ?? "").trim();
+  const solution = String(s?.solution ?? "").trim();
+  const businessModel = String(s?.businessModel ?? s?.business_model ?? "").trim();
+  const competitors = String(s?.competitors ?? "").trim();
+  const moat = String(s?.moat ?? "").trim();
+  const safeTeam = teamSize != null && String(teamSize) !== "undefined" && String(teamSize).trim() !== "" ? teamSize : null;
+
+  const slides: Slide[] = [];
+  slides.push({
+    title: `${name} — Résumé`,
+    content: [tagline, sector && `Secteur : ${sector}`, stage && `Stage : ${stage}`, location && `Localisation : ${location}`, founded && `Fondée : ${founded}`, safeTeam != null ? `Effectifs : ${safeTeam}` : ""].filter(Boolean).join("\n\n") || "Aucune donnée supplémentaire.",
+    keyPoints: tagline ? [tagline] : [],
+    metrics: safeTeam != null ? { effectifs: safeTeam } : undefined,
+  });
+  if (problem || solution) {
+    slides.push({
+      title: "Problème & Solution",
+      content: [problem && `Problème : ${problem}`, solution && `Solution : ${solution}`].filter(Boolean).join("\n\n"),
+      keyPoints: [problem, solution].filter(Boolean),
+    });
+  }
+  if (businessModel || competitors || moat) {
+    slides.push({
+      title: "Modèle & Concurrence",
+      content: [businessModel && `Modèle : ${businessModel}`, competitors && `Concurrence : ${competitors}`, moat && `Moat : ${moat}`].filter(Boolean).join("\n\n"),
+      keyPoints: [businessModel, competitors, moat].filter(Boolean),
+    });
+  }
+  return slides;
 }
 
 interface InvestmentThesis {
@@ -229,7 +270,7 @@ export default function Analyse() {
       } catch (e) {
         let msg = e instanceof Error ? e.message : "Échec de l'analyse.";
         // Failed to fetch / CORS souvent dû au 546 côté serveur
-        if (typeof msg === "string" && (msg.toLowerCase().includes("failed to fetch") || msg.toLowerCase().includes("network") || msg.toLowerCase().includes("abort"))) {
+        if (typeof msg === "string" && (msg.toLowerCase().includes("failed to fetch") || msg.toLowerCase().includes("network") || msg.toLowerCase().includes("abort") || msg.toLowerCase().includes("cors"))) {
           msg = "Impossible de joindre le serveur (connexion ou timeout). Cause fréquente : limite serveur (546).\n\n• Réessayez dans 1–2 minutes.\n• Utilisez l’option « 1 startup » pour réduire la charge.\n• La qualité reste identique pour une seule startup.";
         }
         setErrorMessage(msg);
@@ -273,10 +314,12 @@ export default function Analyse() {
   const handleExport = () => {
     if (!result) return;
     const startups = result.startups || (result.startup ? [result.startup] : []);
-    const reports = result.dueDiligenceReports || (result.dueDiligenceReport ? [result.dueDiligenceReport] : []) || (result.pitchDeck ? [result.pitchDeck] : []);
+    const reportsRaw = result.dueDiligenceReports ?? result.dueDiligenceReport ?? result.pitchDeck;
+    const reportsArr = Array.isArray(reportsRaw) ? reportsRaw : reportsRaw ? [reportsRaw] : [];
     const current = startups[selectedStartupIndex] || startups[0];
-    const reportData = reports[selectedStartupIndex] || reports[0];
-    const slides: Slide[] = Array.isArray(reportData) ? reportData : reportData ? [reportData] : [];
+    const reportData = reportsArr[selectedStartupIndex] ?? reportsArr[0];
+    let slides: Slide[] = Array.isArray(reportData) ? reportData : reportData ? [reportData] : [];
+    if (slides.length === 0 && current) slides = buildFallbackSlidesFromStartup(current);
     if (!current) return;
 
     const content = slides
@@ -309,7 +352,6 @@ export default function Analyse() {
           hasTrialRemaining={hasTrialRemaining}
           onLogin={handleLogin}
           onSignOut={signOut}
-          onUpgrade={() => setShowPaywall(true)}
         >
           <AnalysisLoading />
         </AppLayout>
@@ -335,7 +377,6 @@ export default function Analyse() {
           hasTrialRemaining={hasTrialRemaining}
           onLogin={handleLogin}
           onSignOut={signOut}
-          onUpgrade={() => setShowPaywall(true)}
         >
           <div className="max-w-2xl mx-auto">
             <Link
@@ -394,10 +435,31 @@ export default function Analyse() {
 
   const startups = Array.isArray(result.startups) ? result.startups : (result.startup ? [result.startup] : []);
   const reportsRaw = result.dueDiligenceReports ?? result.dueDiligenceReport ?? result.pitchDeck;
-  const reports = Array.isArray(reportsRaw) ? reportsRaw : (reportsRaw ? [reportsRaw] : []);
-  const currentStartup = startups[selectedStartupIndex];
-  const currentReportData = reports[selectedStartupIndex] ?? reports[0];
-  const currentReport: Slide[] = Array.isArray(currentReportData) ? currentReportData : (currentReportData ? [currentReportData] : []);
+
+  // Normaliser : si c'est un tableau "plat" de slides (chaque élément a title/content), traiter comme un seul rapport
+  const reports = (() => {
+    if (!reportsRaw) return [];
+    const arr = Array.isArray(reportsRaw) ? reportsRaw : [reportsRaw];
+    if (arr.length === 0) return [];
+    const first = arr[0];
+    const isFlatSlides =
+      first &&
+      typeof first === "object" &&
+      !Array.isArray(first) &&
+      ("title" in first || "content" in first);
+    if (isFlatSlides) return [arr as Slide[]];
+    return arr as Slide[][];
+  })();
+
+  const selectedIndex = Math.min(Math.max(0, selectedStartupIndex), Math.max(0, startups.length - 1));
+  const currentStartup = startups[selectedIndex] ?? startups[0];
+  const currentReportData = reports[selectedIndex] ?? reports[0];
+  const currentReport: Slide[] = Array.isArray(currentReportData)
+    ? currentReportData
+    : currentReportData
+      ? [currentReportData as Slide]
+      : [];
+  const reportToShow = currentReport.length > 0 ? currentReport : (currentStartup ? buildFallbackSlidesFromStartup(currentStartup) : []);
 
   const rawThesis = result.investmentThesis;
   const thesis = {
@@ -415,7 +477,6 @@ export default function Analyse() {
       hasTrialRemaining={hasTrialRemaining}
       onLogin={handleLogin}
       onSignOut={signOut}
-      onUpgrade={() => setShowPaywall(true)}
     >
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 max-w-full overflow-x-hidden" data-page="analyse">
         <nav className="lg:col-span-12 flex items-center gap-2 text-sm text-foreground/70 mb-4 min-w-0 overflow-x-hidden">
@@ -479,6 +540,14 @@ export default function Analyse() {
           {!currentStartup ? (
             <p className="text-foreground/70">Aucune startup à afficher.</p>
           ) : (
+            <>
+            <div className="flex flex-wrap items-center justify-between gap-3 py-3 px-4 rounded-xl bg-primary/10 border border-primary/30 mb-4">
+              <span className="text-sm font-medium text-foreground">Exporter l&apos;analyse (rapport en texte)</span>
+              <Button variant="default" size="sm" onClick={handleExport} className="gap-2 shrink-0">
+                <Download className="w-4 h-4" />
+                Exporter en .md
+              </Button>
+            </div>
             <Tabs defaultValue="report" className="w-full max-w-full overflow-x-hidden">
               <TabsList className="grid w-full grid-cols-2 mb-6 h-12 rounded-xl bg-gray-900/50 backdrop-blur-sm border border-gray-700 p-1 shadow-lg">
                 <TabsTrigger 
@@ -496,7 +565,7 @@ export default function Analyse() {
               </TabsList>
               <TabsContent value="report" className="mt-0 max-w-full overflow-x-hidden">
                 <SlideCarousel
-                  slides={currentReport}
+                  slides={reportToShow}
                   startupName={currentStartup.name}
                   onExport={handleExport}
                 />
@@ -505,7 +574,7 @@ export default function Analyse() {
                 <div className="rounded-xl border border-primary/40 bg-card/80 backdrop-blur-sm overflow-hidden max-w-full w-full shadow-lg">
                   <div className="h-[580px] overflow-hidden w-full">
                     <AIQAChat
-                      startupData={{ ...currentStartup, dueDiligenceReport: currentReport }}
+                      startupData={{ ...currentStartup, dueDiligenceReport: reportToShow }}
                       investmentThesis={thesis}
                       fundName={fundName}
                     />
@@ -513,6 +582,7 @@ export default function Analyse() {
                 </div>
               </TabsContent>
             </Tabs>
+            </>
           )}
         </div>
       </div>
