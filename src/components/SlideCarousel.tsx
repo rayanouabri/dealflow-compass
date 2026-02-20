@@ -166,17 +166,20 @@ export function SlideCarousel({ slides: rawSlides, startupName, onExport }: Slid
             </div>
           </div>
 
-          <div className="space-y-6">
+          <div className="space-y-6 min-h-[280px]">
             {/* Main Content - Enriched */}
             <div className="prose prose-sm dark:prose-invert max-w-none">
               <div className="text-secondary-foreground leading-relaxed whitespace-pre-line text-base space-y-4">
-                {(slide.content || "").split('\n\n').map((paragraph, i) => (
-                  paragraph.trim() && (
+                {(slide.content || "").split(/\n\n+/).map((paragraph, i) => (
+                  paragraph.trim() ? (
                     <p key={i} className="mb-4 last:mb-0">
                       {paragraph.trim()}
                     </p>
-                  )
+                  ) : null
                 ))}
+                {(!slide.content || slide.content.trim() === "") && (
+                  <p className="text-muted-foreground italic">Aucun contenu détaillé pour cette slide.</p>
+                )}
               </div>
             </div>
 

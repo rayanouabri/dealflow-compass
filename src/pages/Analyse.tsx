@@ -27,6 +27,24 @@ interface Slide {
   metrics?: Record<string, string | number>;
 }
 
+/** Normalise une slide API (snake_case ou format brut) vers le format Slide attendu par le carousel. */
+function normalizeSlide(raw: unknown): Slide {
+  if (!raw || typeof raw !== "object") return { title: "", content: "", keyPoints: [] };
+  const r = raw as Record<string, unknown>;
+  const title = String(r.title ?? r.Title ?? "").trim();
+  const content = String(r.content ?? r.Content ?? "").trim();
+  const keyPointsRaw = r.keyPoints ?? r.key_points;
+  const keyPoints = Array.isArray(keyPointsRaw)
+    ? keyPointsRaw.map((p) => (typeof p === "string" ? p : String(p ?? ""))).filter(Boolean)
+    : [];
+  const metricsRaw = r.metrics ?? r.Metrics;
+  const metrics =
+    metricsRaw && typeof metricsRaw === "object" && !Array.isArray(metricsRaw)
+      ? (metricsRaw as Record<string, string | number>)
+      : undefined;
+  return { title, content, keyPoints, metrics };
+}
+
 interface Startup {
   name: string;
   tagline: string;
@@ -46,40 +64,34 @@ interface Startup {
 function buildFallbackSlidesFromStartup(startup: Startup | Record<string, unknown>): Slide[] {
   const s = startup as Record<string, unknown>;
   const name = String(s?.name ?? s?.companyName ?? "Startup").trim() || "Startup";
-  const tagline = String(s?.tagline ?? s?.tag_line ?? "").trim();
-  const sector = String(s?.sector ?? "").trim();
+  const tagline = String(s?.tagline ?? s?.tag_line ?? s?.description ?? "").trim();
+  const sector = String(s?.sector ?? s?.category ?? "").trim();
   const stage = String(s?.stage ?? "").trim();
-  const location = String(s?.location ?? s?.headquarters ?? "").trim();
+  const location = String(s?.location ?? s?.headquarters ?? s?.city ?? "").trim();
   const founded = s?.founded != null ? String(s.founded) : "";
   const teamSize = s?.teamSize ?? s?.team_size;
-  const problem = String(s?.problem ?? "").trim();
-  const solution = String(s?.solution ?? "").trim();
+  const problem = String(s?.problem ?? s?.problemStatement ?? s?.problem_description ?? "").trim();
+  const solution = String(s?.solution ?? s?.solutionDescription ?? s?.valueProposition ?? s?.value_proposition ?? "").trim();
   const businessModel = String(s?.businessModel ?? s?.business_model ?? "").trim();
   const competitors = String(s?.competitors ?? "").trim();
   const moat = String(s?.moat ?? "").trim();
   const safeTeam = teamSize != null && String(teamSize) !== "undefined" && String(teamSize).trim() !== "" ? teamSize : null;
 
-  const slides: Slide[] = [];
-  slides.push({
-    title: `${name} — Résumé`,
-    content: [tagline, sector && `Secteur : ${sector}`, stage && `Stage : ${stage}`, location && `Localisation : ${location}`, founded && `Fondée : ${founded}`, safeTeam != null ? `Effectifs : ${safeTeam}` : ""].filter(Boolean).join("\n\n") || "Aucune donnée supplémentaire.",
-    keyPoints: tagline ? [tagline] : [],
-    metrics: safeTeam != null ? { effectifs: safeTeam } : undefined,
-  });
-  if (problem || solution) {
-    slides.push({
-      title: "Problème & Solution",
-      content: [problem && `Problème : ${problem}`, solution && `Solution : ${solution}`].filter(Boolean).join("\n\n"),
-      keyPoints: [problem, solution].filter(Boolean),
-    });
-  }
-  if (businessModel || competitors || moat) {
-    slides.push({
-      title: "Modèle & Concurrence",
-      content: [businessModel && `Modèle : ${businessModel}`, competitors && `Concurrence : ${competitors}`, moat && `Moat : ${moat}`].filter(Boolean).join("\n\n"),
-      keyPoints: [businessModel, competitors, moat].filter(Boolean),
-    });
-  }
+  const na = "Non disponible (données non renvoyées par l'IA).";
+  const slides: Slide[] = [
+    {
+    title: "Executive Summary",
+    content: ([name && `Startup : ${name}`, tagline && tagline, sector && `Secteur : ${sector}`, stage && `Stage : ${stage}`, location && `Localisation : ${location}`, founded && `Fondée : ${founded}`].filter(Boolean).join("\n\n") || na),
+    keyPoints: [tagline, sector, stage].filter(Boolean).slice(0, 5),
+    metrics: safeTeam != null ? { teamSize: safeTeam } : undefined,
+  },
+  { title: "Market Analysis", content: sector ? `Secteur : ${sector}. ${stage ? `Stage : ${stage}.` : ""} Analyse détaillée non disponible (rapport IA incomplet).` : na, keyPoints: sector ? [sector, stage].filter(Boolean) : [] },
+  { title: "Product & Technology", content: [problem && `Problème : ${problem}`, solution && `Solution : ${solution}`].filter(Boolean).join("\n\n") || na, keyPoints: [problem, solution].filter(Boolean).slice(0, 4) },
+  { title: "Business Metrics & Traction", content: businessModel ? `Modèle : ${businessModel}. Métriques détaillées non disponibles (rapport IA incomplet).` : na, keyPoints: businessModel ? [businessModel] : [], metrics: safeTeam != null ? { teamSize: safeTeam } : undefined },
+  { title: "Competitive Analysis", content: [competitors && `Concurrence : ${competitors}`, moat && `Moat : ${moat}`].filter(Boolean).join("\n\n") || na, keyPoints: [competitors, moat].filter(Boolean) },
+  { title: "Team Assessment", content: safeTeam != null ? `Taille équipe : ${safeTeam}. Détails fondateurs non disponibles (rapport IA incomplet).` : na, keyPoints: safeTeam != null ? [`Effectifs : ${safeTeam}`] : [], metrics: safeTeam != null ? { teamSize: safeTeam } : undefined },
+  { title: "Investment Recommendation", content: [tagline, sector && `Secteur : ${sector}`, "Recommandation détaillée non disponible (rapport IA incomplet)."].filter(Boolean).join("\n\n") || na, keyPoints: [tagline].filter(Boolean) },
+  ];
   return slides;
 }
 
@@ -318,7 +330,7 @@ export default function Analyse() {
     const reportsArr = Array.isArray(reportsRaw) ? reportsRaw : reportsRaw ? [reportsRaw] : [];
     const current = startups[selectedStartupIndex] || startups[0];
     const reportData = reportsArr[selectedStartupIndex] ?? reportsArr[0];
-    let slides: Slide[] = Array.isArray(reportData) ? reportData : reportData ? [reportData] : [];
+    let slides: Slide[] = Array.isArray(reportData) ? reportData.map(normalizeSlide) : reportData ? [normalizeSlide(reportData)] : [];
     if (slides.length === 0 && current) slides = buildFallbackSlidesFromStartup(current);
     if (!current) return;
 
@@ -455,9 +467,9 @@ export default function Analyse() {
   const currentStartup = startups[selectedIndex] ?? startups[0];
   const currentReportData = reports[selectedIndex] ?? reports[0];
   const currentReport: Slide[] = Array.isArray(currentReportData)
-    ? currentReportData
+    ? currentReportData.map(normalizeSlide)
     : currentReportData
-      ? [currentReportData as Slide]
+      ? [normalizeSlide(currentReportData)]
       : [];
   const reportToShow = currentReport.length > 0 ? currentReport : (currentStartup ? buildFallbackSlidesFromStartup(currentStartup) : []);
 
