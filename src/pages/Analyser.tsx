@@ -12,7 +12,7 @@ import { PaywallModal } from "@/components/PaywallModal";
 import { useTrial } from "@/hooks/useTrial";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Sparkles, Building2, FileEdit } from "lucide-react";
+import { ArrowLeft, Sparkles, Building2, FileEdit, Zap, Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
 
 interface HistoryItem {
@@ -40,6 +40,7 @@ export default function Analyser() {
   const [showAuthDialog, setShowAuthDialog] = useState(false);
   const [authView, setAuthView] = useState<"login" | "signup">("login");
   const [showPaywall, setShowPaywall] = useState(false);
+  const [pipelineLoading, setPipelineLoading] = useState(false);
 
   useEffect(() => {
     if (!authLoading && user) fetchHistory();
@@ -135,6 +136,59 @@ export default function Analyser() {
   const handleLogin = () => {
     setAuthView("login");
     setShowAuthDialog(true);
+  };
+
+  const handlePipeline = async () => {
+    if (!hasTrialRemaining) {
+      if (!user) {
+        setAuthView("signup");
+        setShowAuthDialog(true);
+        toast({ title: "Inscription requise", description: "Créez un compte pour continuer.", variant: "destructive" });
+      } else setShowPaywall(true);
+      return;
+    }
+    if (!useCustomThesis && !fundName.trim()) {
+      toast({ title: "Fond requis", description: "Saisissez un fond ou utilisez une thèse personnalisée.", variant: "destructive" });
+      return;
+    }
+
+    setPipelineLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+      const resp = await fetch(`${supabaseUrl}/functions/v1/pipeline-orchestrator`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session?.access_token || supabaseKey}`,
+        },
+        body: JSON.stringify({
+          action: "start",
+          fundName: useCustomThesis ? undefined : fundName.trim() || undefined,
+          customThesis: useCustomThesis ? customThesis : undefined,
+        }),
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || `Erreur ${resp.status}`);
+      }
+
+      const { pipelineId } = await resp.json();
+      if (!pipelineId) throw new Error("Pas de pipelineId retourné");
+
+      navigate(`/pipeline?id=${pipelineId}`);
+    } catch (err) {
+      toast({
+        title: "Erreur pipeline",
+        description: err instanceof Error ? err.message : "Une erreur est survenue",
+        variant: "destructive",
+      });
+    } finally {
+      setPipelineLoading(false);
+    }
   };
 
   if (authLoading) return null;
@@ -242,6 +296,22 @@ export default function Analyser() {
             disabled={!hasTrialRemaining || (!useCustomThesis && !fundName.trim())}
           >
             Lancer l&apos;analyse — {params.numberOfStartups || 1} startup{(params.numberOfStartups || 1) > 1 ? "s" : ""}
+          </Button>
+
+          <Button
+            type="button"
+            size="lg"
+            variant="outline"
+            className="w-full h-12 text-sm font-medium border-primary/50 hover:border-primary hover:bg-primary/10 text-primary gap-2"
+            onClick={handlePipeline}
+            disabled={pipelineLoading || !hasTrialRemaining || (!useCustomThesis && !fundName.trim())}
+          >
+            {pipelineLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Zap className="w-4 h-4" />
+            )}
+            Auto-Pick + Due Diligence (1 clic)
           </Button>
         </div>
 
