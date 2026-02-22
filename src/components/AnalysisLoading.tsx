@@ -4,9 +4,9 @@ import { useState, useEffect } from "react";
 
 const STEPS = [
   { icon: Search, label: "Recherche thèse et marché", color: "text-blue-400" },
-  { icon: BarChart3, label: "Sourcing startups (Brave)", color: "text-purple-400" },
-  { icon: FileCheck, label: "Due diligence", color: "text-green-400" },
-  { icon: Sparkles, label: "Rapport final", color: "text-yellow-400" },
+  { icon: BarChart3, label: "Sourcing startups", color: "text-purple-400" },
+  { icon: Sparkles, label: "Sélection meilleure startup", color: "text-yellow-400" },
+  { icon: FileCheck, label: "Transfert → Due Diligence", color: "text-green-400" },
 ];
 
 export function AnalysisLoading() {

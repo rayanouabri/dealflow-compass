@@ -1215,6 +1215,111 @@ ${extraContext2}`;
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
+    // ========== PHASE PICK : choisit la meilleure startup parmi les résultats de recherche ==========
+    // Utilisé par le sourcing pour passer le relais à l'outil Due Diligence
+    if (phase === "pick" && jobId) {
+      if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+        return new Response(JSON.stringify({ error: "Configuration Supabase manquante (phase pick)" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+      }
+      const jobRes = await fetch(`${SUPABASE_URL}/rest/v1/sourcing_jobs?id=eq.${encodeURIComponent(jobId)}&select=*`, {
+        headers: { "apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
+      });
+      if (!jobRes.ok) {
+        return new Response(JSON.stringify({ error: "Erreur lecture job (phase pick)" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+      }
+      const jobListP = await jobRes.json();
+      const jobP = Array.isArray(jobListP) ? jobListP[0] : jobListP;
+      if (!jobP || !jobP.search_context) {
+        return new Response(JSON.stringify({ error: "Job introuvable ou contexte manquant (phase pick)" }), { status: 404, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+      }
+      const ctxP = jobP.search_context as any;
+      // Utilise les résultats Brave directement (stockés depuis le commit fix) — fallback sur systemPrompt si absent
+      let pickContext: string = ctxP.startupSearchContext || "";
+      if (!pickContext && ctxP.systemPrompt) {
+        // Anciens jobs : extraire la section des résultats depuis systemPrompt
+        const marker = "=== STARTUPS POTENTIELLES TROUVÉES";
+        const idx = ctxP.systemPrompt.indexOf(marker);
+        if (idx !== -1) {
+          pickContext = ctxP.systemPrompt.slice(idx, idx + 6000);
+        } else {
+          // Dernier recours : prendre la fin du systemPrompt où les résultats se trouvent
+          pickContext = ctxP.systemPrompt.slice(-6000);
+        }
+      }
+      if (!pickContext) {
+        return new Response(JSON.stringify({ error: "Contexte de sourcing vide — relancer une analyse" }), { status: 400, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+      }
+      const AI_PROVIDER_P = (Deno.env.get("AI_PROVIDER") || "gemini").toLowerCase();
+      const GEMINI_API_KEY_P = Deno.env.get("GEMINI_KEY_2") || Deno.env.get("GEMINI_API_KEY");
+      const GEMINI_MODEL_P = Deno.env.get("GEMINI_MODEL") || "gemini-2.0-flash";
+      const VERTEX_AI_PROJECT_P = Deno.env.get("VERTEX_AI_PROJECT_ID");
+      const VERTEX_AI_CREDENTIALS_P = Deno.env.get("VERTEX_AI_CREDENTIALS");
+      const VERTEX_AI_MODEL_P = Deno.env.get("VERTEX_AI_MODEL") || "gemini-2.0-flash";
+      const VERTEX_AI_LOCATION_P = Deno.env.get("VERTEX_AI_LOCATION") || "us-central1";
+
+      let aiUrlP: string;
+      let aiHeadersP: Record<string, string>;
+      if (AI_PROVIDER_P === "vertex") {
+        if (!VERTEX_AI_PROJECT_P || !VERTEX_AI_CREDENTIALS_P) {
+          return new Response(JSON.stringify({ error: "Vertex AI non configuré (phase pick)" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+        }
+        const credsP = typeof VERTEX_AI_CREDENTIALS_P === "string" ? JSON.parse(VERTEX_AI_CREDENTIALS_P) : VERTEX_AI_CREDENTIALS_P;
+        const b64P = (d: Uint8Array | string) => { const b = typeof d === "string" ? new TextEncoder().encode(d) : d; return btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, ""); };
+        const nowP = Math.floor(Date.now() / 1000);
+        const msgP = `${b64P(JSON.stringify({ alg: "RS256", typ: "JWT" }))}.${b64P(JSON.stringify({ iss: credsP.client_email, sub: credsP.client_email, aud: "https://oauth2.googleapis.com/token", iat: nowP, exp: nowP + 3600, scope: "https://www.googleapis.com/auth/cloud-platform" }))}`;
+        const pemP = credsP.private_key.replace(/\\n/g, "\n").replace(/-----BEGIN PRIVATE KEY-----/, "").replace(/-----END PRIVATE KEY-----/, "").replace(/\s/g, "");
+        const keyBufP = Uint8Array.from(atob(pemP), (c: string) => c.charCodeAt(0));
+        const privKeyP = await crypto.subtle.importKey("pkcs8", keyBufP, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
+        const sigP = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", privKeyP, new TextEncoder().encode(msgP));
+        const jwtP = `${msgP}.${b64P(new Uint8Array(sigP))}`;
+        const trP = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: jwtP }) });
+        if (!trP.ok) return new Response(JSON.stringify({ error: "Vertex token failed (phase pick)" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+        const tokenP = (await trP.json()).access_token;
+        aiUrlP = `https://${VERTEX_AI_LOCATION_P}-aiplatform.googleapis.com/v1/projects/${VERTEX_AI_PROJECT_P}/locations/${VERTEX_AI_LOCATION_P}/publishers/google/models/${VERTEX_AI_MODEL_P}:generateContent`;
+        aiHeadersP = { "Content-Type": "application/json", "Authorization": `Bearer ${tokenP}` };
+      } else {
+        if (!GEMINI_API_KEY_P) return new Response(JSON.stringify({ error: "GEMINI_API_KEY requis (phase pick)" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+        aiUrlP = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL_P}:generateContent?key=${GEMINI_API_KEY_P}`;
+        aiHeadersP = { "Content-Type": "application/json" };
+      }
+
+      // Prompt court : choisir la meilleure startup parmi les résultats de sourcing
+      // MAX_PICK_CONTEXT_LENGTH = 8000 : résultats Brave (titre + description + URL), suffisant pour identifier une startup
+      const MAX_PICK_CONTEXT_LENGTH = 8000;
+      const pickPrompt = `Tu es un analyste VC senior. À partir des résultats de sourcing ci-dessous (Brave Search), identifie la MEILLEURE startup RÉELLE à analyser en due diligence.
+Critères : startup avec le plus de signaux positifs (funding, traction, team, marché), URL officielle trouvée dans les résultats.
+Réponds UNIQUEMENT avec ce JSON (sans markdown) :
+{"name":"Nom exact de la startup","website":"https://... (URL officielle trouvée dans les résultats, sinon chaîne vide)","description":"1-2 phrases résumant ce que fait la startup"}
+
+RÉSULTATS DE SOURCING (Brave Search) :
+${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
+
+      const pickBody = AI_PROVIDER_P === "vertex"
+        ? { contents: [{ role: "user", parts: [{ text: pickPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 300 } }
+        : { contents: [{ parts: [{ text: pickPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 300, responseMimeType: "application/json" as const } };
+
+      const pickRes = await fetch(aiUrlP, { method: "POST", headers: aiHeadersP, body: JSON.stringify(pickBody) });
+      if (!pickRes.ok) {
+        return new Response(JSON.stringify({ error: `IA indisponible pour phase pick (${pickRes.status})` }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+      }
+      const pickData = await pickRes.json();
+      const pickText: string = pickData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      let startup = { name: "", website: "", description: "" };
+      try {
+        const jsonStart = pickText.indexOf("{");
+        const jsonEnd = pickText.lastIndexOf("}");
+        if (jsonStart !== -1 && jsonEnd !== -1) {
+          startup = JSON.parse(pickText.slice(jsonStart, jsonEnd + 1));
+        }
+      } catch (parseErr) {
+        console.error("[pick] Erreur parsing JSON IA:", parseErr, "Réponse brute:", pickText.slice(0, 200));
+      }
+      if (!startup.name) {
+        return new Response(JSON.stringify({ error: "Impossible de sélectionner une startup (réponse IA invalide)" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ startup }), { headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+    }
+
     // ========== PHASE SEARCH_FUND : uniquement recherches fonds, crée le job ==========
     if (phase === "search_fund") {
       if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -2234,7 +2339,7 @@ IMPORTANT :
         method: "PATCH",
         headers: { "apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          search_context: { systemPrompt, userPrompt, fundSources, marketSources: marketData.marketSources || [] },
+          search_context: { systemPrompt, userPrompt, fundSources, marketSources: marketData.marketSources || [], startupSearchContext },
           search_results_count: finalUnique?.length ?? 0,
           status: "search_done",
           updated_at: new Date().toISOString(),
