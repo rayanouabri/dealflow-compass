@@ -1249,13 +1249,16 @@ ${extraContext2}`;
       if (!pickContext) {
         return new Response(JSON.stringify({ error: "Contexte de sourcing vide — relancer une analyse" }), { status: 400, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
       }
-      const AI_PROVIDER_P = (Deno.env.get("AI_PROVIDER") || "gemini").toLowerCase();
+      // Phase pick is lightweight — always prefer Gemini direct API (no OAuth overhead)
+      // Falls back to Vertex only if no Gemini key is available
       const GEMINI_API_KEY_P = Deno.env.get("GEMINI_KEY_2") || Deno.env.get("GEMINI_API_KEY");
       const GEMINI_MODEL_P = Deno.env.get("GEMINI_MODEL") || "gemini-2.0-flash";
+      const AI_PROVIDER_P = GEMINI_API_KEY_P ? "gemini" : (Deno.env.get("AI_PROVIDER") || "gemini").toLowerCase();
       const VERTEX_AI_PROJECT_P = Deno.env.get("VERTEX_AI_PROJECT_ID");
       const VERTEX_AI_CREDENTIALS_P = Deno.env.get("VERTEX_AI_CREDENTIALS");
       const VERTEX_AI_MODEL_P = Deno.env.get("VERTEX_AI_MODEL") || "gemini-2.0-flash";
       const VERTEX_AI_LOCATION_P = Deno.env.get("VERTEX_AI_LOCATION") || "us-central1";
+      console.log(`[pick] AI_PROVIDER resolved to: ${AI_PROVIDER_P}, GEMINI_KEY present: ${!!GEMINI_API_KEY_P}, VERTEX creds present: ${!!VERTEX_AI_CREDENTIALS_P}`);
 
       let aiUrlP: string;
       let aiHeadersP: Record<string, string>;
@@ -1294,27 +1297,72 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
 RÉSULTATS DE SOURCING (Brave Search) :
 ${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
 
-      const pickBody = AI_PROVIDER_P === "vertex"
-        ? { contents: [{ role: "user", parts: [{ text: pickPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 300 } }
-        : { contents: [{ parts: [{ text: pickPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 300, responseMimeType: "application/json" as const } };
-
-      const pickRes = await fetch(aiUrlP, { method: "POST", headers: aiHeadersP, body: JSON.stringify(pickBody) });
-      if (!pickRes.ok) {
-        return new Response(JSON.stringify({ error: `IA indisponible pour phase pick (${pickRes.status})` }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
-      }
-      const pickData = await pickRes.json();
-      const pickText: string = pickData.candidates?.[0]?.content?.parts?.[0]?.text || "";
-      let startup = { name: "", website: "", description: "" };
-      try {
-        const jsonStart = pickText.indexOf("{");
-        const jsonEnd = pickText.lastIndexOf("}");
-        if (jsonStart !== -1 && jsonEnd !== -1) {
-          startup = JSON.parse(pickText.slice(jsonStart, jsonEnd + 1));
+      // First attempt: with responseMimeType for Gemini; second attempt: without it (some models block JSON mode)
+      let pickText = "";
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const pickBody = AI_PROVIDER_P === "vertex"
+          ? { contents: [{ role: "user", parts: [{ text: pickPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 300 } }
+          : attempt === 0
+            ? { contents: [{ parts: [{ text: pickPrompt }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 400, responseMimeType: "application/json" } }
+            : { contents: [{ parts: [{ text: pickPrompt }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 400 } };
+        try {
+          console.log(`[pick] Appel IA attempt ${attempt + 1}, provider=${AI_PROVIDER_P}, jsonMode=${attempt === 0}, context length=${pickContext.length}`);
+          const pickRes = await fetch(aiUrlP, { method: "POST", headers: aiHeadersP, body: JSON.stringify(pickBody) });
+          if (!pickRes.ok) {
+            const errBody = await pickRes.text();
+            console.error(`[pick] IA HTTP ${pickRes.status}: ${errBody.substring(0, 300)}`);
+            if (attempt === 0) { await new Promise(r => setTimeout(r, 2000)); continue; }
+            return new Response(JSON.stringify({ error: `IA indisponible pour phase pick (${pickRes.status})` }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+          }
+          const pickData = await pickRes.json();
+          console.log(`[pick] IA response keys: ${Object.keys(pickData).join(",")}, candidates: ${pickData.candidates?.length ?? 0}, finishReason: ${pickData.candidates?.[0]?.finishReason ?? "N/A"}`);
+          pickText = pickData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+          if (pickText) break;
+          // If blocked by safety or empty, retry
+          console.warn(`[pick] Réponse IA vide (attempt ${attempt + 1}), finishReason: ${pickData.candidates?.[0]?.finishReason}`);
+          if (attempt === 0) await new Promise(r => setTimeout(r, 1500));
+        } catch (fetchErr) {
+          console.error(`[pick] Fetch error attempt ${attempt + 1}:`, fetchErr);
+          if (attempt === 0) await new Promise(r => setTimeout(r, 2000));
         }
-      } catch (parseErr) {
-        console.error("[pick] Erreur parsing JSON IA:", parseErr, "Réponse brute:", pickText.slice(0, 200));
       }
+
+      let startup = { name: "", website: "", description: "" };
+      // Try AI JSON parsing
+      if (pickText) {
+        try {
+          const jsonStart = pickText.indexOf("{");
+          const jsonEnd = pickText.lastIndexOf("}");
+          if (jsonStart !== -1 && jsonEnd !== -1) {
+            startup = JSON.parse(pickText.slice(jsonStart, jsonEnd + 1));
+          }
+        } catch (parseErr) {
+          console.error("[pick] Erreur parsing JSON IA:", parseErr, "Réponse brute:", pickText.slice(0, 300));
+        }
+      }
+
+      // Fallback: extract first real startup from search context if AI failed
+      if (!startup.name && pickContext) {
+        console.warn("[pick] Fallback: extraction manuelle depuis pickContext");
+        const NEWS_DOMAINS = ["google.com","youtube.com","facebook.com","twitter.com","x.com","reddit.com","wikipedia.org","crunchbase.com/lists","news.crunchbase.com","techcrunch.com","bloomberg.com","reuters.com","forbes.com","wsj.com","cnbc.com","maddyness.com","lesechos.fr","lemonde.fr","bfmtv.com","usine-digitale.fr","venturebeat.com","theverge.com","wired.com","sifted.eu","pitchbook.com","cbinsights.com","dealroom.co","linkedin.com","github.com"];
+        const isNewsDomain = (url: string) => NEWS_DOMAINS.some(d => url.includes(d));
+        const lines = pickContext.split("\n").filter(l => l.includes("URL:") || l.includes("http"));
+        for (const line of lines) {
+          const urlMatch = line.match(/https?:\/\/[^\s|,]+/);
+          const title = line.split(":")[0]?.trim();
+          if (title && title.length > 3 && title.length < 80 && urlMatch) {
+            const url = urlMatch[0].replace(/[.,;:!?)}\]]+$/, "");
+            if (!isNewsDomain(url)) {
+              startup = { name: title, website: url, description: line.split("|")[0]?.replace(title + ":", "").trim().substring(0, 200) || "" };
+              console.log(`[pick] Fallback startup: ${startup.name} / ${startup.website}`);
+              break;
+            }
+          }
+        }
+      }
+
       if (!startup.name) {
+        console.error("[pick] Impossible de sélectionner une startup. pickText:", pickText.substring(0, 200), "pickContext:", pickContext.substring(0, 200));
         return new Response(JSON.stringify({ error: "Impossible de sélectionner une startup (réponse IA invalide)" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
       }
       return new Response(JSON.stringify({ startup }), { headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
