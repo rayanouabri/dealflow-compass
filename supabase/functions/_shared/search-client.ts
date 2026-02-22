@@ -1,4 +1,4 @@
-// Client de recherche unifié : SearXNG (auto-hébergé) + Brave Search + Serper, avec déduplication et rate limiting
+// Client de recherche unifié : Brave Search + Serper, avec déduplication et rate limiting
 import { logger } from "./logger.ts";
 
 export interface SearchResult {
@@ -6,78 +6,11 @@ export interface SearchResult {
   url: string;
   description: string;
   extra_snippets?: string[];
-  source?: "brave" | "serper" | "searxng";
+  source?: "brave" | "serper";
 }
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// SearXNG — moteur de recherche auto-hébergé, illimité et gratuit
-// Déploiement : voir docs/SEARXNG_SETUP.md
-// Variable d'env : SEARXNG_URL (ex: https://search.mondomaine.com)
-export async function searxngSearch(
-  query: string,
-  count = 10,
-  retries = 2,
-): Promise<SearchResult[]> {
-  const SEARXNG_URL = Deno.env.get("SEARXNG_URL");
-  if (!SEARXNG_URL) {
-    logger.warn("SEARXNG_URL non configuré — skip SearXNG");
-    return [];
-  }
-
-  const base = SEARXNG_URL.replace(/\/$/, "");
-
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const params = new URLSearchParams({
-        q: query,
-        format: "json",
-        engines: "google,bing,duckduckgo,brave",
-        language: "fr-FR",
-        pageno: "1",
-      });
-
-      const resp = await fetch(`${base}/search?${params}`, {
-        headers: {
-          Accept: "application/json",
-          // Header custom pour identifier l'appelant (utile pour les logs SearXNG)
-          "X-Requested-With": "dealflow-compass",
-        },
-        signal: AbortSignal.timeout(10_000),
-      });
-
-      if (resp.status === 429 || resp.status === 503) {
-        const wait = Math.pow(2, attempt) * 1000;
-        logger.warn(`SearXNG ${resp.status} — attente ${wait}ms`, { query });
-        await sleep(wait);
-        continue;
-      }
-
-      if (!resp.ok) {
-        logger.error("SearXNG erreur", { status: resp.status, query });
-        return [];
-      }
-
-      const data = await resp.json();
-      // SearXNG retourne { results: [{ title, url, content, engines[] }] }
-      return (data.results ?? [])
-        .slice(0, count)
-        .map((r: any) => ({
-          title: r.title ?? "",
-          url: r.url ?? "",
-          description: r.content ?? "",
-          extra_snippets: [],
-          source: "searxng" as const,
-        }));
-    } catch (err) {
-      logger.error("SearXNG exception", { error: String(err), query });
-      if (attempt === retries) return [];
-      await sleep(Math.pow(2, attempt) * 500);
-    }
-  }
-  return [];
 }
 
 // Brave Search API
@@ -187,31 +120,16 @@ export async function serperSearch(
   return [];
 }
 
-// SearXNG en priorité (illimité), puis Brave, puis Serper en fallback.
-// Déduplique les URLs cross-sources.
+// Essaie Brave en premier, Serper en fallback, déduplique les URLs
 export async function searchAll(
   query: string,
   count = 10,
 ): Promise<SearchResult[]> {
-  // Essai SearXNG en premier si configuré
-  const searxngResults = await searxngSearch(query, count);
+  const braveResults = await braveSearch(query, count);
+  const serperResults = await serperSearch(query, count);
 
-  // Si SearXNG donne assez de résultats, on s'arrête là (économise les quotas API)
-  if (searxngResults.length >= Math.floor(count * 0.7)) {
-    return searxngResults.slice(0, count);
-  }
-
-  // Fallback : compléter avec Brave + Serper
-  const remaining = count - searxngResults.length;
-  const [braveResults, serperResults] = await Promise.all([
-    braveSearch(query, remaining),
-    serperSearch(query, remaining),
-  ]);
-
-  const seen = new Set<string>(
-    searxngResults.map((r) => r.url.toLowerCase().replace(/\/$/, "")),
-  );
-  const merged: SearchResult[] = [...searxngResults];
+  const seen = new Set<string>();
+  const merged: SearchResult[] = [];
 
   for (const r of [...braveResults, ...serperResults]) {
     const key = r.url.toLowerCase().replace(/\/$/, "");
@@ -221,5 +139,5 @@ export async function searchAll(
     }
   }
 
-  return merged.slice(0, count);
+  return merged;
 }
