@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/components/AuthProvider";
 import { AppLayout } from "@/components/AppLayout";
@@ -26,6 +26,7 @@ const EXAMPLE_COMPANIES = [
 
 export default function DueDiligence() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const { user, loading: authLoading, signOut } = useAuth();
   const { trialRemaining, hasTrialRemaining } = useTrial();
@@ -36,6 +37,16 @@ export default function DueDiligence() {
   const [showAuthDialog, setShowAuthDialog] = useState(false);
   const [authView, setAuthView] = useState<"login" | "signup">("login");
   const [showPaywall, setShowPaywall] = useState(false);
+
+  // Pré-remplir depuis le sourcing (historique ou handoff)
+  useEffect(() => {
+    const state = location.state as { companyName?: string; companyWebsite?: string; additionalContext?: string } | null;
+    if (state?.companyName) {
+      setCompanyName(state.companyName);
+      if (state.companyWebsite) setCompanyWebsite(state.companyWebsite);
+      if (state.additionalContext) setAdditionalContext(state.additionalContext);
+    }
+  }, [location.state]);
 
   const handleSubmit = () => {
     if (!hasTrialRemaining) {

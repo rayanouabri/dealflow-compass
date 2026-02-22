@@ -112,25 +112,11 @@ export default function Analyser() {
   };
 
   const handleHistorySelect = (item: HistoryItem) => {
-    const result = {
-      investmentThesis: item.investment_thesis,
-      startup: {
-        name: item.startup_name,
-        tagline: "",
-        sector: "",
-        stage: "",
-        location: "",
-        founded: "",
-        teamSize: "",
-      },
-      dueDiligenceReport: item.pitch_deck,
-      dueDiligenceReports: Array.isArray(item.pitch_deck) ? [item.pitch_deck] : item.pitch_deck ? [item.pitch_deck] : [],
-    };
-    const payload = { fromHistory: true, result, fundName: item.fund_name };
-    try {
-      sessionStorage.setItem("analyse-request", JSON.stringify(payload));
-    } catch (_) {}
-    navigate("/analyse", { state: payload, replace: false });
+    // Redirige vers l'outil Due Diligence avec le nom de la startup pré-rempli
+    navigate("/due-diligence", {
+      state: { companyName: item.startup_name },
+      replace: false,
+    });
   };
 
   const handleLogin = () => {
