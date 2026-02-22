@@ -3,15 +3,25 @@ import { callDigitalOceanAgent, formatDueDiligencePrompt } from "../_shared/digi
 
 const ALLOWED_ORIGINS = [
   "https://ai-vc-sourcing.vercel.app",
+  "https://dealflow-compass.vercel.app",
+  "https://dealflow-compass-rayanouabris-projects.vercel.app",
   "http://localhost:8080",
   "http://localhost:5173",
   "http://127.0.0.1:8080",
   "http://127.0.0.1:5173",
 ];
 
+function isAllowedOrigin(origin: string): boolean {
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  // Allow any Vercel preview deployment for this project
+  if (/^https:\/\/dealflow-compass[a-z0-9-]*\.vercel\.app$/.test(origin)) return true;
+  if (/^https:\/\/ai-vc-sourcing[a-z0-9-]*\.vercel\.app$/.test(origin)) return true;
+  return false;
+}
+
 function corsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get("origin") ?? "";
-  const allow = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  const allow = isAllowedOrigin(origin) ? origin : ALLOWED_ORIGINS[0];
   return {
     "Access-Control-Allow-Origin": allow,
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -390,9 +400,10 @@ serve(async (req) => {
       }
     }
     
-    if (phase !== "analyze" && !BRAVE_API_KEY) {
-      return new Response(JSON.stringify({ 
-        error: "BRAVE_API_KEY manquante.",
+    const SERPER_API_KEY = Deno.env.get("SERPER_API_KEY") || Deno.env.get("serper_api");
+    if (phase !== "analyze" && !BRAVE_API_KEY && !SERPER_API_KEY) {
+      return new Response(JSON.stringify({
+        error: "Aucune API de recherche configurée. Ajoutez SERPER_API_KEY ou BRAVE_API_KEY dans les secrets Supabase.",
         setupRequired: true
       }), {
         status: 500,
@@ -413,10 +424,21 @@ serve(async (req) => {
       const jobRes = await fetch(`${SUPABASE_URL}/rest/v1/due_diligence_jobs?id=eq.${encodeURIComponent(jobId)}&select=*`, {
         headers: { "apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
       });
+      if (!jobRes.ok) {
+        const jobErr = await jobRes.text();
+        console.error(`[DueDiligence] Erreur SELECT job: ${jobRes.status} - ${jobErr}`);
+        return new Response(JSON.stringify({
+          error: `Impossible de charger le job (${jobRes.status}). La table due_diligence_jobs n'existe peut-être pas.`,
+          detail: jobErr.slice(0, 200),
+        }), {
+          status: 500,
+          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+        });
+      }
       const jobList = await jobRes.json();
       const job = Array.isArray(jobList) ? jobList[0] : jobList;
       if (!job || job.status !== "search_done" || !job.search_context) {
-        return new Response(JSON.stringify({ error: "Job introuvable ou déjà analysé" }), {
+        return new Response(JSON.stringify({ error: `Job introuvable ou déjà analysé (id: ${jobId}, status: ${job?.status || "absent"})` }), {
           status: 400,
           headers: { ...corsHeaders(req), "Content-Type": "application/json" },
         });
@@ -833,11 +855,19 @@ Réponds UNIQUEMENT avec le JSON complet.`;
         console.warn("[DueDiligence] 2e itération ignorée:", round2Err);
       }
 
-      await fetch(`${SUPABASE_URL}/rest/v1/due_diligence_jobs?id=eq.${encodeURIComponent(jobId)}`, {
-        method: "PATCH",
-        headers: { "apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ result: dueDiligenceResult, status: "analyze_done", updated_at: new Date().toISOString() }),
-      });
+      // Sauvegarder le résultat (non-bloquant, on renvoie le rapport même si le PATCH échoue)
+      try {
+        const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/due_diligence_jobs?id=eq.${encodeURIComponent(jobId)}`, {
+          method: "PATCH",
+          headers: { "apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ result: dueDiligenceResult, status: "analyze_done", updated_at: new Date().toISOString() }),
+        });
+        if (!patchRes.ok) {
+          console.warn(`[DueDiligence] PATCH job échoué: ${patchRes.status}`);
+        }
+      } catch (patchErr) {
+        console.warn("[DueDiligence] PATCH job erreur:", patchErr);
+      }
       return new Response(JSON.stringify(dueDiligenceResult), {
         headers: { ...corsHeaders(req), "Content-Type": "application/json" },
       });
@@ -1023,7 +1053,7 @@ Réponds UNIQUEMENT avec le JSON complet.`;
         headers: { ...corsHeaders(req), "Content-Type": "application/json" },
       });
     }
-    await fetch(`${SUPABASE_URL_SEARCH}/rest/v1/due_diligence_jobs`, {
+    const insertRes = await fetch(`${SUPABASE_URL_SEARCH}/rest/v1/due_diligence_jobs`, {
       method: "POST",
       headers: {
         "apikey": SUPABASE_SERVICE_ROLE_KEY_SEARCH,
@@ -1041,6 +1071,17 @@ Réponds UNIQUEMENT avec le JSON complet.`;
         status: "search_done",
       }),
     });
+    if (!insertRes.ok) {
+      const insertErr = await insertRes.text();
+      console.error(`[DueDiligence] Erreur INSERT job: ${insertRes.status} - ${insertErr}`);
+      return new Response(JSON.stringify({
+        error: `Impossible de sauvegarder les résultats de recherche (${insertRes.status}). Vérifiez que la table due_diligence_jobs existe.`,
+        detail: insertErr.slice(0, 200),
+      }), {
+        status: 500,
+        headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+      });
+    }
     console.log(`Due Diligence search done for: ${companyName}, jobId: ${jobIdNew}`);
     return new Response(
       JSON.stringify({ jobId: jobIdNew, status: "search_done", searchResultsCount: dedupedResults.length }),

@@ -468,27 +468,6 @@ export default function DueDiligenceResult() {
     return obj;
   }
 
-  // Agrégat de toutes les sources (allSources + sections) pour affichage en bas de page
-  const allSourcesAggregated = (() => {
-    if (!data) return [];
-    const byUrl = new Map<string, { name: string; url: string; type?: string; relevance?: string }>();
-    const add = (s: { name?: string; url?: string; type?: string; relevance?: string } | null) => {
-      if (!s?.url) return;
-      if (byUrl.has(s.url)) return;
-      byUrl.set(s.url, {
-        name: s.name || shortenUrl(s.url),
-        url: s.url,
-        type: s.type,
-        relevance: s.relevance,
-      });
-    };
-    (data.allSources || []).forEach(add);
-    [data.product?.sources, data.market?.sources, data.financials?.sources, data.team?.sources, data.competition?.sources, data.traction?.sources, data.risks?.sources, data.opportunities?.sources].forEach(arr => {
-      (arr || []).forEach((s: { name?: string; url?: string }) => add(s));
-    });
-    return Array.from(byUrl.values());
-  })();
-
   // Fonction pour raccourcir les URLs
   const shortenUrl = (url: string, maxLength: number = 40): string => {
     try {
@@ -509,6 +488,27 @@ export default function DueDiligenceResult() {
       return url.length > maxLength ? url.substring(0, maxLength - 3) + '...' : url;
     }
   };
+
+  // Agrégat de toutes les sources (allSources + sections) pour affichage en bas de page
+  const allSourcesAggregated = (() => {
+    if (!data) return [];
+    const byUrl = new Map<string, { name: string; url: string; type?: string; relevance?: string }>();
+    const add = (s: { name?: string; url?: string; type?: string; relevance?: string } | null) => {
+      if (!s?.url) return;
+      if (byUrl.has(s.url)) return;
+      byUrl.set(s.url, {
+        name: s.name || shortenUrl(s.url),
+        url: s.url,
+        type: s.type,
+        relevance: s.relevance,
+      });
+    };
+    (data.allSources || []).forEach(add);
+    [data.product?.sources, data.market?.sources, data.financials?.sources, data.team?.sources, data.competition?.sources, data.traction?.sources, data.risks?.sources, data.opportunities?.sources].forEach(arr => {
+      (arr || []).forEach((s: { name?: string; url?: string }) => add(s));
+    });
+    return Array.from(byUrl.values());
+  })();
 
   const SourceLink = ({ url, name }: { url?: string; name?: string }) => {
     if (!url) return null;

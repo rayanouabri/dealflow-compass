@@ -3,15 +3,24 @@ import { callDigitalOceanAgent, formatSourcingPrompt } from "../_shared/digitalo
 
 const ALLOWED_ORIGINS = [
   "https://ai-vc-sourcing.vercel.app",
+  "https://dealflow-compass.vercel.app",
+  "https://dealflow-compass-rayanouabris-projects.vercel.app",
   "http://localhost:8080",
   "http://localhost:5173",
   "http://127.0.0.1:8080",
   "http://127.0.0.1:5173",
 ];
 
+function isAllowedOrigin(origin: string): boolean {
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  if (/^https:\/\/dealflow-compass[a-z0-9-]*\.vercel\.app$/.test(origin)) return true;
+  if (/^https:\/\/ai-vc-sourcing[a-z0-9-]*\.vercel\.app$/.test(origin)) return true;
+  return false;
+}
+
 function corsHeaders(req: Request | null): Record<string, string> {
   const origin = req?.headers?.get?.("origin") ?? "";
-  const allow = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  const allow = origin && isAllowedOrigin(origin) ? origin : ALLOWED_ORIGINS[0];
   return {
     "Access-Control-Allow-Origin": allow,
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
