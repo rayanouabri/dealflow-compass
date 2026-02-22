@@ -2,15 +2,9 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
-
-if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-  console.warn(
-    '⚠️ Supabase credentials are missing. Please set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in your .env file.\n' +
-    'Get your credentials from: https://app.supabase.com/project/_/settings/api'
-  );
-}
+// Public anon key — safe to embed in client bundle (by design)
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? 'https://anxyjsgrittdwrizqcgi.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFueHlqc2dyaXR0ZHdyaXpxY2dpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYzMjkzOTksImV4cCI6MjA4MTkwNTM5OX0.pJrRWaaSpEVPKcHZUpayvKS-y6MlvzVUSiAHBHPh1AE';
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";

@@ -1,11 +1,5 @@
 {
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
-  "build": {
-    "env": {
-      "VITE_SUPABASE_URL": "https://anxyjsgrittdwrizqcgi.supabase.co",
-      "VITE_SUPABASE_PUBLISHABLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFueHlqc2dyaXR0ZHdyaXpxY2dpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYzMjkzOTksImV4cCI6MjA4MTkwNTM5OX0.pJrRWaaSpEVPKcHZUpayvKS-y6MlvzVUSiAHBHPh1AE"
-    }
-  },
   "headers": [
     {
       "source": "/(.*)",
