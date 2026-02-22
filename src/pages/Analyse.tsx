@@ -238,47 +238,37 @@ export default function Analyse() {
         await runPhase("search_market", { phase: "search_market", jobId });
         await runPhase("search_startups", { phase: "search_startups", jobId });
 
-        // Phase analyse (charge le job, appelle LLM, retourne le résultat)
-        const ctrlAnalyze = new AbortController();
-        const tAnalyze = setTimeout(() => ctrlAnalyze.abort(), TIMEOUT_ANALYZE_MS);
-        const resAnalyze = await fetch(`${supabaseUrl}/functions/v1/analyze-fund`, {
+        // Phase pick : sélectionne la meilleure startup (mini appel IA, sans générer de rapport)
+        const ctrlPick = new AbortController();
+        const tPick = setTimeout(() => ctrlPick.abort(), TIMEOUT_PHASE_MS);
+        const resPick = await fetch(`${supabaseUrl}/functions/v1/analyze-fund`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${supabaseKey}`, apikey: supabaseKey },
-          body: JSON.stringify({ phase: "analyze", jobId }),
-          signal: ctrlAnalyze.signal,
+          body: JSON.stringify({ phase: "pick", jobId }),
+          signal: ctrlPick.signal,
         });
-        clearTimeout(tAnalyze);
-        const { data, errorMsg } = await parseResponse(resAnalyze);
-        if (!resAnalyze.ok) {
-          if (resAnalyze.status === 546) throw new Error("Limite de ressources serveur dépassée (546). L'analyse a été interrompue.\n\nConseils :\n• Réessayez dans 1–2 minutes.\n• Choisissez « 1 startup » dans les options pour réduire la charge.");
-          if (resAnalyze.status >= 500) throw new Error((errorMsg || "Erreur serveur") + "\n\nRéessayez dans quelques instants ou avec 1 startup.");
-          if (resAnalyze.status === 429) throw new Error("Trop de requêtes simultanées. Veuillez patienter.");
-          if (resAnalyze.status === 401 || resAnalyze.status === 403) throw new Error("Erreur d'authentification. Veuillez vous reconnecter.");
-          throw new Error(errorMsg || "Erreur phase analyse");
-        }
-        if (data?.error) throw new Error(typeof data.error === "string" ? data.error : data.error?.message || "Erreur");
+        clearTimeout(tPick);
+        const { data: pickData, errorMsg: pickError } = await parseResponse(resPick);
+        if (!resPick.ok) throw new Error(pickError || "Erreur phase pick");
+        const pickedStartup = pickData?.startup;
+        if (!pickedStartup?.name) throw new Error("Aucune startup sélectionnée par le sourcing.");
 
         useTrialCredit();
-        setResult(data as AnalysisResult);
 
-        const startups = data.startups || (data.startup ? [data.startup] : []);
-        const reports = data.dueDiligenceReports || (data.dueDiligenceReport ? [data.dueDiligenceReport] : []);
-
-        if (startups.length > 0 && user) {
-          await supabase.from("analysis_history").insert({
-            user_id: user.id,
-            fund_name: fn,
-            startup_name: startups[0].name,
-            investment_thesis: data.investmentThesis,
-            pitch_deck: reports[0] || data.pitchDeck,
-          });
-          fetchHistory();
+        // Transférer vers l'outil Due Diligence avec la startup sélectionnée
+        const ddPayload = {
+          companyName: pickedStartup.name,
+          companyWebsite: pickedStartup.website || undefined,
+          additionalContext: pickedStartup.description
+            ? `Startup identifiée par sourcing IA pour ${fn} : ${pickedStartup.description}`
+            : `Startup identifiée par sourcing IA pour le fonds ${fn}`,
+        };
+        try {
+          sessionStorage.setItem("due-diligence-request", JSON.stringify(ddPayload));
+        } catch (ssErr) {
+          console.warn("sessionStorage indisponible (fallback via location.state):", ssErr);
         }
-
-        toast({
-          title: "Analyse terminée",
-          description: `${startups.length} startup(s) trouvée(s). Rapports prêts.`,
-        });
+        navigate("/due-diligence/result", { state: ddPayload, replace: false });
       } catch (e) {
         let msg = e instanceof Error ? e.message : "Échec de l'analyse.";
         // Failed to fetch / CORS souvent dû au 546 côté serveur
