@@ -1233,7 +1233,22 @@ ${extraContext2}`;
         return new Response(JSON.stringify({ error: "Job introuvable ou contexte manquant (phase pick)" }), { status: 404, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
       }
       const ctxP = jobP.search_context as any;
-      const userPromptP: string = ctxP.userPrompt || "";
+      // Utilise les résultats Brave directement (stockés depuis le commit fix) — fallback sur systemPrompt si absent
+      let pickContext: string = ctxP.startupSearchContext || "";
+      if (!pickContext && ctxP.systemPrompt) {
+        // Anciens jobs : extraire la section des résultats depuis systemPrompt
+        const marker = "=== STARTUPS POTENTIELLES TROUVÉES";
+        const idx = ctxP.systemPrompt.indexOf(marker);
+        if (idx !== -1) {
+          pickContext = ctxP.systemPrompt.slice(idx, idx + 6000);
+        } else {
+          // Dernier recours : prendre la fin du systemPrompt où les résultats se trouvent
+          pickContext = ctxP.systemPrompt.slice(-6000);
+        }
+      }
+      if (!pickContext) {
+        return new Response(JSON.stringify({ error: "Contexte de sourcing vide — relancer une analyse" }), { status: 400, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+      }
       const AI_PROVIDER_P = (Deno.env.get("AI_PROVIDER") || "gemini").toLowerCase();
       const GEMINI_API_KEY_P = Deno.env.get("GEMINI_KEY_2") || Deno.env.get("GEMINI_API_KEY");
       const GEMINI_MODEL_P = Deno.env.get("GEMINI_MODEL") || "gemini-2.0-flash";
@@ -1269,14 +1284,15 @@ ${extraContext2}`;
       }
 
       // Prompt court : choisir la meilleure startup parmi les résultats de sourcing
-      // MAX_PICK_CONTEXT_LENGTH = 8000 : assez pour identifier une startup, sous la limite de tokens du modèle flash
+      // MAX_PICK_CONTEXT_LENGTH = 8000 : résultats Brave (titre + description + URL), suffisant pour identifier une startup
       const MAX_PICK_CONTEXT_LENGTH = 8000;
-      const pickPrompt = `Tu es un analyste VC senior. À partir du contexte de sourcing ci-dessous, identifie la MEILLEURE startup unique à analyser en due diligence.
+      const pickPrompt = `Tu es un analyste VC senior. À partir des résultats de sourcing ci-dessous (Brave Search), identifie la MEILLEURE startup RÉELLE à analyser en due diligence.
+Critères : startup avec le plus de signaux positifs (funding, traction, team, marché), URL officielle trouvée dans les résultats.
 Réponds UNIQUEMENT avec ce JSON (sans markdown) :
-{"name":"Nom exact de la startup","website":"https://... (URL officielle si trouvée, sinon chaîne vide)","description":"1-2 phrases résumant ce que fait la startup"}
+{"name":"Nom exact de la startup","website":"https://... (URL officielle trouvée dans les résultats, sinon chaîne vide)","description":"1-2 phrases résumant ce que fait la startup"}
 
-CONTEXTE SOURCING (extrait) :
-${userPromptP.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
+RÉSULTATS DE SOURCING (Brave Search) :
+${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
 
       const pickBody = AI_PROVIDER_P === "vertex"
         ? { contents: [{ role: "user", parts: [{ text: pickPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 300 } }
@@ -2323,7 +2339,7 @@ IMPORTANT :
         method: "PATCH",
         headers: { "apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          search_context: { systemPrompt, userPrompt, fundSources, marketSources: marketData.marketSources || [] },
+          search_context: { systemPrompt, userPrompt, fundSources, marketSources: marketData.marketSources || [], startupSearchContext },
           search_results_count: finalUnique?.length ?? 0,
           status: "search_done",
           updated_at: new Date().toISOString(),

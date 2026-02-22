@@ -13,13 +13,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, AlertCircle, RefreshCcw } from "lucide-react";
 
-interface Slide {
-  title: string;
-  content: string;
-  keyPoints: string[];
-  metrics?: Record<string, string | number>;
-}
-
 interface HistoryItem {
   id: string;
   fund_name: string;
@@ -229,11 +222,10 @@ export default function Analyse() {
     );
   }
 
-  if (!result) {
+  if (errorMessage) {
     const handleRetry = () => {
       setErrorMessage(null);
       setLoading(true);
-      // Reload the page to retry
       window.location.reload();
     };
 
