@@ -118,7 +118,12 @@ async function getAIEndpoint(): Promise<{ url: string; headers: Record<string, s
   const VERTEX_LOCATION = Deno.env.get("VERTEX_AI_LOCATION") || "us-central1";
 
   if (AI_PROVIDER === "vertex" && VERTEX_PROJECT && VERTEX_CREDS_RAW) {
-    const creds = typeof VERTEX_CREDS_RAW === "string" ? JSON.parse(VERTEX_CREDS_RAW) : VERTEX_CREDS_RAW;
+    let creds: any;
+    try {
+      creds = typeof VERTEX_CREDS_RAW === "string" ? JSON.parse(VERTEX_CREDS_RAW) : VERTEX_CREDS_RAW;
+    } catch (e) {
+      throw new Error(`VERTEX_AI_CREDENTIALS JSON invalide: ${e instanceof Error ? e.message : "Parse error"}`);
+    }
     const b64url = (d: Uint8Array | string) => {
       const b = typeof d === "string" ? new TextEncoder().encode(d) : d;
       return btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
@@ -138,7 +143,9 @@ async function getAIEndpoint(): Promise<{ url: string; headers: Record<string, s
       body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: jwt }),
     });
     if (!tr.ok) throw new Error("Vertex AI token failed");
-    const token = (await tr.json()).access_token;
+    const tokenData = await tr.json();
+    const token = tokenData?.access_token;
+    if (!token) throw new Error("Vertex AI token response missing access_token");
     return {
       url: `https://${VERTEX_LOCATION}-aiplatform.googleapis.com/v1/projects/${VERTEX_PROJECT}/locations/${VERTEX_LOCATION}/publishers/google/models/${VERTEX_MODEL}:generateContent`,
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
@@ -163,22 +170,49 @@ function makeBody(text: string, maxTokens: number, isVertex: boolean, temp = 0.1
 // ─── JSON parsing ─────────────────────────────────────────────────────────────
 
 function parseJSON(content: string): any {
+  if (!content || typeof content !== "string") throw new Error("Content is not a string");
+
   let s = content.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
+  if (!s) throw new Error("Content is empty after trimming");
+
   const start = s.indexOf("{"), end = s.lastIndexOf("}");
-  if (start >= 0 && end > start) s = s.slice(start, end + 1);
-  try { return JSON.parse(s); } catch (_) {
-    // Try fixing trailing commas
-    const fixed = s.replace(/,(\s*[}\]])/g, "$1");
-    return JSON.parse(fixed);
+  if (start >= 0 && end > start) {
+    s = s.slice(start, end + 1);
+  }
+
+  try {
+    return JSON.parse(s);
+  } catch (e1) {
+    try {
+      // Try fixing trailing commas
+      const fixed = s.replace(/,(\s*[}\]])/g, "$1");
+      return JSON.parse(fixed);
+    } catch (e2) {
+      // Try fixing single quotes
+      try {
+        const fixed2 = s.replace(/'/g, '"');
+        return JSON.parse(fixed2);
+      } catch (e3) {
+        throw new Error(`JSON parse failed: ${e1 instanceof Error ? e1.message : String(e1)}`);
+      }
+    }
   }
 }
 
 // ─── Search context builder (same as due-diligence) ──────────────────────────
 
 function buildDDContext(results: SearchResult[]): string {
+  if (!Array.isArray(results) || results.length === 0) return "";
+
   const uniq = new Map<string, SearchResult>();
-  results.forEach(r => { if (r.url && !uniq.has(r.url)) uniq.set(r.url, r); });
+  results.forEach(r => {
+    if (r && r.url && typeof r.url === "string" && r.url.trim() && !uniq.has(r.url)) {
+      uniq.set(r.url, r);
+    }
+  });
   const deduped = Array.from(uniq.values());
+
+  if (deduped.length === 0) return "";
 
   const cats: Record<string, SearchResult[]> = { funding: [], metrics: [], team: [], product: [], market: [], news: [], linkedin: [], crunchbase: [], other: [] };
   deduped.forEach(r => {
@@ -218,9 +252,23 @@ function buildDDContext(results: SearchResult[]): string {
 // ─── DD result → Slides (for Analyse.tsx compatibility) ──────────────────────
 
 function ddResultToSlides(dd: any, startup: any, fundCtx: string): any[] {
-  const s = (x: any) => (x && typeof x === "string" && x.trim() ? x : "Non disponible");
-  const arr = (x: any): string[] => (Array.isArray(x) ? x.filter((i: any) => typeof i === "string" && i.trim()) : []);
-  const srcs = (x: any) => (Array.isArray(x?.sources) ? x.sources : []);
+  if (!dd || typeof dd !== "object") dd = {};
+
+  const s = (x: any) => {
+    if (!x) return "Non disponible";
+    const str = typeof x === "string" ? x : String(x);
+    return str && str.trim() ? str.trim() : "Non disponible";
+  };
+
+  const arr = (x: any): string[] => {
+    if (!Array.isArray(x)) return [];
+    return x.filter((i: any) => typeof i === "string" && i.trim()).map(i => String(i).trim());
+  };
+
+  const srcs = (x: any) => {
+    if (!x || !Array.isArray(x?.sources)) return [];
+    return x.sources.filter((src: any) => src && typeof src === "object");
+  };
 
   return [
     {
@@ -340,9 +388,14 @@ serve((req) => {
       const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
       const getJob = async (id: string) => {
+        if (!id) return null;
         const res = await fetch(`${SUP_URL}/rest/v1/sourcing_jobs?id=eq.${encodeURIComponent(id)}&select=*`, { headers: dbH });
+        if (!res.ok) {
+          console.error(`[getJob] API error ${res.status}`);
+          return null;
+        }
         const list = await res.json();
-        return Array.isArray(list) ? list[0] : list;
+        return (Array.isArray(list) && list.length > 0) ? list[0] : null;
       };
       const patchJob = async (id: string, data: object) => {
         return fetch(`${SUP_URL}/rest/v1/sourcing_jobs?id=eq.${encodeURIComponent(id)}`, {
@@ -390,9 +443,14 @@ serve((req) => {
             status: "fund_done",
           }),
         });
+        if (!insertRes.ok) {
+          const errText = await insertRes.text().catch(() => "");
+          console.error(`[search_fund] DB insert error ${insertRes.status}: ${errText.slice(0, 200)}`);
+          return err("Échec création job sourcing", 500);
+        }
         const insertData = await insertRes.json();
-        const newJobId = Array.isArray(insertData) ? insertData[0]?.id : insertData?.id;
-        if (!newJobId) return err("Échec création job sourcing", 500);
+        const newJobId = (Array.isArray(insertData) && insertData.length > 0) ? insertData[0]?.id : insertData?.id;
+        if (!newJobId || typeof newJobId !== "string") return err("Échec création job sourcing - ID invalide", 500);
         return ok({ jobId: newJobId });
       }
 
@@ -426,7 +484,12 @@ serve((req) => {
 
         const allResults = [...r1, ...r2, ...r3, ...r4, ...r5, ...r6];
         const seen = new Set<string>();
-        const unique = allResults.filter(r => r.url && !seen.has(r.url) && (seen.add(r.url), true));
+        const unique = allResults.filter(r => {
+          if (!r.url || typeof r.url !== "string") return false;
+          if (seen.has(r.url)) return false;
+          seen.add(r.url);
+          return true;
+        });
         console.log(`[analyze-fund] ${unique.length} résultats startup uniques`);
 
         // Sélection IA de la meilleure startup
@@ -480,12 +543,25 @@ Réponds UNIQUEMENT avec ce JSON (pas de markdown):
         // Fallback si IA échoue
         if (!selectedStartup?.name && unique.length > 0) {
           const first = unique.find(r => !r.url.includes("crunchbase.com") && !r.url.includes("linkedin.com")) || unique[0];
-          selectedStartup = { name: first.title.split(" -")[0].split(" |")[0].trim().slice(0, 60), website: first.url, matchReason: "Sélection par défaut (premier résultat pertinent)", matchScore: 60 };
+          selectedStartup = {
+            name: (first?.title || "Unknown").split(" -")[0].split(" |")[0].trim().slice(0, 60),
+            website: first?.url || null,
+            matchReason: "Sélection par défaut (premier résultat pertinent)",
+            matchScore: 60
+          };
         }
 
-        console.log(`[analyze-fund] ✅ Startup sélectionnée: "${selectedStartup?.name}"`);
+        if (!selectedStartup?.name) {
+          return err(`Aucune startup trouvée. ${unique.length} résultats mais extraction échouée.`, 500);
+        }
+        console.log(`[analyze-fund] ✅ Startup sélectionnée: "${selectedStartup.name}"`);
 
-        await patchJob(jobId, { search_context: { ...ctx, selectedStartup, startupSearchCount: unique.length }, status: "market_done" });
+        const patchRes = await patchJob(jobId, { search_context: { ...ctx, selectedStartup, startupSearchCount: unique.length }, status: "market_done" });
+        if (!patchRes.ok) {
+          const errText = await patchRes.text().catch(() => "");
+          console.error(`[search_market] DB patch error ${patchRes.status}: ${errText.slice(0, 200)}`);
+          return err("Échec mise à jour job (search_market)", 500);
+        }
         return ok({ jobId });
       }
 
@@ -562,8 +638,17 @@ Réponds UNIQUEMENT avec ce JSON (pas de markdown):
         const batchSize = 5;
         for (let i = 0; i < ddQueries.length; i += batchSize) {
           const batch = ddQueries.slice(i, i + batchSize);
-          const batchRes = await Promise.all(batch.map(q => search(q, 20)));
-          batchRes.forEach(r => allResults.push(...r));
+          try {
+            const batchRes = await Promise.all(batch.map(q => search(q, 20).catch(e => {
+              console.warn(`[search_startups] Erreur recherche "${q.slice(0, 50)}...": ${e instanceof Error ? e.message : String(e)}`);
+              return [];
+            })));
+            batchRes.forEach(r => {
+              if (Array.isArray(r)) allResults.push(...r);
+            });
+          } catch (batchErr) {
+            console.warn(`[search_startups] Erreur batch ${i}-${i + batchSize}: ${batchErr instanceof Error ? batchErr.message : String(batchErr)}`);
+          }
           if (i + batchSize < ddQueries.length) await sleep(400);
         }
 
@@ -575,7 +660,12 @@ Réponds UNIQUEMENT avec ce JSON (pas de markdown):
           return err(`Aucun résultat de recherche pour "${companyName}". Vérifiez vos clés API (SERPER_API_KEY / BRAVE_API_KEY).`, 500);
         }
 
-        await patchJob(jobId, { search_context: { ...ctx, ddSearchContext: ddContext }, search_results_count: uniqCount, status: "search_done" });
+        const patchRes2 = await patchJob(jobId, { search_context: { ...ctx, ddSearchContext: ddContext }, search_results_count: uniqCount, status: "search_done" });
+        if (!patchRes2.ok) {
+          const errText = await patchRes2.text().catch(() => "");
+          console.error(`[search_startups] DB patch error ${patchRes2.status}: ${errText.slice(0, 200)}`);
+          return err("Échec mise à jour job (search_startups)", 500);
+        }
         return ok({ jobId });
       }
 
@@ -600,9 +690,12 @@ Réponds UNIQUEMENT avec ce JSON (pas de markdown):
         const aiEndpoint = await getAIEndpoint();
 
         // ──── Recherche de lacunes (gap queries) comme due-diligence ────
-        let enrichedContext = ddSearchContext;
+        let enrichedContext = ddSearchContext || "";
         try {
-          const gapPrompt = `Tu es analyste VC. Contexte de recherche sur "${companyName}":
+          if (!ddSearchContext || ddSearchContext.trim().length === 0) {
+            console.warn("[analyze] Contexte DD vide, skip gap search");
+          } else {
+            const gapPrompt = `Tu es analyste VC. Contexte de recherche sur "${companyName}":
 
 ${ddSearchContext.slice(0, 6000)}
 
@@ -611,40 +704,60 @@ Pour chaque thème, 1-2 requêtes courtes en anglais.
 Réponds UNIQUEMENT en JSON: {"gaps":[{"label":"...","queries":["q1","q2"]}]}
 Si suffisant: {"gaps":[]}`;
 
-          const gapBody = makeBody(gapPrompt, 800, aiEndpoint.isVertex, 0.1);
-          const gapRes = await fetch(aiEndpoint.url, { method: "POST", headers: aiEndpoint.headers, body: JSON.stringify(gapBody) });
-          if (gapRes.ok) {
-            const gapData = await gapRes.json();
-            const gapText: string = gapData.candidates?.[0]?.content?.parts?.[0]?.text || "";
-            if (gapText) {
-              const parsed = parseJSON(gapText);
-              const gaps: any[] = Array.isArray(parsed?.gaps) ? parsed.gaps : [];
-              const queries: string[] = [];
-              for (const g of gaps.slice(0, 3)) {
-                if (Array.isArray(g.queries)) queries.push(...g.queries.slice(0, 2).map((q: string) => String(q).trim()).filter(q => q.length >= 8));
-              }
-              const uniqueGapQ = [...new Set(queries)].slice(0, 8);
-              if (uniqueGapQ.length > 0) {
-                const extraLines: string[] = [];
-                const seenUrls = new Set<string>();
-                for (const q of uniqueGapQ) {
-                  const results = await search(q, 6);
-                  for (const r of results) {
-                    if (r.url && !seenUrls.has(r.url)) {
-                      seenUrls.add(r.url);
-                      extraLines.push(`${r.title}: ${r.description} | ${r.url}`);
+            const gapBody = makeBody(gapPrompt, 800, aiEndpoint.isVertex, 0.1);
+            const gapRes = await fetch(aiEndpoint.url, { method: "POST", headers: aiEndpoint.headers, body: JSON.stringify(gapBody) });
+            if (gapRes.ok) {
+              const gapData = await gapRes.json();
+              const gapText: string = gapData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+              if (gapText && typeof gapText === "string" && gapText.trim()) {
+                try {
+                  const parsed = parseJSON(gapText);
+                  const gaps: any[] = Array.isArray(parsed?.gaps) ? parsed.gaps : [];
+                  const queries: string[] = [];
+                  for (const g of gaps.slice(0, 3)) {
+                    if (g && Array.isArray(g.queries)) {
+                      queries.push(...g.queries.slice(0, 2).map((q: any) => {
+                        const str = String(q).trim();
+                        return str.length >= 8 ? str : "";
+                      }).filter(Boolean));
                     }
                   }
-                  await sleep(300);
-                }
-                if (extraLines.length > 0) {
-                  enrichedContext = `${ddSearchContext}\n\n=== RECHERCHES COMPLÉMENTAIRES ===\n${extraLines.join("\n").slice(0, 4000)}`;
-                  console.log(`[analyze-fund] Enrichissement: ${uniqueGapQ.length} requêtes gap`);
+                  const uniqueGapQ = [...new Set(queries)].slice(0, 8);
+                  if (uniqueGapQ.length > 0) {
+                    const extraLines: string[] = [];
+                    const seenUrls = new Set<string>();
+                    for (const q of uniqueGapQ) {
+                      try {
+                        const results = await search(q, 6);
+                        if (Array.isArray(results)) {
+                          for (const r of results) {
+                            if (r && r.url && typeof r.url === "string" && !seenUrls.has(r.url)) {
+                              seenUrls.add(r.url);
+                              extraLines.push(`${r.title}: ${r.description} | ${r.url}`);
+                            }
+                          }
+                        }
+                      } catch (searchErr) {
+                        console.warn(`[analyze] Gap search query error "${q.slice(0, 30)}...": ${searchErr instanceof Error ? searchErr.message : ""}`);
+                      }
+                      await sleep(300);
+                    }
+                    if (extraLines.length > 0) {
+                      enrichedContext = `${ddSearchContext}\n\n=== RECHERCHES COMPLÉMENTAIRES ===\n${extraLines.join("\n").slice(0, 4000)}`;
+                      console.log(`[analyze-fund] Enrichissement: ${uniqueGapQ.length} requêtes gap, ${extraLines.length} sources`);
+                    }
+                  }
+                } catch (parseErr) {
+                  console.warn(`[analyze] Gap JSON parse error: ${parseErr instanceof Error ? parseErr.message : ""}`);
                 }
               }
+            } else {
+              console.warn(`[analyze] Gap AI request failed: ${gapRes.status}`);
             }
           }
-        } catch (gapErr) { console.warn("[analyze-fund] Gap search ignoré:", gapErr); }
+        } catch (gapErr) {
+          console.warn("[analyze-fund] Gap search ignoré:", gapErr instanceof Error ? gapErr.message : String(gapErr));
+        }
 
         // ──── Prompt DD complet (identique à due-diligence) ────
         const systemPrompt = `Tu es un analyste VC senior spécialisé en due diligence avec 20 ans d'expérience.
@@ -699,12 +812,43 @@ ${enrichedContext}
 Génère le rapport de due diligence complet. Utilise toutes les données ci-dessus.`;
 
         const aiBody = makeBody(`${systemPrompt}\n\n${userPrompt}`, 32768, aiEndpoint.isVertex);
-        let aiRes = await fetch(aiEndpoint.url, { method: "POST", headers: aiEndpoint.headers, body: JSON.stringify(aiBody) });
+        let aiRes: Response | null = null;
+        let lastError = "";
 
-        // Retry sur rate limit
-        if (aiRes.status === 429) {
-          await sleep(8000);
-          aiRes = await fetch(aiEndpoint.url, { method: "POST", headers: aiEndpoint.headers, body: JSON.stringify(aiBody) });
+        // Retry logic with exponential backoff (max 3 attempts)
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            aiRes = await fetch(aiEndpoint.url, { method: "POST", headers: aiEndpoint.headers, body: JSON.stringify(aiBody) });
+
+            if (aiRes.ok) break; // Success, exit retry loop
+
+            if (aiRes.status === 429) {
+              const backoff = Math.pow(2, attempt) * 2000; // 2s, 4s, 8s
+              console.warn(`[analyze-fund] Rate limited (429), retry dans ${backoff}ms`);
+              await sleep(backoff);
+              continue;
+            }
+
+            if (aiRes.status >= 500) {
+              console.warn(`[analyze-fund] Server error ${aiRes.status}, retry dans ${2000 * (attempt + 1)}ms`);
+              await sleep(2000 * (attempt + 1));
+              continue;
+            }
+
+            // Client errors (4xx except 429) are not retryable
+            break;
+          } catch (fetchErr) {
+            lastError = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+            if (attempt < 2) {
+              await sleep(1000 * (attempt + 1));
+              continue;
+            }
+          }
+        }
+
+        if (!aiRes) {
+          console.error(`[analyze-fund] AI fetch failed: ${lastError}`);
+          return err(`Erreur IA (fetch failed): ${lastError.slice(0, 100)}`, 500);
         }
 
         if (!aiRes.ok) {
@@ -715,23 +859,56 @@ Génère le rapport de due diligence complet. Utilise toutes les données ci-des
 
         const aiData = await aiRes.json();
         const content: string = aiData.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        if (!content) return err("Réponse IA vide", 500);
+        if (!content || typeof content !== "string" || !content.trim()) {
+          return err("Réponse IA vide", 500);
+        }
 
         let ddResult: any;
-        try { ddResult = parseJSON(content); } catch (e) {
-          return err(`Impossible de parser le rapport IA: ${e instanceof Error ? e.message : "JSON invalide"}`, 500);
+        try {
+          ddResult = parseJSON(content);
+        } catch (e) {
+          const errMsg = e instanceof Error ? e.message : "JSON invalide";
+          console.error(`[analyze] JSON parse error: ${errMsg}, content preview: ${content.slice(0, 300)}`);
+          return err(`Impossible de parser le rapport IA: ${errMsg}`, 500);
+        }
+
+        if (!ddResult || typeof ddResult !== "object") {
+          return err("Rapport IA invalide (pas un objet JSON)", 500);
         }
 
         // Sanity checks on mandatory fields
+        if (!ddResult.company) ddResult.company = {};
+        if (!ddResult.executiveSummary) ddResult.executiveSummary = {};
         if (!ddResult.investmentRecommendation) ddResult.investmentRecommendation = {};
         if (!ddResult.investmentRecommendation.targetReturn) ddResult.investmentRecommendation.targetReturn = "Non disponible";
         if (!ddResult.investmentRecommendation.investmentHorizon) ddResult.investmentRecommendation.investmentHorizon = "Non disponible";
+        if (!ddResult.investmentRecommendation.recommendation) ddResult.investmentRecommendation.recommendation = "WATCH";
         if (!ddResult.investmentRecommendation.suggestedTicket) ddResult.investmentRecommendation.suggestedTicket = thesis.ticketSize || "Non disponible";
-        if (ddResult.traction?.keyMilestones) {
-          ddResult.traction.keyMilestones = ddResult.traction.keyMilestones.map((m: any) =>
-            typeof m === "string" ? { date: "", milestone: m } : { date: typeof m?.date === "string" ? m.date : "", milestone: typeof m?.milestone === "string" ? m.milestone : String(m?.milestone ?? m ?? "") }
-          ).filter((m: any) => m.milestone);
+
+        // Ensure company name is set
+        if (!ddResult.company.name) ddResult.company.name = companyName;
+        if (!ddResult.company.name) ddResult.company.name = selectedStartup.name || "Unknown";
+
+        if (ddResult.traction?.keyMilestones && Array.isArray(ddResult.traction.keyMilestones)) {
+          ddResult.traction.keyMilestones = ddResult.traction.keyMilestones.map((m: any) => {
+            if (!m) return null;
+            if (typeof m === "string") return { date: "", milestone: m };
+            return {
+              date: typeof m?.date === "string" ? m.date : "",
+              milestone: typeof m?.milestone === "string" ? m.milestone : String(m?.milestone ?? m ?? "")
+            };
+          }).filter((m: any) => m && m.milestone);
         }
+
+        // Ensure allSources is an array
+        if (!Array.isArray(ddResult.allSources)) ddResult.allSources = [];
+        if (ddResult.allSources.length === 0) {
+          ddResult.allSources = [{ name: "Search Results", url: "", type: "other", relevance: "DD research context" }];
+        }
+
+        // Ensure dataQuality exists
+        if (!ddResult.dataQuality) ddResult.dataQuality = { overallScore: "medium", limitations: [], sourcesCount: "0" };
+        if (!ddResult.dataQuality.overallScore) ddResult.dataQuality.overallScore = "medium";
 
         // Map DD result to slides (for Analyse.tsx)
         const slides = ddResultToSlides(ddResult, selectedStartup, fundThesisContext);
@@ -781,7 +958,12 @@ Génère le rapport de due diligence complet. Utilise toutes les données ci-des
           },
         };
 
-        await patchJob(jobId, { result: finalResult, status: "analyze_done" });
+        const patchResFinal = await patchJob(jobId, { result: finalResult, status: "analyze_done" });
+        if (!patchResFinal.ok) {
+          const errText = await patchResFinal.text().catch(() => "");
+          console.error(`[analyze] DB patch error ${patchResFinal.status}: ${errText.slice(0, 200)}`);
+          return err("Échec mise à jour job final (analyze)", 500);
+        }
         console.log(`[analyze-fund] ✅ Analyse complète: "${companyName}" | Recommandation: ${ddResult.investmentRecommendation?.recommendation}`);
         return ok(finalResult);
       }
