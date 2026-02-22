@@ -12,7 +12,7 @@ import { PaywallModal } from "@/components/PaywallModal";
 import { useTrial } from "@/hooks/useTrial";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Sparkles, Building2, FileEdit } from "lucide-react";
+import { ArrowLeft, Sparkles, Building2, FileEdit, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 
 interface HistoryItem {
@@ -108,6 +108,35 @@ export default function Analyser() {
       sessionStorage.setItem("analyse-request", JSON.stringify(payload));
     } catch (_) {}
     navigate("/analyse", { state: payload, replace: false });
+  };
+
+  const handleAutopick = () => {
+    if (!hasTrialRemaining) {
+      if (!user) {
+        setAuthView("signup");
+        setShowAuthDialog(true);
+        toast({ title: "Inscription requise", description: "Créez un compte pour continuer.", variant: "destructive" });
+      } else setShowPaywall(true);
+      return;
+    }
+    if (!useCustomThesis && !fundName.trim()) {
+      toast({ title: "Fond requis", description: "Saisissez un fond ou utilisez une thèse personnalisée.", variant: "destructive" });
+      return;
+    }
+    if (useCustomThesis && !customThesis.sectors?.length && !customThesis.description) {
+      toast({ title: "Thèse requise", description: "Indiquez au moins des secteurs ou une description.", variant: "destructive" });
+      return;
+    }
+
+    const payload = {
+      fundName: useCustomThesis ? "Custom Thesis" : fundName.trim(),
+      useCustomThesis,
+      customThesis: useCustomThesis ? customThesis : undefined,
+    };
+    try {
+      sessionStorage.setItem("autopick-request", JSON.stringify(payload));
+    } catch (_) {}
+    navigate("/autopick-progress", { state: payload, replace: false });
   };
 
   const handleHistorySelect = (item: HistoryItem) => {
@@ -242,6 +271,18 @@ export default function Analyser() {
             disabled={!hasTrialRemaining || (!useCustomThesis && !fundName.trim())}
           >
             Lancer l&apos;analyse — {params.numberOfStartups || 1} startup{(params.numberOfStartups || 1) > 1 ? "s" : ""}
+          </Button>
+
+          <Button
+            type="button"
+            size="lg"
+            variant="outline"
+            className="w-full h-14 text-base font-medium border-primary/50 text-primary hover:bg-primary/10 hover:border-primary"
+            onClick={handleAutopick}
+            disabled={!hasTrialRemaining || (!useCustomThesis && !fundName.trim())}
+          >
+            <Zap className="w-5 h-5 mr-2" />
+            Auto-pick + Due Diligence
           </Button>
         </div>
 

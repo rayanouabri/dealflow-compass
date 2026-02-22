@@ -209,6 +209,14 @@ export default function DueDiligenceResult() {
   })();
 
   useEffect(() => {
+    // Pre-loaded result from the auto-pick pipeline — skip re-fetching
+    if (requestPayload?.preloadedResult) {
+      setData(deepStripSourceInText(requestPayload.preloadedResult));
+      setProgress(100);
+      setStatusMessage("Rapport terminé !");
+      setLoading(false);
+      return;
+    }
     if (!requestPayload?.companyName) {
       navigate("/due-diligence", { replace: true });
       return;
