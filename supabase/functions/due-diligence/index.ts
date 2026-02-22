@@ -390,9 +390,10 @@ serve(async (req) => {
       }
     }
     
-    if (phase !== "analyze" && !BRAVE_API_KEY) {
+    const SERPER_API_KEY = Deno.env.get("SERPER_API_KEY") || Deno.env.get("serper_api");
+    if (phase !== "analyze" && !BRAVE_API_KEY && !SERPER_API_KEY) {
       return new Response(JSON.stringify({ 
-        error: "BRAVE_API_KEY manquante.",
+        error: "Aucune API de recherche configurée. Ajoutez BRAVE_API_KEY ou SERPER_API_KEY.",
         setupRequired: true
       }), {
         status: 500,
@@ -413,10 +414,33 @@ serve(async (req) => {
       const jobRes = await fetch(`${SUPABASE_URL}/rest/v1/due_diligence_jobs?id=eq.${encodeURIComponent(jobId)}&select=*`, {
         headers: { "apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
       });
+      if (!jobRes.ok) {
+        const errText = await jobRes.text();
+        console.error("[DD] Erreur lecture job:", jobRes.status, errText);
+        return new Response(JSON.stringify({ error: `Erreur base de données (lecture job): ${jobRes.status}` }), {
+          status: 500,
+          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+        });
+      }
       const jobList = await jobRes.json();
-      const job = Array.isArray(jobList) ? jobList[0] : jobList;
-      if (!job || job.status !== "search_done" || !job.search_context) {
-        return new Response(JSON.stringify({ error: "Job introuvable ou déjà analysé" }), {
+      const job = Array.isArray(jobList) ? jobList[0] : null;
+      if (!job) {
+        // Réponse inattendue (non-array) ou aucun résultat
+        const raw = JSON.stringify(jobList).slice(0, 200);
+        console.error("[DD] Réponse inattendue depuis DB:", raw);
+        return new Response(JSON.stringify({ error: "Job introuvable (jobId invalide ou expiré)" }), {
+          status: 404,
+          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+        });
+      }
+      if (job.status === "analyze_done") {
+        return new Response(JSON.stringify({ error: "Ce job a déjà été analysé" }), {
+          status: 400,
+          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+        });
+      }
+      if (job.status !== "search_done" || !job.search_context) {
+        return new Response(JSON.stringify({ error: `Job non prêt pour l'analyse (statut: ${job.status}, contexte: ${job.search_context ? "présent" : "absent"})` }), {
           status: 400,
           headers: { ...corsHeaders(req), "Content-Type": "application/json" },
         });
@@ -833,11 +857,15 @@ Réponds UNIQUEMENT avec le JSON complet.`;
         console.warn("[DueDiligence] 2e itération ignorée:", round2Err);
       }
 
-      await fetch(`${SUPABASE_URL}/rest/v1/due_diligence_jobs?id=eq.${encodeURIComponent(jobId)}`, {
+      const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/due_diligence_jobs?id=eq.${encodeURIComponent(jobId)}`, {
         method: "PATCH",
         headers: { "apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({ result: dueDiligenceResult, status: "analyze_done", updated_at: new Date().toISOString() }),
       });
+      if (!patchRes.ok) {
+        const patchErr = await patchRes.text();
+        console.warn("[DD] PATCH status analyze_done échoué:", patchRes.status, patchErr);
+      }
       return new Response(JSON.stringify(dueDiligenceResult), {
         headers: { ...corsHeaders(req), "Content-Type": "application/json" },
       });
@@ -1023,7 +1051,7 @@ Réponds UNIQUEMENT avec le JSON complet.`;
         headers: { ...corsHeaders(req), "Content-Type": "application/json" },
       });
     }
-    await fetch(`${SUPABASE_URL_SEARCH}/rest/v1/due_diligence_jobs`, {
+    const insertRes = await fetch(`${SUPABASE_URL_SEARCH}/rest/v1/due_diligence_jobs`, {
       method: "POST",
       headers: {
         "apikey": SUPABASE_SERVICE_ROLE_KEY_SEARCH,
@@ -1041,7 +1069,15 @@ Réponds UNIQUEMENT avec le JSON complet.`;
         status: "search_done",
       }),
     });
-    console.log(`Due Diligence search done for: ${companyName}, jobId: ${jobIdNew}`);
+    if (!insertRes.ok) {
+      const insertErr = await insertRes.text();
+      console.error("[DD] Échec INSERT job:", insertRes.status, insertErr);
+      return new Response(JSON.stringify({ error: `Erreur sauvegarde résultats (${insertRes.status}). Vérifiez la configuration Supabase.` }), {
+        status: 500,
+        headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+      });
+    }
+    console.log(`Due Diligence search done for: ${companyName}, jobId: ${jobIdNew}, results: ${dedupedResults.length}`);
     return new Response(
       JSON.stringify({ jobId: jobIdNew, status: "search_done", searchResultsCount: dedupedResults.length }),
       { headers: { ...corsHeaders(req), "Content-Type": "application/json" } }
