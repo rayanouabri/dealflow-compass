@@ -82,29 +82,37 @@ function validateAndCleanUrl(url: string): string | null {
   }
 }
 
-// Search using Brave Search API
-// Search using Serper.dev API (Google Search) - 2500 free searches/month
-// Fallback to Brave Search if Serper not configured
+// Search using Serper.dev (primary) → Brave Search (fallback)
+// Both are tried in order; if one fails or returns 0 results, the other is attempted
 async function braveSearch(query: string, count: number = 20, retries: number = 2): Promise<BraveSearchResult[]> {
   const SERPER_API_KEY = Deno.env.get("SERPER_API_KEY") || Deno.env.get("serper_api");
   const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY");
-  
+
+  // Try Serper first
   if (SERPER_API_KEY) {
-    return serperSearch(query, count, SERPER_API_KEY);
+    const results = await serperSearch(query, count, SERPER_API_KEY);
+    if (results.length > 0) return results;
+    // Serper failed or returned 0 results → fall through to Brave
   }
-  
+
+  // Fallback to Brave
   if (BRAVE_API_KEY) {
-    return braveSearchFallback(query, count, BRAVE_API_KEY, retries);
+    const results = await braveSearchFallback(query, count, BRAVE_API_KEY, retries);
+    if (results.length > 0) return results;
   }
-  
-  console.warn("Aucune API de recherche configurée");
+
+  console.warn(`[Search] Aucun résultat pour: ${query.substring(0, 60)}`);
   return [];
 }
 
+let _serperAuthFailed = false; // Skip Serper after first auth failure to save time
+let _braveAuthFailed = false;
+
 async function serperSearch(query: string, count: number, apiKey: string): Promise<BraveSearchResult[]> {
+  if (_serperAuthFailed) return []; // Don't retry after auth failure
   try {
     console.log(`[Serper] Recherche: ${query.substring(0, 50)}...`);
-    
+
     const response = await fetch("https://google.serper.dev/search", {
       method: "POST",
       headers: {
@@ -115,7 +123,12 @@ async function serperSearch(query: string, count: number, apiKey: string): Promi
     });
 
     if (!response.ok) {
-      console.error(`[Serper] Erreur ${response.status}`);
+      const errText = await response.text().catch(() => "");
+      console.error(`[Serper] Erreur ${response.status}: ${errText.slice(0, 100)}`);
+      if (response.status === 401 || response.status === 403) {
+        console.error("[Serper] ❌ Clé API invalide ! Passage au fallback Brave.");
+        _serperAuthFailed = true;
+      }
       return [];
     }
 
@@ -126,7 +139,7 @@ async function serperSearch(query: string, count: number, apiKey: string): Promi
       description: r.snippet || "",
       extra_snippets: [],
     }));
-    
+
     console.log(`[Serper] ✅ ${results.length} résultats`);
     return results;
     
@@ -137,6 +150,7 @@ async function serperSearch(query: string, count: number, apiKey: string): Promi
 }
 
 async function braveSearchFallback(query: string, count: number, apiKey: string, retries: number): Promise<BraveSearchResult[]> {
+  if (_braveAuthFailed) return []; // Don't retry after auth failure
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   for (let attempt = 0; attempt < retries; attempt++) {
@@ -148,18 +162,28 @@ async function braveSearchFallback(query: string, count: number, apiKey: string,
 
       if (response.ok) {
         const data = await response.json();
-        return (data.web?.results || []).map((r: any) => ({
+        const results = (data.web?.results || []).map((r: any) => ({
           title: r.title || "",
           url: r.url || "",
           description: r.description || "",
           extra_snippets: r.extra_snippets || [],
         }));
+        console.log(`[Brave] ✅ ${results.length} résultats`);
+        return results;
+      }
+
+      if (response.status === 401 || response.status === 403 || response.status === 422) {
+        const errText = await response.text().catch(() => "");
+        console.error(`[Brave] ❌ Clé API invalide (${response.status}): ${errText.slice(0, 100)}`);
+        _braveAuthFailed = true;
+        return [];
       }
 
       if (response.status === 429 && attempt < retries - 1) {
         await sleep(2000 * Math.pow(2, attempt));
         continue;
       }
+      console.error(`[Brave] Erreur ${response.status}`);
       return [];
     } catch {
       if (attempt === retries - 1) return [];
@@ -437,8 +461,20 @@ serve(async (req) => {
       }
       const jobList = await jobRes.json();
       const job = Array.isArray(jobList) ? jobList[0] : jobList;
-      if (!job || job.status !== "search_done" || !job.search_context) {
-        return new Response(JSON.stringify({ error: `Job introuvable ou déjà analysé (id: ${jobId}, status: ${job?.status || "absent"})` }), {
+      if (!job) {
+        return new Response(JSON.stringify({ error: `Job introuvable (id: ${jobId}). La recherche a peut-être échoué.` }), {
+          status: 400,
+          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+        });
+      }
+      if (job.status !== "search_done") {
+        return new Response(JSON.stringify({ error: `Job non prêt pour l'analyse (id: ${jobId}, status: ${job.status}). Statut attendu: search_done.` }), {
+          status: 400,
+          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+        });
+      }
+      if (!job.search_context || job.search_context.trim().length === 0) {
+        return new Response(JSON.stringify({ error: `La recherche n'a collecté aucune donnée pour "${job.company_name}". Vérifiez vos clés API de recherche (SERPER_API_KEY / BRAVE_API_KEY) dans Supabase Dashboard > Edge Functions > Secrets.`, setupRequired: true }), {
           status: 400,
           headers: { ...corsHeaders(req), "Content-Type": "application/json" },
         });
@@ -955,6 +991,23 @@ Réponds UNIQUEMENT avec le JSON complet.`;
     }
 
     console.log(`Total search results collected: ${allSearchResults.length}`);
+
+    // Si aucune recherche n'a retourné de résultat, les clés API sont probablement invalides
+    if (allSearchResults.length === 0) {
+      const issues: string[] = [];
+      if (_serperAuthFailed) issues.push("Serper (clé invalide/expirée)");
+      if (_braveAuthFailed) issues.push("Brave Search (clé invalide/expirée)");
+      const detail = issues.length > 0
+        ? `APIs en erreur : ${issues.join(", ")}. Mettez à jour vos clés dans Supabase Dashboard > Edge Functions > Secrets.`
+        : "Les recherches n'ont retourné aucun résultat. Vérifiez vos clés SERPER_API_KEY / BRAVE_API_KEY.";
+      return new Response(JSON.stringify({
+        error: `Échec de la recherche web : 0 résultat sur ${searchQueries.length} requêtes. ${detail}`,
+        setupRequired: true,
+      }), {
+        status: 500,
+        headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+      });
+    }
 
     // Dédupliquer les résultats par URL
     const uniqueResults = new Map<string, BraveSearchResult>();
