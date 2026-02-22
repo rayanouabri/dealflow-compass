@@ -1,11 +1,23 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Max-Age': '86400',
-};
+const ALLOWED_ORIGINS = [
+  "https://ai-vc-sourcing.vercel.app",
+  "http://localhost:8080",
+  "http://localhost:5173",
+  "http://127.0.0.1:8080",
+  "http://127.0.0.1:5173",
+];
+
+function corsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get("origin") ?? "";
+  const allow = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allow,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Max-Age": "86400",
+  };
+}
 
 interface NinjaSourcingRequest {
   customThesis?: {
@@ -159,11 +171,13 @@ async function sourceByLookalike(referenceCompany: string, geography: string, ma
 }
 
 serve(async (req) => {
+  const headers = corsHeaders(req);
+
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response(null, { 
+    return new Response(null, {
       status: 204,
-      headers: corsHeaders 
+      headers,
     });
   }
 
@@ -225,7 +239,7 @@ serve(async (req) => {
         sources: allResults.slice(0, 20),
       }), {
         status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...headers, "Content-Type": "application/json" },
       });
     }
 

@@ -28,8 +28,8 @@ export function AppLayout({
     <div className="min-h-screen flex flex-col bg-background dark">
       <div className="fixed inset-0 bg-gradient-to-br from-[#1a1a2e] via-[#252540] to-[#1a1a2e] -z-10" />
       <div className="fixed inset-0 terminal-grid opacity-[0.12] -z-10" />
-      <div className="fixed inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(48,100%,60%,0.25),transparent_50%)] -z-10" />
-      <div className="fixed inset-0 bg-[radial-gradient(circle_at_70%_80%,rgba(220,50%,50%,0.18),transparent_50%)] -z-10" />
+      <div className="fixed inset-0 bg-[radial-gradient(circle_at_30%_20%,hsla(48,100%,60%,0.25),transparent_50%)] -z-10" />
+      <div className="fixed inset-0 bg-[radial-gradient(circle_at_70%_80%,hsla(220,50%,50%,0.18),transparent_50%)] -z-10" />
       
       <header className="sticky top-0 z-50 border-b border-primary/30 bg-background/90 backdrop-blur-md shadow-lg shadow-primary/10">
         <div className="container max-w-6xl mx-auto px-4 sm:px-6 py-3">

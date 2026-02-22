@@ -22,6 +22,7 @@ export type Database = {
           investment_thesis: Json | null
           pitch_deck: Json | null
           startup_name: string
+          user_id: string | null
         }
         Insert: {
           created_at?: string
@@ -30,6 +31,7 @@ export type Database = {
           investment_thesis?: Json | null
           pitch_deck?: Json | null
           startup_name: string
+          user_id?: string | null
         }
         Update: {
           created_at?: string
@@ -38,8 +40,137 @@ export type Database = {
           investment_thesis?: Json | null
           pitch_deck?: Json | null
           startup_name?: string
+          user_id?: string | null
         }
         Relationships: []
+      }
+      due_diligence_jobs: {
+        Row: {
+          id: string
+          company_name: string
+          company_website: string | null
+          additional_context: string | null
+          search_context: string | null
+          search_results_count: number | null
+          status: string
+          result: Json | null
+          error_message: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_name: string
+          company_website?: string | null
+          additional_context?: string | null
+          search_context?: string | null
+          search_results_count?: number | null
+          status?: string
+          result?: Json | null
+          error_message?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_name?: string
+          company_website?: string | null
+          additional_context?: string | null
+          search_context?: string | null
+          search_results_count?: number | null
+          status?: string
+          result?: Json | null
+          error_message?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      sourcing_jobs: {
+        Row: {
+          id: string
+          fund_name: string | null
+          custom_thesis: Json | null
+          params: Json
+          search_context: Json | null
+          search_results_count: number | null
+          status: string
+          result: Json | null
+          error_message: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          fund_name?: string | null
+          custom_thesis?: Json | null
+          params?: Json
+          search_context?: Json | null
+          search_results_count?: number | null
+          status?: string
+          result?: Json | null
+          error_message?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          fund_name?: string | null
+          custom_thesis?: Json | null
+          params?: Json
+          search_context?: Json | null
+          search_results_count?: number | null
+          status?: string
+          result?: Json | null
+          error_message?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      user_profiles: {
+        Row: {
+          id: string
+          email: string | null
+          full_name: string | null
+          company_name: string | null
+          role: string | null
+          subscription_tier: string
+          trial_credits_remaining: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          email?: string | null
+          full_name?: string | null
+          company_name?: string | null
+          role?: string | null
+          subscription_tier?: string
+          trial_credits_remaining?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          email?: string | null
+          full_name?: string | null
+          company_name?: string | null
+          role?: string | null
+          subscription_tier?: string
+          trial_credits_remaining?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_profiles_id_fkey"
+            columns: ["id"]
+            isOneToOne: true
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
       }
     }
     Views: {

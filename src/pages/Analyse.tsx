@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -103,6 +103,13 @@ interface InvestmentThesis {
   description: string;
 }
 
+interface AnalysisMetadata {
+  confidence?: "high" | "medium" | "low";
+  dataQuality?: string;
+  limitations?: string;
+  lastUpdated?: string;
+}
+
 interface AnalysisResult {
   fundInfo?: any;
   investmentThesis: InvestmentThesis;
@@ -111,6 +118,7 @@ interface AnalysisResult {
   dueDiligenceReport?: Slide[];
   dueDiligenceReports?: Slide[][];
   pitchDeck?: Slide[];
+  analysisMetadata?: AnalysisMetadata;
 }
 
 interface HistoryItem {
@@ -142,6 +150,7 @@ export default function Analyse() {
   const [showPaywall, setShowPaywall] = useState(false);
   const [restoredState, setRestoredState] = useState<AnalyseState | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const analysisStartedRef = useRef(false);
 
   const analyseState = (state as AnalyseState | null) ?? restoredState;
 
@@ -158,6 +167,7 @@ export default function Analyse() {
 
   useEffect(() => {
     if (authLoading) return;
+    if (analysisStartedRef.current) return;
     let effective: AnalyseState | null = (state as AnalyseState | null) ?? restoredState;
     if (!effective) {
       try {
@@ -174,6 +184,8 @@ export default function Analyse() {
       navigate("/analyser", { replace: true });
       return;
     }
+
+    analysisStartedRef.current = true;
 
     if ("fromHistory" in effective && effective.fromHistory) {
       setResult(effective.result);
@@ -292,7 +304,7 @@ export default function Analyse() {
         setLoading(false);
       }
     })();
-  }, [authLoading, state, user]);
+  }, [authLoading, state, user, restoredState]);
 
   const fetchHistory = async () => {
     if (!user) return;
