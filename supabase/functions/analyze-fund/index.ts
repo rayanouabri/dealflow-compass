@@ -5,8 +5,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 //
 // search_fund     : Recherche thèse du fonds (parallel, ~20s)
 // search_market   : Recherche startups + sélection IA de la meilleure (~35s)
-// search_startups : Full DD search sur la startup sélectionnée (~80s)
-// analyze         : Full DD analyze → rapport complet + slides (~90s)
+// search_startups : Appelle due-diligence phase search (~80s)
+// analyze         : Appelle due-diligence phase analyze → rapport + slides (~90s)
 // ─────────────────────────────────────────────
 
 const ALLOWED_ORIGINS = [
@@ -35,7 +35,7 @@ function corsHeaders(req: Request | null): Record<string, string> {
   };
 }
 
-// ─── Search helpers ───────────────────────────────────────────────────────────
+// ─── Search helpers (for phases 1 & 2 only) ─────────────────────────────────
 
 interface SearchResult {
   title: string;
@@ -71,15 +71,13 @@ async function serperSearch(query: string, count: number, key: string): Promise<
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
       console.error(`[Serper] ${res.status}: ${txt.slice(0, 100)}`);
-      if (res.status === 401 || res.status === 403) { _serperFailed = true; console.error("[Serper] ❌ Clé invalide"); }
+      if (res.status === 401 || res.status === 403) { _serperFailed = true; }
       return [];
     }
     const data = await res.json();
-    const results = (data.organic || []).slice(0, count).map((r: any) => ({
+    return (data.organic || []).slice(0, count).map((r: any) => ({
       title: r.title || "", url: r.link || "", description: r.snippet || "", extra_snippets: [],
     }));
-    console.log(`[Serper] ✅ ${results.length} résultats`);
-    return results;
   } catch { return []; }
 }
 
@@ -106,7 +104,7 @@ async function braveSearchFn(query: string, count: number, key: string): Promise
   return [];
 }
 
-// ─── AI endpoint ─────────────────────────────────────────────────────────────
+// ─── AI endpoint (for phase 2 selection only) ────────────────────────────────
 
 async function getAIEndpoint(): Promise<{ url: string; headers: Record<string, string>; isVertex: boolean }> {
   const AI_PROVIDER = (Deno.env.get("AI_PROVIDER") || "gemini").toLowerCase();
@@ -144,16 +142,15 @@ async function getAIEndpoint(): Promise<{ url: string; headers: Record<string, s
     });
     if (!tr.ok) throw new Error("Vertex AI token failed");
     const tokenData = await tr.json();
-    const token = tokenData?.access_token;
-    if (!token) throw new Error("Vertex AI token response missing access_token");
+    if (!tokenData?.access_token) throw new Error("Vertex AI token missing access_token");
     return {
       url: `https://${VERTEX_LOCATION}-aiplatform.googleapis.com/v1/projects/${VERTEX_PROJECT}/locations/${VERTEX_LOCATION}/publishers/google/models/${VERTEX_MODEL}:generateContent`,
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${tokenData.access_token}` },
       isVertex: true,
     };
   }
 
-  if (!GEMINI_KEY) throw new Error("GEMINI_API_KEY manquante. Configurez GEMINI_KEY_2 ou GEMINI_API_KEY dans les secrets Supabase.");
+  if (!GEMINI_KEY) throw new Error("GEMINI_API_KEY manquante.");
   return {
     url: `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`,
     headers: { "Content-Type": "application/json" },
@@ -167,108 +164,30 @@ function makeBody(text: string, maxTokens: number, isVertex: boolean, temp = 0.1
     : { contents: [{ parts: [{ text }] }], generationConfig: { temperature: temp, maxOutputTokens: maxTokens, responseMimeType: "application/json" as const } };
 }
 
-// ─── JSON parsing ─────────────────────────────────────────────────────────────
-
 function parseJSON(content: string): any {
   if (!content || typeof content !== "string") throw new Error("Content is not a string");
-
   let s = content.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
-  if (!s) throw new Error("Content is empty after trimming");
-
   const start = s.indexOf("{"), end = s.lastIndexOf("}");
-  if (start >= 0 && end > start) {
-    s = s.slice(start, end + 1);
-  }
-
-  try {
-    return JSON.parse(s);
-  } catch (e1) {
-    try {
-      // Try fixing trailing commas
-      const fixed = s.replace(/,(\s*[}\]])/g, "$1");
-      return JSON.parse(fixed);
-    } catch (e2) {
-      // Try fixing single quotes
-      try {
-        const fixed2 = s.replace(/'/g, '"');
-        return JSON.parse(fixed2);
-      } catch (e3) {
-        throw new Error(`JSON parse failed: ${e1 instanceof Error ? e1.message : String(e1)}`);
-      }
+  if (start >= 0 && end > start) s = s.slice(start, end + 1);
+  try { return JSON.parse(s); } catch (e1) {
+    try { return JSON.parse(s.replace(/,(\s*[}\]])/g, "$1")); } catch {
+      throw new Error(`JSON parse failed: ${e1 instanceof Error ? e1.message : String(e1)}`);
     }
   }
-}
-
-// ─── Search context builder (same as due-diligence) ──────────────────────────
-
-function buildDDContext(results: SearchResult[]): string {
-  if (!Array.isArray(results) || results.length === 0) return "";
-
-  const uniq = new Map<string, SearchResult>();
-  results.forEach(r => {
-    if (r && r.url && typeof r.url === "string" && r.url.trim() && !uniq.has(r.url)) {
-      uniq.set(r.url, r);
-    }
-  });
-  const deduped = Array.from(uniq.values());
-
-  if (deduped.length === 0) return "";
-
-  const cats: Record<string, SearchResult[]> = { funding: [], metrics: [], team: [], product: [], market: [], news: [], linkedin: [], crunchbase: [], other: [] };
-  deduped.forEach(r => {
-    const url = r.url.toLowerCase(), title = r.title.toLowerCase(), desc = r.description.toLowerCase();
-    if (url.includes("linkedin.com")) cats.linkedin.push(r);
-    else if (url.includes("crunchbase.com")) cats.crunchbase.push(r);
-    else if (title.includes("funding") || title.includes("raised") || desc.includes("series") || desc.includes("valuation") || desc.includes("investor")) cats.funding.push(r);
-    else if (desc.includes("arr") || desc.includes("mrr") || desc.includes("revenue") || title.includes("revenue") || desc.includes("growth") || desc.includes("customer")) cats.metrics.push(r);
-    else if (title.includes("founder") || title.includes("ceo") || title.includes("team") || desc.includes("executive")) cats.team.push(r);
-    else if (title.includes("product") || title.includes("technology") || title.includes("platform") || title.includes("solution")) cats.product.push(r);
-    else if (title.includes("market") || title.includes("competitor") || title.includes("industry")) cats.market.push(r);
-    else if (url.includes("techcrunch") || url.includes("venturebeat") || url.includes("reuters") || title.includes("announce")) cats.news.push(r);
-    else cats.other.push(r);
-  });
-
-  let ctx = "";
-  const addCat = (name: string, items: SearchResult[], limit = 10) => {
-    if (!items.length) return;
-    ctx += `\n\n=== ${name.toUpperCase()} ===\n`;
-    items.slice(0, limit).forEach((r, i) => {
-      ctx += `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.description}\n`;
-      if (r.extra_snippets?.length) ctx += `Extra: ${r.extra_snippets.slice(0, 2).join(" | ")}\n`;
-    });
-  };
-  addCat("Official & Company Info", [...cats.other], 40);
-  addCat("Funding & Investments", cats.funding, 35);
-  addCat("Metrics & Traction", cats.metrics, 30);
-  addCat("Team & Founders", cats.team, 28);
-  addCat("Product & Technology", cats.product, 28);
-  addCat("Market & Competition", cats.market, 28);
-  addCat("News & Press", cats.news, 22);
-  addCat("LinkedIn", cats.linkedin, 10);
-  addCat("Crunchbase", cats.crunchbase, 10);
-  return ctx;
 }
 
 // ─── DD result → Slides (for Analyse.tsx compatibility) ──────────────────────
 
-function ddResultToSlides(dd: any, startup: any, fundCtx: string): any[] {
+function ddResultToSlides(dd: any, startup: any): any[] {
   if (!dd || typeof dd !== "object") dd = {};
 
   const s = (x: any) => {
     if (!x) return "Non disponible";
     const str = typeof x === "string" ? x : String(x);
-    return str && str.trim() ? str.trim() : "Non disponible";
+    return str.trim() || "Non disponible";
   };
-
-  const arr = (x: any): string[] => {
-    if (!Array.isArray(x)) return [];
-    return x.filter((i: any) => typeof i === "string" && i.trim()).map(i => String(i).trim());
-  };
-
-  const srcs = (x: any) => {
-    if (!x || !Array.isArray(x?.sources)) return [];
-    return x.sources.filter((src: any) => src && typeof src === "object");
-  };
+  const arr = (x: any): string[] => Array.isArray(x) ? x.filter((i: any) => typeof i === "string" && i.trim()) : [];
+  const srcs = (x: any) => Array.isArray(x?.sources) ? x.sources.filter((src: any) => src && typeof src === "object") : [];
 
   return [
     {
@@ -366,6 +285,42 @@ function ddResultToSlides(dd: any, startup: any, fundCtx: string): any[] {
   ];
 }
 
+// ─── Helper: call the due-diligence Edge Function ────────────────────────────
+
+async function callDueDiligence(supUrl: string, supKey: string, body: object): Promise<{ ok: boolean; data: any; error?: string }> {
+  const ddUrl = `${supUrl}/functions/v1/due-diligence`;
+  console.log(`[analyze-fund] → Appel due-diligence: ${JSON.stringify(body).slice(0, 120)}...`);
+
+  try {
+    const res = await fetch(ddUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${supKey}`,
+        "apikey": supKey,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const text = await res.text();
+    if (!res.ok) {
+      console.error(`[analyze-fund] ← due-diligence ${res.status}: ${text.slice(0, 300)}`);
+      return { ok: false, data: null, error: `due-diligence ${res.status}: ${text.slice(0, 200)}` };
+    }
+
+    try {
+      const data = JSON.parse(text);
+      return { ok: true, data };
+    } catch {
+      return { ok: false, data: null, error: `Réponse due-diligence non-JSON: ${text.slice(0, 200)}` };
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[analyze-fund] ← due-diligence fetch error: ${msg}`);
+    return { ok: false, data: null, error: msg };
+  }
+}
+
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 serve((req) => {
@@ -385,15 +340,11 @@ serve((req) => {
       }
 
       const dbH = { "apikey": SUP_KEY, "Authorization": `Bearer ${SUP_KEY}`, "Content-Type": "application/json" };
-      const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
       const getJob = async (id: string) => {
         if (!id) return null;
         const res = await fetch(`${SUP_URL}/rest/v1/sourcing_jobs?id=eq.${encodeURIComponent(id)}&select=*`, { headers: dbH });
-        if (!res.ok) {
-          console.error(`[getJob] API error ${res.status}`);
-          return null;
-        }
+        if (!res.ok) return null;
         const list = await res.json();
         return (Array.isArray(list) && list.length > 0) ? list[0] : null;
       };
@@ -450,7 +401,7 @@ serve((req) => {
         }
         const insertData = await insertRes.json();
         const newJobId = (Array.isArray(insertData) && insertData.length > 0) ? insertData[0]?.id : insertData?.id;
-        if (!newJobId || typeof newJobId !== "string") return err("Échec création job sourcing - ID invalide", 500);
+        if (!newJobId) return err("Échec création job sourcing - ID invalide", 500);
         return ok({ jobId: newJobId });
       }
 
@@ -472,7 +423,6 @@ serve((req) => {
 
         console.log(`[analyze-fund] search_market: sector=${sector}, stage=${stage}, geo=${geo}`);
 
-        // 6 recherches parallèles ciblées par secteur/stade/géo
         const [r1, r2, r3, r4, r5, r6] = await Promise.all([
           search(`${sector} ${stage} startup ${geo} funding raised 2024 2025`, 15),
           search(`best ${sector} startups ${geo} 2024 2025 emerging innovative`, 12),
@@ -547,7 +497,7 @@ Réponds UNIQUEMENT avec ce JSON (pas de markdown):
             name: (first?.title || "Unknown").split(" -")[0].split(" |")[0].trim().slice(0, 60),
             website: first?.url || null,
             matchReason: "Sélection par défaut (premier résultat pertinent)",
-            matchScore: 60
+            matchScore: 60,
           };
         }
 
@@ -557,16 +507,12 @@ Réponds UNIQUEMENT avec ce JSON (pas de markdown):
         console.log(`[analyze-fund] ✅ Startup sélectionnée: "${selectedStartup.name}"`);
 
         const patchRes = await patchJob(jobId, { search_context: { ...ctx, selectedStartup, startupSearchCount: unique.length }, status: "market_done" });
-        if (!patchRes.ok) {
-          const errText = await patchRes.text().catch(() => "");
-          console.error(`[search_market] DB patch error ${patchRes.status}: ${errText.slice(0, 200)}`);
-          return err("Échec mise à jour job (search_market)", 500);
-        }
+        if (!patchRes.ok) return err("Échec mise à jour job (search_market)", 500);
         return ok({ jobId });
       }
 
       // ─────────────────────────────────────────────────────────────────────
-      // PHASE 3 : SEARCH STARTUPS — Full DD search (même qualité que due-diligence)
+      // PHASE 3 : SEARCH STARTUPS — Appelle due-diligence phase search
       // ─────────────────────────────────────────────────────────────────────
       if (phase === "search_startups" && jobId) {
         const job = await getJob(jobId);
@@ -578,99 +524,39 @@ Réponds UNIQUEMENT avec ce JSON (pas de markdown):
         const companyWebsite = startup?.website || "";
 
         if (!companyName) return err("Aucune startup sélectionnée. Phase search_market manquante ou échouée.", 400);
-        console.log(`[analyze-fund] search_startups DD: "${companyName}"`);
+        console.log(`[analyze-fund] search_startups → due-diligence search: "${companyName}"`);
 
-        // MÊMES requêtes que la fonction due-diligence (qualité identique)
-        const ddQueries = [
-          `${companyName} company overview about`,
-          `${companyName} startup official website`,
-          `"${companyName}" company profile business`,
-          `${companyName} company description mission`,
-          `${companyName} funding round investment 2024 2025`,
-          `${companyName} series A B C funding valuation investors`,
-          `${companyName} raised million funding round`,
-          `${companyName} valuation latest funding`,
-          `${companyName} levée de fonds investisseurs`,
-          `${companyName} revenue ARR MRR metrics`,
-          `${companyName} customers clients users growth`,
-          `${companyName} traction growth rate metrics 2024`,
-          `${companyName} milestones achievements key events`,
-          `${companyName} partnerships deals clients`,
-          `${companyName} market share business performance`,
-          `${companyName} key metrics KPIs unit economics`,
-          `${companyName} revenue growth ARR valuation multiple`,
-          `${companyName} founders CEO CTO team LinkedIn`,
-          `${companyName} founder CEO name background biography`,
-          `${companyName} leadership team executives background`,
-          `${companyName} employees headcount team size`,
-          `${companyName} fondateurs équipe management`,
-          `${companyName} who founded CEO`,
-          `${companyName} product technology platform`,
-          `${companyName} solution features how it works`,
-          `${companyName} technology stack patents`,
-          `${companyName} produit innovation`,
-          `${companyName} competitors market landscape`,
-          `${companyName} industry market TAM SAM`,
-          `${companyName} competitive advantage moat`,
-          `${companyName} market size opportunity`,
-          `${companyName} news latest 2024 2025`,
-          `${companyName} press release announcement`,
-          `${companyName} partenariat accord`,
-          `${companyName} LinkedIn company page`,
-          `${companyName} Crunchbase profile`,
-          `${companyName} Dealroom PitchBook`,
-          `${companyName} challenges risks concerns`,
-          `${companyName} reviews reputation`,
-          `${companyName} awards prizes recognition`,
-          `${companyName} récompenses prix concours`,
-        ];
-        if (companyWebsite) {
-          ddQueries.push(`site:${companyWebsite} about`);
-          ddQueries.push(`site:${companyWebsite} team`);
-        }
-        // Requête de correspondance fonds
-        if (startup?.matchReason) {
-          ddQueries.push(`${companyName} ${job.custom_thesis?.sectors?.[0] || ""} investment thesis`);
+        // Appel direct à la fonction due-diligence (phase search)
+        const ddSearch = await callDueDiligence(SUP_URL, SUP_KEY, {
+          companyName,
+          companyWebsite: companyWebsite || undefined,
+          additionalContext: startup.searchContext || startup.matchReason || undefined,
+        });
+
+        if (!ddSearch.ok) {
+          return err(`Échec due-diligence search: ${ddSearch.error}`, 500);
         }
 
-        // Batch de 5 en parallèle, délai 400ms (Serper sans rate limit)
-        const allResults: SearchResult[] = [];
-        const batchSize = 5;
-        for (let i = 0; i < ddQueries.length; i += batchSize) {
-          const batch = ddQueries.slice(i, i + batchSize);
-          try {
-            const batchRes = await Promise.all(batch.map(q => search(q, 20).catch(e => {
-              console.warn(`[search_startups] Erreur recherche "${q.slice(0, 50)}...": ${e instanceof Error ? e.message : String(e)}`);
-              return [];
-            })));
-            batchRes.forEach(r => {
-              if (Array.isArray(r)) allResults.push(...r);
-            });
-          } catch (batchErr) {
-            console.warn(`[search_startups] Erreur batch ${i}-${i + batchSize}: ${batchErr instanceof Error ? batchErr.message : String(batchErr)}`);
-          }
-          if (i + batchSize < ddQueries.length) await sleep(400);
+        const ddJobId = ddSearch.data?.jobId;
+        const ddSearchCount = ddSearch.data?.searchResultsCount || 0;
+        if (!ddJobId) {
+          return err("due-diligence n'a pas retourné de jobId", 500);
         }
 
-        const ddContext = buildDDContext(allResults);
-        const uniqCount = new Set(allResults.map(r => r.url).filter(Boolean)).size;
-        console.log(`[analyze-fund] DD search: ${uniqCount} URLs uniques pour "${companyName}"`);
+        console.log(`[analyze-fund] ✅ DD search done: ddJobId=${ddJobId}, ${ddSearchCount} résultats`);
 
-        if (uniqCount === 0) {
-          return err(`Aucun résultat de recherche pour "${companyName}". Vérifiez vos clés API (SERPER_API_KEY / BRAVE_API_KEY).`, 500);
-        }
-
-        const patchRes2 = await patchJob(jobId, { search_context: { ...ctx, ddSearchContext: ddContext }, search_results_count: uniqCount, status: "search_done" });
-        if (!patchRes2.ok) {
-          const errText = await patchRes2.text().catch(() => "");
-          console.error(`[search_startups] DB patch error ${patchRes2.status}: ${errText.slice(0, 200)}`);
-          return err("Échec mise à jour job (search_startups)", 500);
-        }
+        // Sauvegarder le ddJobId dans le sourcing_job pour la phase analyze
+        const patchRes = await patchJob(jobId, {
+          search_context: { ...ctx, ddJobId, ddSearchCount },
+          search_results_count: ddSearchCount,
+          status: "search_done",
+        });
+        if (!patchRes.ok) return err("Échec mise à jour job (search_startups)", 500);
         return ok({ jobId });
       }
 
       // ─────────────────────────────────────────────────────────────────────
-      // PHASE 4 : ANALYZE — Full DD analyze (même qualité que due-diligence)
+      // PHASE 4 : ANALYZE — Appelle due-diligence phase analyze → slides
       // ─────────────────────────────────────────────────────────────────────
       if (phase === "analyze" && jobId) {
         const job = await getJob(jobId);
@@ -678,243 +564,40 @@ Réponds UNIQUEMENT avec ce JSON (pas de markdown):
 
         const ctx = job.search_context as any;
         const selectedStartup = ctx.selectedStartup || {};
-        const companyName = selectedStartup.name || job.fund_name || "";
-        const ddSearchContext = ctx.ddSearchContext || "";
+        const ddJobId = ctx.ddJobId;
         const fundThesisContext = ctx.fundThesisContext || "";
-        const fundName = job.fund_name || "";
+        const fundNameLocal = job.fund_name || "";
         const thesis = job.custom_thesis || {};
 
-        if (!ddSearchContext.trim()) return err(`Contexte de recherche vide pour "${companyName}". Relancez search_startups.`);
-        console.log(`[analyze-fund] analyze DD: "${companyName}"`);
-
-        const aiEndpoint = await getAIEndpoint();
-
-        // ──── Recherche de lacunes (gap queries) comme due-diligence ────
-        let enrichedContext = ddSearchContext || "";
-        try {
-          if (!ddSearchContext || ddSearchContext.trim().length === 0) {
-            console.warn("[analyze] Contexte DD vide, skip gap search");
-          } else {
-            const gapPrompt = `Tu es analyste VC. Contexte de recherche sur "${companyName}":
-
-${ddSearchContext.slice(0, 6000)}
-
-Identifie 2-3 thèmes où les données sont insuffisantes (équipe/fondateurs, métriques, financements, produit).
-Pour chaque thème, 1-2 requêtes courtes en anglais.
-Réponds UNIQUEMENT en JSON: {"gaps":[{"label":"...","queries":["q1","q2"]}]}
-Si suffisant: {"gaps":[]}`;
-
-            const gapBody = makeBody(gapPrompt, 800, aiEndpoint.isVertex, 0.1);
-            const gapRes = await fetch(aiEndpoint.url, { method: "POST", headers: aiEndpoint.headers, body: JSON.stringify(gapBody) });
-            if (gapRes.ok) {
-              const gapData = await gapRes.json();
-              const gapText: string = gapData.candidates?.[0]?.content?.parts?.[0]?.text || "";
-              if (gapText && typeof gapText === "string" && gapText.trim()) {
-                try {
-                  const parsed = parseJSON(gapText);
-                  const gaps: any[] = Array.isArray(parsed?.gaps) ? parsed.gaps : [];
-                  const queries: string[] = [];
-                  for (const g of gaps.slice(0, 3)) {
-                    if (g && Array.isArray(g.queries)) {
-                      queries.push(...g.queries.slice(0, 2).map((q: any) => {
-                        const str = String(q).trim();
-                        return str.length >= 8 ? str : "";
-                      }).filter(Boolean));
-                    }
-                  }
-                  const uniqueGapQ = [...new Set(queries)].slice(0, 8);
-                  if (uniqueGapQ.length > 0) {
-                    const extraLines: string[] = [];
-                    const seenUrls = new Set<string>();
-                    for (const q of uniqueGapQ) {
-                      try {
-                        const results = await search(q, 6);
-                        if (Array.isArray(results)) {
-                          for (const r of results) {
-                            if (r && r.url && typeof r.url === "string" && !seenUrls.has(r.url)) {
-                              seenUrls.add(r.url);
-                              extraLines.push(`${r.title}: ${r.description} | ${r.url}`);
-                            }
-                          }
-                        }
-                      } catch (searchErr) {
-                        console.warn(`[analyze] Gap search query error "${q.slice(0, 30)}...": ${searchErr instanceof Error ? searchErr.message : ""}`);
-                      }
-                      await sleep(300);
-                    }
-                    if (extraLines.length > 0) {
-                      enrichedContext = `${ddSearchContext}\n\n=== RECHERCHES COMPLÉMENTAIRES ===\n${extraLines.join("\n").slice(0, 4000)}`;
-                      console.log(`[analyze-fund] Enrichissement: ${uniqueGapQ.length} requêtes gap, ${extraLines.length} sources`);
-                    }
-                  }
-                } catch (parseErr) {
-                  console.warn(`[analyze] Gap JSON parse error: ${parseErr instanceof Error ? parseErr.message : ""}`);
-                }
-              }
-            } else {
-              console.warn(`[analyze] Gap AI request failed: ${gapRes.status}`);
-            }
-          }
-        } catch (gapErr) {
-          console.warn("[analyze-fund] Gap search ignoré:", gapErr instanceof Error ? gapErr.message : String(gapErr));
+        if (!ddJobId) {
+          return err("ddJobId manquant. Relancez search_startups.", 400);
         }
 
-        // ──── Prompt DD complet (identique à due-diligence) ────
-        const systemPrompt = `Tu es un analyste VC senior spécialisé en due diligence avec 20 ans d'expérience.
-Tu dois produire un rapport de due diligence COMPLET et PROFESSIONNEL sur l'entreprise "${companyName}".
+        const companyName = selectedStartup.name || "";
+        console.log(`[analyze-fund] analyze → due-diligence analyze: "${companyName}" (ddJobId=${ddJobId})`);
 
-⚠️ RÈGLES CRITIQUES :
+        // Appel direct à la fonction due-diligence (phase analyze)
+        const ddAnalyze = await callDueDiligence(SUP_URL, SUP_KEY, {
+          phase: "analyze",
+          jobId: ddJobId,
+        });
 
-1. SOURCES OBLIGATOIRES — MAIS PAS DANS LE TEXTE :
-   - NE JAMAIS mettre d'URLs ou de "(Source: ...)" dans les champs texte. Le texte doit rester lisible et professionnel.
-   - Chaque information doit avoir une source : place TOUTES les sources UNIQUEMENT dans les tableaux "sources" de chaque section ET dans "allSources" avec { "name": "Titre court", "url": "URL exacte", "type": "article|crunchbase|linkedin|official|press|other", "relevance": "Info clé extraite" }.
-   - Minimum 15–25 entrées dans "allSources". Utilise TOUTES les URLs pertinentes des résultats de recherche fournis.
-   - NE JAMAIS inventer de données ou d'URLs.
-
-2. DONNÉES VÉRIFIÉES ET ESTIMATIONS :
-   - Priorité aux informations trouvées dans les recherches.
-   - Si une information n'est PAS trouvée : fournis une ESTIMATION basée sur des comparables, en précisant "Estimation".
-   - Pour investmentRecommendation : targetReturn, investmentHorizon, suggestedTicket doivent TOUJOURS être remplis.
-
-3. EXHAUSTIVITÉ — AUCUNE SECTION MINIMALE :
-   - MARCHÉ : TAM/SAM/SOM avec chiffres et sources ou estimations. Tendances, régulation, acteurs clés.
-   - ÉQUIPE : Pour CHAQUE fondateur : name, role, background, linkedin si trouvé.
-   - TRACTION : customers.count, customers.notable, partnerships, awards remplis.
-   - Autres sections : estimation + mention "estimation" plutôt que "Non disponible".
-
-4. FORMAT DU RAPPORT :
-{
-  "company": { "name": "...", "tagline": "...", "website": "...", "linkedinUrl": "...", "crunchbaseUrl": "...", "founded": "...", "headquarters": "...", "sector": "...", "stage": "...", "employeeCount": "..." },
-  "executiveSummary": { "overview": "200 mots, SANS URL", "keyHighlights": [], "keyRisks": [], "recommendation": "INVEST|WATCH|PASS", "confidenceLevel": "high|medium|low" },
-  "product": { "description": "...", "valueProposition": "...", "technology": "...", "patents": "...", "keyFeatures": [], "sources": [] },
-  "market": { "tam": "...", "sam": "...", "som": "...", "cagr": "...", "trends": [], "analysis": "...", "sources": [] },
-  "competition": { "landscape": "...", "competitors": [{"name":"...","description":"...","funding":"...","strengths":[],"weaknesses":[]}], "competitiveAdvantage": "...", "moat": "...", "sources": [] },
-  "financials": { "fundingHistory": [{"round":"...","amount":"...","date":"...","investors":[],"valuation":"...","source":"..."}], "totalFunding": "...", "latestValuation": "...", "metrics": {}, "sources": [] },
-  "team": { "overview": "...", "founders": [{"name":"...","role":"...","background":"...","linkedin":"..."}], "keyExecutives": [], "teamSize": "...", "culture": "...", "hiringTrends": "...", "sources": [] },
-  "traction": { "overview": "...", "keyMilestones": [{"date":"...","milestone":"texte seul obligatoire"}], "customers": {"count":"...","notable":[],"segments":"..."}, "partnerships": [], "awards": [], "sources": [] },
-  "risks": { "marketRisks": [], "executionRisks": [], "financialRisks": [], "competitiveRisks": [], "regulatoryRisks": [], "mitigations": [], "overallRiskLevel": "low|medium|high", "sources": [] },
-  "opportunities": { "growthOpportunities": [], "marketExpansion": "...", "productExpansion": "...", "strategicValue": "...", "sources": [] },
-  "investmentRecommendation": { "recommendation": "...", "rationale": "...", "strengths": [], "weaknesses": [], "keyQuestions": [], "suggestedNextSteps": [], "targetReturn": "...", "investmentHorizon": "...", "suggestedTicket": "..." },
-  "allSources": [{"name":"...","url":"...","type":"...","relevance":"..."}],
-  "dataQuality": { "overallScore": "...", "limitations": [], "sourcesCount": "..." }
-}
-
-Réponds UNIQUEMENT avec du JSON valide.`;
-
-        const userPrompt = `Due diligence complète sur "${companyName}"${fundName ? ` — sourcée pour le fonds "${fundName}"` : ""}.
-
-${selectedStartup.matchReason ? `RAISON DE SÉLECTION POUR CE FONDS: ${selectedStartup.matchReason}\n` : ""}
-${fundThesisContext ? `\nCONTEXTE FONDS (pour aligner la recommandation):\n${fundThesisContext.slice(0, 1000)}\n` : ""}
-
-=== DONNÉES DE RECHERCHE ===
-${enrichedContext}
-
-Génère le rapport de due diligence complet. Utilise toutes les données ci-dessus.`;
-
-        const aiBody = makeBody(`${systemPrompt}\n\n${userPrompt}`, 32768, aiEndpoint.isVertex);
-        let aiRes: Response | null = null;
-        let lastError = "";
-
-        // Retry logic with exponential backoff (max 3 attempts)
-        for (let attempt = 0; attempt < 3; attempt++) {
-          try {
-            aiRes = await fetch(aiEndpoint.url, { method: "POST", headers: aiEndpoint.headers, body: JSON.stringify(aiBody) });
-
-            if (aiRes.ok) break; // Success, exit retry loop
-
-            if (aiRes.status === 429) {
-              const backoff = Math.pow(2, attempt) * 2000; // 2s, 4s, 8s
-              console.warn(`[analyze-fund] Rate limited (429), retry dans ${backoff}ms`);
-              await sleep(backoff);
-              continue;
-            }
-
-            if (aiRes.status >= 500) {
-              console.warn(`[analyze-fund] Server error ${aiRes.status}, retry dans ${2000 * (attempt + 1)}ms`);
-              await sleep(2000 * (attempt + 1));
-              continue;
-            }
-
-            // Client errors (4xx except 429) are not retryable
-            break;
-          } catch (fetchErr) {
-            lastError = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
-            if (attempt < 2) {
-              await sleep(1000 * (attempt + 1));
-              continue;
-            }
-          }
+        if (!ddAnalyze.ok) {
+          return err(`Échec due-diligence analyze: ${ddAnalyze.error}`, 500);
         }
 
-        if (!aiRes) {
-          console.error(`[analyze-fund] AI fetch failed: ${lastError}`);
-          return err(`Erreur IA (fetch failed): ${lastError.slice(0, 100)}`, 500);
-        }
-
-        if (!aiRes.ok) {
-          const errText = await aiRes.text().catch(() => "");
-          console.error(`[analyze-fund] AI error ${aiRes.status}: ${errText.slice(0, 200)}`);
-          return err(`Erreur IA (${aiRes.status}): ${errText.slice(0, 100)}`, aiRes.status >= 500 ? 500 : aiRes.status);
-        }
-
-        const aiData = await aiRes.json();
-        const content: string = aiData.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        if (!content || typeof content !== "string" || !content.trim()) {
-          return err("Réponse IA vide", 500);
-        }
-
-        let ddResult: any;
-        try {
-          ddResult = parseJSON(content);
-        } catch (e) {
-          const errMsg = e instanceof Error ? e.message : "JSON invalide";
-          console.error(`[analyze] JSON parse error: ${errMsg}, content preview: ${content.slice(0, 300)}`);
-          return err(`Impossible de parser le rapport IA: ${errMsg}`, 500);
-        }
-
+        const ddResult = ddAnalyze.data;
         if (!ddResult || typeof ddResult !== "object") {
-          return err("Rapport IA invalide (pas un objet JSON)", 500);
+          return err("due-diligence a retourné un résultat vide", 500);
         }
 
-        // Sanity checks on mandatory fields
-        if (!ddResult.company) ddResult.company = {};
-        if (!ddResult.executiveSummary) ddResult.executiveSummary = {};
-        if (!ddResult.investmentRecommendation) ddResult.investmentRecommendation = {};
-        if (!ddResult.investmentRecommendation.targetReturn) ddResult.investmentRecommendation.targetReturn = "Non disponible";
-        if (!ddResult.investmentRecommendation.investmentHorizon) ddResult.investmentRecommendation.investmentHorizon = "Non disponible";
-        if (!ddResult.investmentRecommendation.recommendation) ddResult.investmentRecommendation.recommendation = "WATCH";
-        if (!ddResult.investmentRecommendation.suggestedTicket) ddResult.investmentRecommendation.suggestedTicket = thesis.ticketSize || "Non disponible";
-
-        // Ensure company name is set
-        if (!ddResult.company.name) ddResult.company.name = companyName;
-        if (!ddResult.company.name) ddResult.company.name = selectedStartup.name || "Unknown";
-
-        if (ddResult.traction?.keyMilestones && Array.isArray(ddResult.traction.keyMilestones)) {
-          ddResult.traction.keyMilestones = ddResult.traction.keyMilestones.map((m: any) => {
-            if (!m) return null;
-            if (typeof m === "string") return { date: "", milestone: m };
-            return {
-              date: typeof m?.date === "string" ? m.date : "",
-              milestone: typeof m?.milestone === "string" ? m.milestone : String(m?.milestone ?? m ?? "")
-            };
-          }).filter((m: any) => m && m.milestone);
-        }
-
-        // Ensure allSources is an array
-        if (!Array.isArray(ddResult.allSources)) ddResult.allSources = [];
-        if (ddResult.allSources.length === 0) {
-          ddResult.allSources = [{ name: "Search Results", url: "", type: "other", relevance: "DD research context" }];
-        }
-
-        // Ensure dataQuality exists
-        if (!ddResult.dataQuality) ddResult.dataQuality = { overallScore: "medium", limitations: [], sourcesCount: "0" };
-        if (!ddResult.dataQuality.overallScore) ddResult.dataQuality.overallScore = "medium";
+        console.log(`[analyze-fund] ✅ DD analyze done: recommendation=${ddResult.investmentRecommendation?.recommendation}`);
 
         // Map DD result to slides (for Analyse.tsx)
-        const slides = ddResultToSlides(ddResult, selectedStartup, fundThesisContext);
+        const slides = ddResultToSlides(ddResult, selectedStartup);
 
         // Startup card data
-        const startup = {
+        const startupCard = {
           name: ddResult.company?.name || companyName,
           tagline: ddResult.company?.tagline || selectedStartup.matchReason || "",
           sector: ddResult.company?.sector || thesis.sectors?.[0] || "",
@@ -936,34 +619,31 @@ Génère le rapport de due diligence complet. Utilise toutes les données ci-des
         };
 
         const investmentThesis = {
-          sectors: thesis.sectors || [startup.sector],
-          stage: thesis.stage || startup.stage,
-          geography: thesis.geography || startup.location,
+          sectors: thesis.sectors || [startupCard.sector],
+          stage: thesis.stage || startupCard.stage,
+          geography: thesis.geography || startupCard.location,
           ticketSize: thesis.ticketSize || ddResult.investmentRecommendation?.suggestedTicket || "",
           description: fundThesisContext.slice(0, 600) || thesis.description || "",
         };
 
         const finalResult = {
           investmentThesis,
-          fundInfo: { name: fundName || "", sources: ctx.fundSources || [] },
-          startups: [startup],
+          fundInfo: { name: fundNameLocal || "", sources: ctx.fundSources || [] },
+          startups: [startupCard],
           dueDiligenceReports: [slides],
-          ddResult, // Rapport DD structuré complet (pour usage futur)
+          ddResult,
           selectedStartup,
           analysisMetadata: {
             confidence: ddResult.executiveSummary?.confidenceLevel || "medium",
             dataQuality: ddResult.dataQuality?.overallScore || "good",
-            searchResultsCount: job.search_results_count || 0,
+            searchResultsCount: ctx.ddSearchCount || job.search_results_count || 0,
             lastUpdated: new Date().toISOString(),
           },
         };
 
         const patchResFinal = await patchJob(jobId, { result: finalResult, status: "analyze_done" });
-        if (!patchResFinal.ok) {
-          const errText = await patchResFinal.text().catch(() => "");
-          console.error(`[analyze] DB patch error ${patchResFinal.status}: ${errText.slice(0, 200)}`);
-          return err("Échec mise à jour job final (analyze)", 500);
-        }
+        if (!patchResFinal.ok) return err("Échec mise à jour job final (analyze)", 500);
+
         console.log(`[analyze-fund] ✅ Analyse complète: "${companyName}" | Recommandation: ${ddResult.investmentRecommendation?.recommendation}`);
         return ok(finalResult);
       }
