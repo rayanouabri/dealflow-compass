@@ -69,16 +69,16 @@ interface AnalysisParametersProps {
 }
 
 export const defaultParams: AnalysisParams = {
-  startupStage: "seed",
-  startupSector: "saas",
-  businessModel: "b2b",
-  targetMarket: "enterprise",
-  teamSize: "1-10",
-  fundingAmount: "1-5m",
-  fundingStage: "seed",
-  timeline: "6-months",
-  headquartersRegion: "north-america",
-  targetGeography: "global",
+  startupStage: "auto",
+  startupSector: "auto",
+  businessModel: "auto",
+  targetMarket: "auto",
+  teamSize: "auto",
+  fundingAmount: "auto",
+  fundingStage: "auto",
+  timeline: "auto",
+  headquartersRegion: "auto",
+  targetGeography: "auto",
   includeCompetitors: true,
   includeMarketSize: true,
   detailedFinancials: false,
@@ -97,6 +97,7 @@ export function AnalysisParameters({ params, onChange, isPro = false, useCustomT
   };
 
   const stages = [
+    { value: "auto", label: "🔍 Auto (selon la thèse du fonds)" },
     { value: "idea", label: "Idea Stage" },
     { value: "pre-seed", label: "Pre-Seed" },
     { value: "seed", label: "Seed" },
@@ -105,6 +106,7 @@ export function AnalysisParameters({ params, onChange, isPro = false, useCustomT
   ];
 
   const sectors = [
+    { value: "auto", label: "🔍 Auto (selon la thèse du fonds)" },
     { value: "saas", label: "SaaS / Software" },
     { value: "fintech", label: "Fintech" },
     { value: "healthtech", label: "Healthtech" },
@@ -137,6 +139,7 @@ export function AnalysisParameters({ params, onChange, isPro = false, useCustomT
   ];
 
   const businessModels = [
+    { value: "auto", label: "🔍 Auto (selon la thèse du fonds)" },
     { value: "b2b", label: "B2B" },
     { value: "b2c", label: "B2C" },
     { value: "b2b2c", label: "B2B2C" },
@@ -152,6 +155,7 @@ export function AnalysisParameters({ params, onChange, isPro = false, useCustomT
   ];
 
   const targetMarkets = [
+    { value: "auto", label: "🔍 Auto (selon la thèse du fonds)" },
     { value: "smb", label: "SMB" },
     { value: "mid-market", label: "Mid-Market" },
     { value: "enterprise", label: "Enterprise" },
@@ -160,6 +164,7 @@ export function AnalysisParameters({ params, onChange, isPro = false, useCustomT
   ];
 
   const teamSizes = [
+    { value: "auto", label: "🔍 Auto" },
     { value: "1-5", label: "1-5 people" },
     { value: "6-10", label: "6-10 people" },
     { value: "11-25", label: "11-25 people" },
@@ -168,6 +173,7 @@ export function AnalysisParameters({ params, onChange, isPro = false, useCustomT
   ];
 
   const fundingAmounts = [
+    { value: "auto", label: "🔍 Auto (selon la thèse du fonds)" },
     { value: "0-500k", label: "$0 - $500K" },
     { value: "500k-1m", label: "$500K - $1M" },
     { value: "1-5m", label: "$1M - $5M" },
@@ -177,6 +183,7 @@ export function AnalysisParameters({ params, onChange, isPro = false, useCustomT
   ];
 
   const timelines = [
+    { value: "auto", label: "🔍 Auto" },
     { value: "asap", label: "ASAP" },
     { value: "3-months", label: "3 months" },
     { value: "6-months", label: "6 months" },
@@ -185,6 +192,7 @@ export function AnalysisParameters({ params, onChange, isPro = false, useCustomT
   ];
 
   const regions = [
+    { value: "auto", label: "🔍 Auto (selon la thèse du fonds)" },
     { value: "north-america", label: "North America" },
     { value: "europe", label: "Europe" },
     { value: "asia", label: "Asia" },
@@ -213,7 +221,7 @@ export function AnalysisParameters({ params, onChange, isPro = false, useCustomT
             <span className="text-primary-foreground font-medium">Analysis Parameters</span>
             {!isOpen && (
               <Badge variant="secondary" className="ml-2 text-xs bg-primary-foreground/20 text-primary-foreground border-primary-foreground/30">
-                {params.startupSector} • {params.fundingStage}
+                {params.startupSector === "auto" ? "auto" : params.startupSector} • {params.fundingStage === "auto" ? "auto" : params.fundingStage}
               </Badge>
             )}
           </span>

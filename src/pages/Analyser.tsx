@@ -24,7 +24,7 @@ interface HistoryItem {
   created_at: string;
 }
 
-const EXAMPLE_FUNDS = ["Accel", "Sequoia Capital", "a16z", "Benchmark", "Index Ventures"];
+const EXAMPLE_FUNDS = ["Supernova Invest", "Breega", "Elaia Partners", "Partech", "Index Ventures"];
 
 export default function Analyser() {
   const navigate = useNavigate();
@@ -86,18 +86,18 @@ export default function Analyser() {
         includeMoat: params.includeMoat,
         detailLevel: params.detailLevel,
         slideCount: params.slideCount || 8,
-        // Ne pas inclure startupStage, startupSector, etc. si customThesis est utilisé
+        // En mode fonds : inclure UNIQUEMENT les critères que l'utilisateur a explicitement modifiés (pas "auto")
         ...(useCustomThesis ? {} : {
-          startupStage: params.startupStage,
-          startupSector: params.startupSector,
-          businessModel: params.businessModel,
-          targetMarket: params.targetMarket,
-          teamSize: params.teamSize,
-          fundingAmount: params.fundingAmount,
-          fundingStage: params.fundingStage,
-          timeline: params.timeline,
-          headquartersRegion: params.headquartersRegion,
-          targetGeography: params.targetGeography,
+          ...(params.startupStage !== "auto" && { startupStage: params.startupStage }),
+          ...(params.startupSector !== "auto" && { startupSector: params.startupSector }),
+          ...(params.businessModel !== "auto" && { businessModel: params.businessModel }),
+          ...(params.targetMarket !== "auto" && { targetMarket: params.targetMarket }),
+          ...(params.teamSize !== "auto" && { teamSize: params.teamSize }),
+          ...(params.fundingAmount !== "auto" && { fundingAmount: params.fundingAmount }),
+          ...(params.fundingStage !== "auto" && { fundingStage: params.fundingStage }),
+          ...(params.timeline !== "auto" && { timeline: params.timeline }),
+          ...(params.headquartersRegion !== "auto" && { headquartersRegion: params.headquartersRegion }),
+          ...(params.targetGeography !== "auto" && { targetGeography: params.targetGeography }),
         }),
       },
     };

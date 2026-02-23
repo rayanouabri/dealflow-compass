@@ -1235,6 +1235,9 @@ ${extraContext2}`;
       const ctxP = jobP.search_context as any;
       // Utilise les résultats Brave directement (stockés depuis le commit fix) — fallback sur systemPrompt si absent
       let pickContext: string = ctxP.startupSearchContext || "";
+      // Récupérer la thèse du fonds pour matcher les critères
+      let fundThesisForPick: string = ctxP.fundThesisContext || "";
+      const fundNameForPick: string = jobP.fund_name || "";
       if (!pickContext && ctxP.systemPrompt) {
         // Anciens jobs : extraire la section des résultats depuis systemPrompt
         const marker = "=== STARTUPS POTENTIELLES TROUVÉES";
@@ -1289,12 +1292,28 @@ ${extraContext2}`;
       // Prompt court : choisir la meilleure startup parmi les résultats de sourcing
       // MAX_PICK_CONTEXT_LENGTH = 8000 : résultats Brave (titre + description + URL), suffisant pour identifier une startup
       const MAX_PICK_CONTEXT_LENGTH = 8000;
-      const pickPrompt = `Tu es un analyste VC senior. À partir des résultats de sourcing ci-dessous (Brave Search), identifie la MEILLEURE startup RÉELLE à analyser en due diligence.
-Critères : startup avec le plus de signaux positifs (funding, traction, team, marché), URL officielle trouvée dans les résultats.
-Réponds UNIQUEMENT avec ce JSON (sans markdown) :
-{"name":"Nom exact de la startup","website":"https://... (URL officielle trouvée dans les résultats, sinon chaîne vide)","description":"1-2 phrases résumant ce que fait la startup"}
+      const fundThesisSection = fundThesisForPick
+        ? `\n=== THÈSE DU FONDS "${fundNameForPick}" (critères à respecter OBLIGATOIREMENT) ===\n${fundThesisForPick.slice(0, 1500)}\n`
+        : "";
+      const pickPrompt = `Tu es un analyste VC senior spécialisé en sourcing. À partir des résultats de sourcing ci-dessous, identifie la MEILLEURE startup RÉELLE à analyser en due diligence.
 
-RÉSULTATS DE SOURCING (Brave Search) :
+⚠️ CRITÈRES DE SÉLECTION OBLIGATOIRES (par ordre de priorité) :
+1. CORRESPONDANCE THÈSE : La startup DOIT correspondre à la thèse d'investissement du fonds (secteurs, géographie, stade, ticket size). UNE STARTUP QUI NE CORRESPOND PAS À LA THÈSE EST ÉLIMINÉE, même si elle est connue.
+2. STADE PRÉCOCE : Privilégie les startups early-stage (Seed, Pre-Seed, Series A) sauf si la thèse du fonds cible un stade différent.
+3. GÉOGRAPHIE : La startup doit être dans la zone géographique ciblée par le fonds. Si le fonds est européen, NE PAS sélectionner de startups US/asiatiques.
+4. SIGNAUX POSITIFS : Funding récent, traction, équipe solide, marché en croissance.
+5. URL OFFICIELLE : La startup doit avoir un site web trouvable dans les résultats.
+
+🚫 ÉLIMINER IMMÉDIATEMENT :
+- Les grandes entreprises établies (>$100M de revenus, >500 employés, cotées en bourse)
+- Les startups hors zone géographique du fonds
+- Les startups dans un secteur différent de la thèse
+- Les entreprises qui ne sont pas des startups (médias, agences, cabinets de conseil)
+${fundThesisSection}
+Réponds UNIQUEMENT avec ce JSON (sans markdown) :
+{"name":"Nom exact de la startup","website":"https://... (URL officielle trouvée dans les résultats, sinon chaîne vide)","description":"1-2 phrases résumant ce que fait la startup et pourquoi elle correspond à la thèse du fonds"}
+
+RÉSULTATS DE SOURCING :
 ${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
 
       // First attempt: with responseMimeType for Gemini; second attempt: without it (some models block JSON mode)
@@ -1708,12 +1727,70 @@ ${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
     let startupSearchQueries: string[] = [];
     
     // Extract criteria — secteurs spécifiques depuis params ou customThesis
-    const stage = params.fundingStage || customThesis?.stage || "seed";
-    const geography = params.headquartersRegion || customThesis?.geography || "global";
-    const paramsStartupSector = params.startupSector || "";
+    // Si les params sont "auto" ou absents ET qu'on a un contexte de thèse du fonds,
+    // utiliser l'IA pour extraire les vrais critères du fonds
+    let stage = params.fundingStage || customThesis?.stage || "";
+    let geography = params.headquartersRegion || customThesis?.geography || "";
+    let paramsStartupSector = params.startupSector || "";
+    
+    // Extraire les critères réels depuis la thèse du fonds si les params sont auto/manquants
+    if (fundThesisContext && fundName && (!stage || !geography || !paramsStartupSector)) {
+      try {
+        console.log("[search_startups] Extraction IA des critères depuis la thèse du fonds...");
+        const extractEndpoint = await getAIEndpoint();
+        const extractPrompt = `Analyse cette thèse d'investissement et extrais les critères EXACTS du fonds "${fundName}".
+
+THÈSE DU FONDS:
+${fundThesisContext.slice(0, 2000)}
+
+Réponds UNIQUEMENT avec ce JSON (sans markdown):
+{"sectors":["sector1","sector2"],"stage":"pre-seed|seed|series-a|series-b","geography":"europe|north-america|asia|global|france|uk|dach|nordics","ticketSize":"ex: 500K-2M","description":"1 phrase résumant la thèse"}
+
+RÈGLES:
+- sectors: les VRAIS secteurs du fonds (ex: ["fintech","saas","ai-ml","healthtech"]), pas "technology" générique
+- stage: le stade d'investissement PRINCIPAL du fonds
+- geography: la zone géographique PRINCIPALE
+- Si info non trouvée, utilise "unknown"`;
+
+        const extractBody = AI_PROVIDER === "vertex"
+          ? { contents: [{ role: "user", parts: [{ text: extractPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 300 } }
+          : { contents: [{ parts: [{ text: extractPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 300, responseMimeType: "application/json" as const } };
+        const extractRes = await fetch(extractEndpoint.url, { method: "POST", headers: extractEndpoint.headers, body: JSON.stringify(extractBody) });
+        if (extractRes.ok) {
+          const extractData = await extractRes.json();
+          const extractText = extractData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+          if (extractText) {
+            const jsonStart = extractText.indexOf("{");
+            const jsonEnd = extractText.lastIndexOf("}");
+            if (jsonStart !== -1 && jsonEnd !== -1) {
+              const extracted = JSON.parse(extractText.slice(jsonStart, jsonEnd + 1));
+              console.log(`[search_startups] Critères extraits: sectors=${JSON.stringify(extracted.sectors)}, stage=${extracted.stage}, geography=${extracted.geography}`);
+              if (!stage && extracted.stage && extracted.stage !== "unknown") stage = extracted.stage;
+              if (!geography && extracted.geography && extracted.geography !== "unknown") geography = extracted.geography;
+              if (!paramsStartupSector && extracted.sectors?.length > 0 && extracted.sectors[0] !== "unknown") {
+                paramsStartupSector = extracted.sectors[0];
+                // Store additional sectors for broader search
+                if (extracted.sectors.length > 1) {
+                  (params as any)._extractedSectors = extracted.sectors;
+                }
+              }
+            }
+          }
+        }
+      } catch (extractErr) {
+        console.warn("[search_startups] Extraction IA échouée, fallback sur defaults:", extractErr);
+      }
+    }
+    
+    // Fallback defaults si toujours vides
+    if (!stage) stage = "seed";
+    if (!geography) geography = "global";
+    
     const sectors = (customThesis?.sectors?.length 
       ? customThesis.sectors 
-      : (paramsStartupSector ? [paramsStartupSector] : (fundName ? ["technology"] : ["technology"]))
+      : ((params as any)._extractedSectors?.length
+        ? (params as any)._extractedSectors
+        : (paramsStartupSector ? [paramsStartupSector] : (fundName ? ["technology"] : ["technology"])))
     ) as string[];
     
     // Mapping secteurs vers mots-clés de recherche plus spécifiques
@@ -1781,47 +1858,80 @@ ${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
     const keywords = getSearchKeywords(mainSector);
     const mainKeyword = keywords[0];
     
+    // Mapping géographique pour des termes de recherche plus précis
+    const geoSearchTerms: Record<string, string> = {
+      "europe": "Europe European",
+      "france": "France French",
+      "uk": "UK United Kingdom British",
+      "dach": "Germany Austria Switzerland DACH",
+      "nordics": "Nordic Scandinavia Sweden Norway Finland Denmark",
+      "north-america": "US USA American",
+      "asia": "Asia Asian",
+      "latam": "Latin America",
+      "mena": "Middle East Africa MENA",
+      "global": "",
+    };
+    const geoTerm = geoSearchTerms[geography.toLowerCase()] || geography;
+    
     const RESULTS_PER_QUERY = isSearchPhase ? 10 : 15;
     const BATCH_DELAY_MS = 1200;
 
-    console.log(`[Brave] Recherche 1: ${mainKeyword} ${stage} startup ${geography}`);
-    const results1 = await braveSearch(`${mainKeyword} ${stage} startup ${geography} 2024 2025 funding`, RESULTS_PER_QUERY);
+    // Si on a un nom de fonds, ajouter une recherche spécifique sur les types de startups du portfolio
+    if (fundName && !isSearchPhase) {
+      console.log(`[Brave] Recherche 0: startups similaires au portfolio de ${fundName}`);
+      const results0 = await braveSearch(`"${fundName}" portfolio startup investment 2024 2025`, 10);
+      startupSearchResults.push(...results0);
+      await sleep(BATCH_DELAY_MS);
+    }
+
+    console.log(`[Brave] Recherche 1: ${mainKeyword} ${stage} startup ${geoTerm}`);
+    const results1 = await braveSearch(`${mainKeyword} ${stage} startup ${geoTerm} 2024 2025 funding`, RESULTS_PER_QUERY);
     startupSearchResults.push(...results1);
     await sleep(BATCH_DELAY_MS);
 
     if (!isSearchPhase) {
-      console.log(`[Brave] Recherche 2: best ${mainKeyword} startups`);
-      const results2 = await braveSearch(`best ${mainKeyword} startups ${geography} 2024 emerging`, RESULTS_PER_QUERY);
+      console.log(`[Brave] Recherche 2: best ${mainKeyword} startups ${geoTerm}`);
+      const results2 = await braveSearch(`best ${mainKeyword} startups ${geoTerm} 2024 emerging`, RESULTS_PER_QUERY);
       startupSearchResults.push(...results2);
       await sleep(BATCH_DELAY_MS);
+      
+      // Si on a un 2e secteur (extrait de la thèse), chercher aussi dans ce secteur
+      if (sectors.length > 1 && sectors[1] !== sectors[0]) {
+        const secondKeywords = getSearchKeywords(sectors[1]);
+        const secondKeyword = secondKeywords[0];
+        console.log(`[Brave] Recherche 2b: ${secondKeyword} startup ${geoTerm}`);
+        const results2b = await braveSearch(`${secondKeyword} ${stage} startup ${geoTerm} 2024 2025`, 10);
+        startupSearchResults.push(...results2b);
+        await sleep(BATCH_DELAY_MS);
+      }
     }
 
     let ipInnovationContext = "";
     if (!isSearchPhase) {
       console.log(`[Brave] Recherche 3: ${mainKeyword} funding`);
-      const results3 = await braveSearch(`${mainKeyword} startup funding round ${geography} 2024`, RESULTS_PER_QUERY);
+      const results3 = await braveSearch(`${mainKeyword} startup funding round ${geoTerm} 2024`, RESULTS_PER_QUERY);
       startupSearchResults.push(...results3);
       await sleep(BATCH_DELAY_MS);
 
       console.log(`[Brave] Recherche 4: ${mainKeyword} founders traction`);
-      const results4 = await braveSearch(`${mainKeyword} ${stage} startup founders CEO team ${geography} 2024`, RESULTS_PER_QUERY);
+      const results4 = await braveSearch(`${mainKeyword} ${stage} startup founders CEO team ${geoTerm} 2024`, RESULTS_PER_QUERY);
       startupSearchResults.push(...results4);
       await sleep(BATCH_DELAY_MS);
 
       console.log(`[Brave] Recherche 5: ${mainKeyword} traction metrics`);
-      const results5 = await braveSearch(`${mainKeyword} startup traction revenue growth metrics ${geography} 2024`, RESULTS_PER_QUERY);
+      const results5 = await braveSearch(`${mainKeyword} startup traction revenue growth metrics ${geoTerm} 2024`, RESULTS_PER_QUERY);
       startupSearchResults.push(...results5);
 
       if (startupSearchResults.length < 20) {
         await sleep(BATCH_DELAY_MS);
-        const results6 = await braveSearch(`${mainSector} company ${geography} innovative 2024`, 10);
+        const results6 = await braveSearch(`${mainSector} company ${geoTerm} innovative 2024`, 10);
         startupSearchResults.push(...results6);
       }
 
       const deepQueries = [
-        `${primarySector} news 2024 2025 trends`,
-        `${primarySector} competitors landscape 2024`,
-        `${mainKeyword} LinkedIn Crunchbase company profile`,
+        `${primarySector} news 2024 2025 trends ${geoTerm}`,
+        `${primarySector} competitors landscape 2024 ${geoTerm}`,
+        `${mainKeyword} LinkedIn Crunchbase company profile ${geoTerm}`,
       ];
       for (const q of deepQueries) {
         const results = await braveSearch(q, 6);
@@ -1830,9 +1940,9 @@ ${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
       }
 
       const ipInnovationQueries = [
-        `${mainKeyword} startup patent filing 2024 2025 ${geography}`,
-        `${primarySector} patent portfolio company funding`,
-        `${mainKeyword} university spin-off research startup ${geography} 2024`,
+        `${mainKeyword} startup patent filing 2024 2025 ${geoTerm}`,
+        `${primarySector} patent portfolio company funding ${geoTerm}`,
+        `${mainKeyword} university spin-off research startup ${geoTerm} 2024`,
       ];
       for (const q of ipInnovationQueries) {
         const results = await braveSearch(q, 6);
@@ -1943,10 +2053,16 @@ FORMAT DES MÉTRIQUES :
 - Indique clairement "(estimation)" pour les métriques estimées
 
 ${fundThesisContext ? `
-=== THÈSE DU FONDS (critères à matcher) ===
-${fundThesisContext.slice(0, 1000)}
+=== THÈSE DU FONDS "${fundName || ""}" (critères à matcher OBLIGATOIREMENT) ===
+${fundThesisContext.slice(0, 1500)}
 
-⚠️ Utilise cette thèse pour SOURCER des startups qui correspondent. N'analyse pas le fonds.
+⚠️ RÈGLES DE MATCHING STRICTES :
+- Les startups sourcées DOIVENT correspondre aux SECTEURS du fonds
+- Les startups DOIVENT être dans la ZONE GÉOGRAPHIQUE ciblée par le fonds (${geography !== "global" ? geography.toUpperCase() : "mondial"})
+- Les startups DOIVENT être au STADE correspondant (${stage || "early-stage"})
+- ÉLIMINER toute startup qui ne correspond pas à ces critères, même si elle semble intéressante
+- NE PAS sélectionner de grandes entreprises établies (>$100M revenus, cotées en bourse)
+- Privilégie les startups MOINS connues et véritablement early-stage
 ` : ''}
 
 ${startupSearchContext ? `
