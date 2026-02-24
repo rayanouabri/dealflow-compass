@@ -174,7 +174,7 @@ function DashboardCard({
         </div>
         <span className="text-xs text-muted-foreground">{label}</span>
       </div>
-      <p className="text-2xl font-bold">{value}</p>
+      <p className="text-2xl font-bold text-foreground">{value}</p>
       <p className={`text-xs mt-1 ${positive ? 'text-success' : 'text-muted-foreground'}`}>
         {change}
       </p>
