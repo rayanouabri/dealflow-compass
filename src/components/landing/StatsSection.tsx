@@ -1,12 +1,30 @@
 import { motion } from "framer-motion";
-import { Target } from "lucide-react";
+import { Target, Clock, Building2, ThumbsUp } from "lucide-react";
 
 const stats = [
   { 
-    value: "300", 
+    value: "300+",
     label: "Startups analysées",
     icon: Target,
     description: "Startups analysées sur la plateforme"
+  },
+  {
+    value: "10 min",
+    label: "Temps moyen d'analyse",
+    icon: Clock,
+    description: "Temps moyen pour une due diligence complète"
+  },
+  {
+    value: "15+",
+    label: "Fonds VC intégrés",
+    icon: Building2,
+    description: "Partech, Breega, Elaia, Index Ventures…"
+  },
+  {
+    value: "98%",
+    label: "Satisfaction utilisateurs",
+    icon: ThumbsUp,
+    description: "Taux de satisfaction des analystes VC"
   },
 ];
 
@@ -16,7 +34,7 @@ export function StatsSection() {
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-primary/5 to-transparent" />
       
       <div className="container max-w-7xl mx-auto px-4 relative">
-        <div className="grid grid-cols-1 md:grid-cols-1 gap-6 md:gap-8 max-w-sm mx-auto">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
           {stats.map((stat, i) => (
             <motion.div 
               key={i}
@@ -31,7 +49,7 @@ export function StatsSection() {
               <div className="relative z-10">
                 <stat.icon className="w-8 h-8 text-primary mx-auto mb-4 glow-ai-vc" />
                 <p className="text-4xl md:text-5xl font-bold text-foreground mb-2 bg-gradient-to-r from-foreground to-primary bg-clip-text text-transparent">
-                  {stat.value}+
+                  {stat.value}
                 </p>
                 <p className="text-base font-semibold text-foreground mb-2">{stat.label}</p>
                 <p className="text-xs text-muted-foreground">{stat.description}</p>
