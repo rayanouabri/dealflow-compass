@@ -55,13 +55,13 @@ Le score de classement est simple : plus une startup apparaît dans des catégor
 
 Les 10 meilleures startups sont envoyées à une IA (Gemini de Google) qui les évalue sur 7 critères :
 
-- Alignement avec la thèse d'investissement (30% du score)
+- Qualité de l'équipe fondatrice (20%)
+- Position concurrentielle et avantage compétitif (20%)
+- Alignement avec la thèse d'investissement (15% — nécessaire mais insuffisant)
 - Diversité des signaux trouvés (15%)
-- Présence dans l'écosystème français (15%)
-- Qualité de l'équipe fondatrice (12%)
-- Confirmation par plusieurs sources indépendantes (10%)
+- Confirmation par plusieurs sources indépendantes (15%)
 - Timing et momentum récent (10%)
-- Position concurrentielle et avantage compétitif (8%)
+- Présence dans l'écosystème français (5%)
 
 Chaque critère reçoit une note de 0 à 100. Le score final est la moyenne pondérée. La startup avec le meilleur score est sélectionnée pour passer en due diligence.
 
