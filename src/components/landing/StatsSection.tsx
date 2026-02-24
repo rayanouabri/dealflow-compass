@@ -1,30 +1,24 @@
 import { motion } from "framer-motion";
-import { Target, Clock, Building2, ThumbsUp } from "lucide-react";
+import { Target, Clock, Search } from "lucide-react";
 
 const stats = [
   { 
     value: "300+",
     label: "Startups analysées",
     icon: Target,
-    description: "Startups analysées sur la plateforme"
+    description: "Startups analysées via le pipeline IA"
   },
   {
-    value: "10 min",
+    value: "~5 min",
     label: "Temps moyen d'analyse",
     icon: Clock,
     description: "Temps moyen pour une due diligence complète"
   },
   {
-    value: "15+",
-    label: "Fonds VC intégrés",
-    icon: Building2,
-    description: "Partech, Breega, Elaia, Index Ventures…"
-  },
-  {
-    value: "98%",
-    label: "Satisfaction utilisateurs",
-    icon: ThumbsUp,
-    description: "Taux de satisfaction des analystes VC"
+    value: "70+",
+    label: "Requêtes de recherche",
+    icon: Search,
+    description: "Requêtes Brave Search exécutées par analyse"
   },
 ];
 
@@ -34,7 +28,7 @@ export function StatsSection() {
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-primary/5 to-transparent" />
       
       <div className="container max-w-7xl mx-auto px-4 relative">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 md:gap-8 max-w-4xl mx-auto">
           {stats.map((stat, i) => (
             <motion.div 
               key={i}

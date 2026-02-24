@@ -25,7 +25,7 @@ export function SocialProofBar() {
           whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
         >
-          Analysez des startups comme celles de ces fonds de référence
+          Sourcez des startups correspondant aux thèses de ces fonds de référence
         </motion.p>
       </div>
       

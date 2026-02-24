@@ -18,12 +18,13 @@ const steps = [
     number: "02",
     icon: Sparkles,
     title: "Sourcing IA multi-sources",
-    description: "L'algorithme combine Brave Search et Gemini AI pour identifier des startups réelles et pertinentes correspondant exactement à votre thèse.",
+    description: "Le moteur lance en parallèle plus de 70 requêtes de recherche ciblées via Brave Search, déduplique et classe les résultats, puis un agent Gemini AI sélectionne les startups les plus pertinentes.",
     bullets: [
-      "Recherche web en temps réel (Brave Search)",
-      "Analyse sémantique par Gemini AI",
+      "70+ requêtes Brave Search exécutées en parallèle",
+      "Déduplication et ranking automatique des résultats",
+      "Agent Gemini AI : sélection & scoring des candidats",
       "Matching par secteur, stade et géographie",
-      "Résultats en moins de 10 minutes",
+      "Résultats en moins de 5 minutes",
     ],
   },
   {
