@@ -15,10 +15,10 @@ const stats = [
     description: "Temps moyen pour une due diligence complète"
   },
   {
-    value: "70+",
+    value: "100+",
     label: "Requêtes de recherche",
     icon: Search,
-    description: "Requêtes Brave Search exécutées par analyse"
+    description: "Requêtes de recherche exécutées par analyse"
   },
 ];
 

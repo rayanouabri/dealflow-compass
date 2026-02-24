@@ -6,14 +6,14 @@ const pipelineSteps = [
   {
     icon: Brain,
     label: "Analyse de thèse",
-    description: "Gemini AI reconstruit le profil d'investissement du fonds (secteurs, stade, géographie) à partir de son portfolio réel.",
+    description: "L'agent IA reconstruit le profil d'investissement du fonds (secteurs, stade, géographie) à partir de son portfolio réel.",
     detail: "1 appel IA",
   },
   {
     icon: Search,
-    label: "70+ requêtes en parallèle",
-    description: "Le moteur exécute en simultané plus de 70 requêtes Brave Search ciblées : nom, secteur, concurrents, financements, équipe fondatrice...",
-    detail: "Brave Search",
+    label: "100+ requêtes en parallèle",
+    description: "Le moteur exécute en simultané plus de 100 requêtes de recherche ciblées : nom, secteur, concurrents, financements, équipe fondatrice...",
+    detail: "Moteur de recherche",
   },
   {
     icon: Filter,
@@ -24,13 +24,13 @@ const pipelineSteps = [
   {
     icon: Brain,
     label: "Sélection IA (Picking)",
-    description: "Un agent Gemini AI analyse les 10 meilleurs candidats et sélectionne la startup la plus pertinente pour votre thèse.",
+    description: "Un agent IA analyse les 10 meilleurs candidats et sélectionne la startup la plus pertinente pour votre thèse.",
     detail: "Scoring multi-critères",
   },
   {
     icon: FileText,
     label: "Due diligence complète",
-    description: "50+ requêtes de recherche supplémentaires sur la startup sélectionnée, puis génération du rapport complet par Gemini AI.",
+    description: "50+ requêtes de recherche supplémentaires sur la startup sélectionnée, puis génération du rapport complet par l'agent IA.",
     detail: "Rapport structuré",
   },
 ];
@@ -128,8 +128,8 @@ export function TechPipelineSection() {
               <span className="block text-gradient-ai-vc">structuré en 8 sections</span>
             </h3>
             <p className="text-muted-foreground mb-6 leading-relaxed">
-              Après la phase de recherche (50+ requêtes Brave Search sur la startup sélectionnée),
-              Gemini AI synthétise l'ensemble du contexte collecté en un rapport complet couvrant
+              Après la phase de recherche (50+ requêtes sur la startup sélectionnée),
+              l'agent IA synthétise l'ensemble du contexte collecté en un rapport complet couvrant
               toutes les dimensions qu'un analyste VC examine avant un investissement.
             </p>
             <ul className="space-y-2">

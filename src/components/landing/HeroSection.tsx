@@ -70,7 +70,7 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
               className="px-3 py-1 text-xs border-primary/30 bg-primary/10 backdrop-blur-sm text-muted-foreground"
             >
               <Brain className="w-3 h-3 mr-1.5 text-primary" />
-              Propulsé par Gemini AI + Brave Search
+              Propulsé par un agent IA multi-sources
             </Badge>
           </motion.div>
           
