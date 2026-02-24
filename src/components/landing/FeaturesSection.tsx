@@ -4,12 +4,11 @@ import {
   Target, 
   Sparkles, 
   TrendingUp, 
-  Shield, 
   Globe, 
   Zap,
   BarChart3,
   FileText,
-  Users
+  MessageCircle
 } from "lucide-react";
 
 const features = [
@@ -22,7 +21,8 @@ const features = [
   {
     icon: Sparkles,
     title: "Due diligence automatisée",
-    description: "Rapports d'analyse complets : marché, produit, traction, équipe, concurrents et recommandation d'investissement."
+    description: "Rapports d'analyse complets : marché, produit, traction, équipe, concurrents et recommandation d'investissement.",
+    highlight: true
   },
   {
     icon: TrendingUp,
@@ -43,6 +43,16 @@ const features = [
     icon: Zap,
     title: "Résultats rapides",
     description: "Sourcing et due diligence complète en quelques minutes grâce à notre pipeline IA optimisé."
+  },
+  {
+    icon: MessageCircle,
+    title: "Chat IA Q&A",
+    description: "Posez des questions précises sur chaque startup analysée. Notre IA répond en se basant sur les données du rapport de due diligence."
+  },
+  {
+    icon: FileText,
+    title: "Export professionnel",
+    description: "Exportez vos rapports en Markdown ou PDF, prêts à être partagés avec votre équipe ou vos LP."
   },
 ];
 

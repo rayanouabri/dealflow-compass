@@ -7,29 +7,51 @@ const steps = [
     number: "01",
     icon: Search,
     title: "Définissez votre thèse",
-    description: "Entrez le nom de votre fonds VC. Notre IA analyse automatiquement votre thèse d'investissement basée sur votre portfolio réel.",
-    color: "primary"
+    description: "Entrez le nom d'un fonds (ex: \"Partech\") ou définissez votre propre thèse (secteur, géographie, stade). L'IA reconstruit automatiquement le profil d'investissement du fonds à partir de son portfolio réel.",
+    bullets: [
+      "Reconnaissance auto des fonds européens & mondiaux",
+      "Thèse personnalisable (secteur, ticket, stade)",
+      "Paramètres avancés (géographie, maturité, secteur)",
+    ],
   },
   {
     number: "02",
     icon: Sparkles,
-    title: "Sourcing intelligent",
-    description: "Notre algorithme identifie des startups réelles qui correspondent parfaitement à votre thèse d'investissement (secteur, stade, géographie).",
-    color: "accent"
+    title: "Sourcing IA multi-sources",
+    description: "Le moteur lance en parallèle plus de 100 requêtes de recherche ciblées, déduplique et classe les résultats, puis un agent IA sélectionne les startups les plus pertinentes.",
+    bullets: [
+      "100+ requêtes de recherche exécutées en parallèle",
+      "Déduplication et ranking automatique des résultats",
+      "Agent IA : sélection & scoring des candidats",
+      "Matching par secteur, stade et géographie",
+      "Résultats en moins de 5 minutes",
+    ],
   },
   {
     number: "03",
     icon: FileText,
     title: "Due diligence automatisée",
-    description: "Recevez un rapport de due diligence complet : marché, produit, traction, équipe, analyse concurrentielle et recommandation d'investissement.",
-    color: "success"
+    description: "Rapport professionnel complet généré pour chaque startup identifiée, incluant toutes les dimensions d'analyse VC.",
+    bullets: [
+      "Résumé exécutif + recommandation",
+      "Analyse marché : TAM / SAM / SOM / CAGR",
+      "Profil équipe fondateurs + LinkedIn",
+      "Historique de financement & valorisation",
+      "Analyse concurrentielle détaillée",
+      "Score de confiance IA",
+    ],
   },
   {
     number: "04",
     icon: Send,
-    title: "Décision éclairée",
-    description: "Exportez vos rapports, partagez avec votre équipe et prenez des décisions d'investissement basées sur des données approfondies.",
-    color: "data-amber"
+    title: "Décision & Export",
+    description: "Exportez, partagez et décidez. Toutes vos analyses sont sauvegardées et accessibles depuis votre dashboard.",
+    bullets: [
+      "Export Markdown & PDF",
+      "Chat IA Q&A sur chaque rapport",
+      "Historique de toutes vos analyses",
+      "Partage avec votre équipe",
+    ],
   },
 ];
 
@@ -84,7 +106,16 @@ export function HowItWorksSection() {
                 </div>
                 
                 <h3 className="text-lg font-semibold mb-2 text-foreground relative z-10">{step.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed relative z-10">{step.description}</p>
+                <p className="text-sm text-muted-foreground leading-relaxed relative z-10 mb-4">{step.description}</p>
+
+                <ul className="space-y-1.5 relative z-10">
+                  {step.bullets.map((bullet) => (
+                    <li key={bullet} className="flex items-start gap-2 text-xs text-muted-foreground">
+                      <span className="text-primary font-bold mt-0.5 flex-shrink-0">✓</span>
+                      <span>{bullet}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             </motion.div>
           ))}

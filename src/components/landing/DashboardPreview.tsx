@@ -96,7 +96,7 @@ export function DashboardPreview({ onStartTrial }: DashboardPreviewProps) {
                 {/* Activity feed */}
                 <div className="md:col-span-2 rounded-xl bg-muted/30 border border-border p-4">
                   <div className="flex items-center justify-between mb-4">
-                    <h4 className="font-semibold text-sm">Activité récente</h4>
+                    <h4 className="font-semibold text-sm text-foreground">Activité récente</h4>
                     <Badge variant="secondary" className="text-xs">Live</Badge>
                   </div>
                   <div className="space-y-3">
@@ -136,7 +136,7 @@ export function DashboardPreview({ onStartTrial }: DashboardPreviewProps) {
                     <BarChart3 className="w-5 h-5 text-primary" />
                   </div>
                   <div>
-                    <p className="font-medium text-sm">Prêt à accélérer votre levée ?</p>
+                    <p className="font-medium text-sm text-foreground">Prêt à accélérer votre levée ?</p>
                     <p className="text-xs text-muted-foreground">Accédez à toutes ces fonctionnalités</p>
                   </div>
                 </div>
@@ -174,7 +174,7 @@ function DashboardCard({
         </div>
         <span className="text-xs text-muted-foreground">{label}</span>
       </div>
-      <p className="text-2xl font-bold">{value}</p>
+      <p className="text-2xl font-bold text-foreground">{value}</p>
       <p className={`text-xs mt-1 ${positive ? 'text-success' : 'text-muted-foreground'}`}>
         {change}
       </p>
@@ -199,7 +199,7 @@ function ActivityItem({
     <div className={`flex items-center gap-3 p-2 rounded-lg ${highlight ? 'bg-success/5 border border-success/20' : ''}`}>
       <Icon className={`w-4 h-4 ${iconColor} flex-shrink-0`} />
       <div className="flex-1 min-w-0">
-        <p className="text-sm truncate">{title}</p>
+        <p className="text-sm truncate text-foreground">{title}</p>
       </div>
       <span className="text-xs text-muted-foreground flex-shrink-0">{time}</span>
     </div>

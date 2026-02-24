@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowRight, Play, Sparkles, Zap } from "lucide-react";
+import { ArrowRight, Play, Sparkles, Zap, Brain } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface HeroSectionProps {
@@ -8,6 +8,14 @@ interface HeroSectionProps {
   onWatchDemo: () => void;
   trialRemaining: number;
 }
+
+const demoQuery = "Trouve-moi des startups SaaS B2B en early stage dans la FinTech en Europe pour un fonds comme Partech...";
+
+const mockStartups = [
+  { name: "Fintory", sector: "FinTech SaaS", score: 94, stage: "Seed" },
+  { name: "PayLayer", sector: "Payments B2B", score: 88, stage: "Pre-seed" },
+  { name: "LedgerFlow", sector: "FinTech B2B", score: 82, stage: "Series A" },
+];
 
 export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroSectionProps) {
   return (
@@ -48,13 +56,21 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
+            className="flex flex-col items-center gap-2 mb-6"
           >
             <Badge 
               variant="outline" 
-              className="mb-6 px-4 py-2 text-sm border-primary/40 bg-primary/20 backdrop-blur-sm glow-ai-vc"
+              className="px-4 py-2 text-sm border-primary/40 bg-primary/20 backdrop-blur-sm glow-ai-vc"
             >
               <Sparkles className="w-3.5 h-3.5 mr-2 text-primary animate-pulse" />
               Outil de sourcing et d'analyse de startups • Due diligence automatisée
+            </Badge>
+            <Badge
+              variant="outline"
+              className="px-3 py-1 text-xs border-primary/30 bg-primary/10 backdrop-blur-sm text-muted-foreground"
+            >
+              <Brain className="w-3 h-3 mr-1.5 text-primary" />
+              Propulsé par un agent IA multi-sources
             </Badge>
           </motion.div>
           
@@ -81,8 +97,9 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
           >
-            Notre IA analyse votre <span className="text-foreground font-medium">thèse d'investissement</span> et identifie 
-            des startups réelles qui correspondent parfaitement. Due diligence complète incluse.
+            Entrez le nom d'un fonds VC ou décrivez votre thèse. Notre IA{" "}
+            <span className="text-foreground font-medium">analyse le profil d'investissement</span>{" "}
+            et source instantanément des startups réelles qui matchent — avec due diligence complète incluse.
             <span className="block mt-2 text-primary font-medium">Automatisez votre sourcing. Investissez mieux.</span>
           </motion.p>
 
@@ -115,7 +132,7 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
 
           {/* Trial info */}
           <motion.p 
-            className="text-sm text-muted-foreground"
+            className="text-sm text-muted-foreground mb-12"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.5, delay: 0.4 }}
@@ -131,6 +148,68 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
               </span>
             )}
           </motion.p>
+
+          {/* Vibe Sourcing Demo */}
+          <motion.div
+            className="max-w-3xl mx-auto"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.55 }}
+          >
+            <div className="rounded-2xl border border-primary/30 bg-card/70 backdrop-blur-sm overflow-hidden shadow-[0_0_40px_rgba(48,100%,55%,0.12)]">
+              {/* Terminal header */}
+              <div className="flex items-center gap-2 px-4 py-3 border-b border-border/50 bg-muted/20">
+                <div className="w-3 h-3 rounded-full bg-red-500/60" />
+                <div className="w-3 h-3 rounded-full bg-yellow-500/60" />
+                <div className="w-3 h-3 rounded-full bg-primary/60" />
+                <span className="ml-3 text-xs text-muted-foreground font-mono">AI-VC Sourcing Engine</span>
+              </div>
+
+              {/* Query line */}
+              <div className="px-4 pt-4 pb-2">
+                <p className="text-xs text-muted-foreground font-mono mb-2">$ sourcing --query</p>
+                <div className="flex items-start gap-2">
+                  <span className="text-primary font-mono text-sm mt-0.5">›</span>
+                  <p className="text-sm text-foreground/90 font-mono leading-relaxed text-left">
+                    <motion.span
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 2.5, delay: 0.8 }}
+                    >
+                      {demoQuery}
+                    </motion.span>
+                  </p>
+                </div>
+              </div>
+
+              {/* Results */}
+              <motion.div
+                className="px-4 pb-4 pt-2 grid grid-cols-1 sm:grid-cols-3 gap-3"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.5, delay: 1.6 }}
+              >
+                {mockStartups.map((startup, i) => (
+                  <motion.div
+                    key={startup.name}
+                    className="p-3 rounded-xl bg-primary/10 border border-primary/25 text-left"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: 1.7 + i * 0.15 }}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-sm font-semibold text-foreground">{startup.name}</p>
+                      <span className="text-xs font-bold text-primary">{startup.score}/100</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-2">{startup.sector}</p>
+                    <span className="inline-block text-[10px] px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30">
+                      {startup.stage}
+                    </span>
+                  </motion.div>
+                ))}
+              </motion.div>
+            </div>
+          </motion.div>
         </div>
       </div>
     </section>
