@@ -536,58 +536,113 @@ export default function DueDiligenceResult() {
     const date = new Date().toISOString().slice(0, 10);
     const lines: string[] = [];
 
-    const h1 = (t: string) => lines.push("\n# " + t + "\n");
-    const h2 = (t: string) => lines.push("\n## " + t + "\n");
-    const h3 = (t: string) => lines.push("\n### " + t + "\n");
-    const p = (t: string) => { if (t) lines.push(stripInlineSources(t) + "\n"); };
-    const li = (t: string) => { if (t) lines.push("- " + stripInlineSources(t)); };
+    const h1 = (t: string) => lines.push("", "# " + t, "");
+    const h2 = (t: string) => lines.push("", "---", "", "## " + t, "");
+    const h3 = (t: string) => lines.push("", "### " + t, "");
+    const p = (t?: string | null) => { if (t) lines.push(stripInlineSources(t), ""); };
+    const li = (t?: string | null) => { if (t) lines.push("- " + stripInlineSources(t)); };
     const src = (sources?: { name: string; url: string }[]) => {
       if (!sources?.length) return;
-      lines.push("\n*Sources :*");
-      sources.forEach((s) => lines.push(`- [${s.name || s.url}](${s.url})`));
+      lines.push("", "> **Sources :**");
+      sources.forEach((s) => lines.push(`> - [${s.name || s.url}](${s.url})`));
       lines.push("");
     };
 
-    h1(`Due Diligence — ${companyName}`);
-    lines.push(`*Exporté le ${new Date().toLocaleDateString("fr-FR", { dateStyle: "long" })}*\n`);
+    const riskLabels: Record<string, string> = {
+      marketRisks: "Risques de marché",
+      executionRisks: "Risques d'exécution",
+      financialRisks: "Risques financiers",
+      competitiveRisks: "Risques concurrentiels",
+      regulatoryRisks: "Risques réglementaires",
+    };
+    const recEmoji = (r: string) => r.toUpperCase().includes("INVEST") ? "🟢" : r.toUpperCase().includes("PASS") ? "🔴" : "🟡";
 
-    h2("Entreprise");
-    p(data.company?.tagline);
-    if (data.company?.website) lines.push(`- **Site :** ${data.company.website}`);
-    if (data.company?.linkedinUrl) lines.push(`- **LinkedIn :** ${data.company.linkedinUrl}`);
-    if (data.company?.founded) lines.push(`- **Fondée :** ${stripInlineSources(data.company.founded)}`);
-    if (data.company?.headquarters) lines.push(`- **Siège :** ${stripInlineSources(data.company.headquarters)}`);
-    if (data.company?.sector) lines.push(`- **Secteur :** ${stripInlineSources(data.company.sector)}`);
-    if (data.company?.stage) lines.push(`- **Stage :** ${stripInlineSources(data.company.stage)}`);
-    if (data.company?.employeeCount) lines.push(`- **Effectifs :** ${stripInlineSources(data.company.employeeCount)}`);
+    // Header
+    h1(`📋 Due Diligence — ${companyName}`);
+    lines.push(`> **Date d'export :** ${new Date().toLocaleDateString("fr-FR", { dateStyle: "long" })}`);
+    if (data.executiveSummary?.recommendation) {
+      lines.push(`> **Recommandation :** ${recEmoji(data.executiveSummary.recommendation)} ${stripInlineSources(data.executiveSummary.recommendation)}`);
+    }
+    if (data.executiveSummary?.confidenceLevel) lines.push(`> **Niveau de confiance :** ${stripInlineSources(data.executiveSummary.confidenceLevel)}`);
     lines.push("");
 
-    h2("Résumé exécutif");
+    // Table of contents
+    h2("📑 Table des matières");
+    lines.push(
+      "1. [Entreprise](#entreprise)",
+      "2. [Résumé exécutif](#résumé-exécutif)",
+      "3. [Financements](#financements)",
+      "4. [Produit & Technologie](#produit--technologie)",
+      "5. [Marché](#marché)",
+      "6. [Équipe](#équipe)",
+      "7. [Concurrence](#concurrence)",
+      "8. [Traction & Jalons](#traction--jalons)",
+      "9. [Risques](#risques)",
+      "10. [Opportunités](#opportunités)",
+      "11. [Recommandation d'investissement](#recommandation-dinvestissement)",
+      "12. [Sources](#sources)",
+    );
+
+    // 1. Company
+    h2("🏢 Entreprise");
+    if (data.company?.tagline) p(data.company.tagline);
+    const companyFields: [string, string | undefined][] = [
+      ["Site web", data.company?.website],
+      ["LinkedIn", data.company?.linkedinUrl],
+      ["Fondée", data.company?.founded],
+      ["Siège", data.company?.headquarters],
+      ["Secteur", data.company?.sector],
+      ["Stade", data.company?.stage],
+      ["Effectifs", data.company?.employeeCount],
+    ];
+    companyFields.forEach(([label, value]) => {
+      if (value) lines.push(`| **${label}** | ${stripInlineSources(value)} |`);
+    });
+    if (companyFields.some(([, v]) => v)) {
+      // Insert table header before the rows
+      const firstFieldIdx = lines.findIndex((l) => l.startsWith("| **"));
+      if (firstFieldIdx > -1) {
+        lines.splice(firstFieldIdx, 0, "| Champ | Valeur |", "|:---|:---|");
+      }
+    }
+    lines.push("");
+
+    // 2. Executive Summary
+    h2("📊 Résumé exécutif");
     p(data.executiveSummary?.overview);
-    if (data.executiveSummary?.recommendation) lines.push(`**Recommandation :** ${stripInlineSources(data.executiveSummary.recommendation)}`);
-    if (data.executiveSummary?.confidenceLevel) lines.push(`**Niveau de confiance :** ${stripInlineSources(data.executiveSummary.confidenceLevel)}`);
-    if (data.executiveSummary?.keyHighlights?.length) { h3("Points forts"); data.executiveSummary.keyHighlights.forEach(li); }
-    if (data.executiveSummary?.keyRisks?.length) { h3("Risques clés"); data.executiveSummary.keyRisks.forEach(li); }
+    if (data.executiveSummary?.keyHighlights?.length) {
+      h3("✅ Points forts");
+      data.executiveSummary.keyHighlights.forEach(li);
+    }
+    if (data.executiveSummary?.keyRisks?.length) {
+      h3("⚠️ Risques clés");
+      data.executiveSummary.keyRisks.forEach(li);
+    }
     lines.push("");
 
-    h2("Financements");
-    p(data.financials?.totalFunding ? `**Financement total :** ${stripInlineSources(data.financials.totalFunding)}` : undefined);
-    if (data.financials?.latestValuation) lines.push(`**Dernière valorisation :** ${stripInlineSources(data.financials.latestValuation)}`);
+    // 3. Financials
+    h2("💰 Financements");
+    if (data.financials?.totalFunding) lines.push(`**Financement total :** ${stripInlineSources(data.financials.totalFunding)}`, "");
+    if (data.financials?.latestValuation) lines.push(`**Dernière valorisation :** ${stripInlineSources(data.financials.latestValuation)}`, "");
     if (data.financials?.fundingHistory?.length) {
       h3("Historique des levées");
+      lines.push("| Round | Montant | Date | Investisseurs |", "|:---|:---|:---|:---|");
       data.financials.fundingHistory.forEach((r) => {
-        const parts = [r.round, r.amount, r.date].filter(Boolean).map((x) => stripInlineSources(String(x)));
-        if (r.investors?.length) parts.push("Investisseurs : " + r.investors.map(stripInlineSources).join(", "));
-        lines.push("- " + parts.join(" — "));
+        const investors = r.investors?.length ? r.investors.map(stripInlineSources).join(", ") : "—";
+        lines.push(`| ${stripInlineSources(r.round || "—")} | ${stripInlineSources(r.amount || "—")} | ${stripInlineSources(r.date || "—")} | ${investors} |`);
       });
+      lines.push("");
     }
     if (data.financials?.metrics && Object.keys(data.financials.metrics).length) {
-      h3("Métriques");
-      Object.entries(data.financials.metrics).forEach(([k, v]) => lines.push(`- **${k} :** ${stripInlineSources(v)}`));
+      h3("Métriques financières");
+      lines.push("| Métrique | Valeur |", "|:---|:---|");
+      Object.entries(data.financials.metrics).forEach(([k, v]) => lines.push(`| ${k} | ${stripInlineSources(v)} |`));
+      lines.push("");
     }
     src(data.financials?.sources);
 
-    h2("Produit");
+    // 4. Product
+    h2("🛠️ Produit & Technologie");
     p(data.product?.description);
     if (data.product?.valueProposition) { h3("Proposition de valeur"); p(data.product.valueProposition); }
     if (data.product?.technology) { h3("Technologie"); p(data.product.technology); }
@@ -595,111 +650,145 @@ export default function DueDiligenceResult() {
     if (data.product?.keyFeatures?.length) { h3("Fonctionnalités clés"); data.product.keyFeatures.forEach(li); }
     src(data.product?.sources);
 
-    h2("Marché");
-    if (data.market?.tam) lines.push(`- **TAM :** ${stripInlineSources(data.market.tam)}`);
-    if (data.market?.sam) lines.push(`- **SAM :** ${stripInlineSources(data.market.sam)}`);
-    if (data.market?.som) lines.push(`- **SOM :** ${stripInlineSources(data.market.som)}`);
-    if (data.market?.cagr) lines.push(`- **CAGR :** ${stripInlineSources(data.market.cagr)}`);
+    // 5. Market
+    h2("🌍 Marché");
+    if (data.market?.tam || data.market?.sam || data.market?.som || data.market?.cagr) {
+      lines.push("| Indicateur | Valeur |", "|:---|:---|");
+      if (data.market?.tam) lines.push(`| **TAM** | ${stripInlineSources(data.market.tam)} |`);
+      if (data.market?.sam) lines.push(`| **SAM** | ${stripInlineSources(data.market.sam)} |`);
+      if (data.market?.som) lines.push(`| **SOM** | ${stripInlineSources(data.market.som)} |`);
+      if (data.market?.cagr) lines.push(`| **CAGR** | ${stripInlineSources(data.market.cagr)} |`);
+      lines.push("");
+    }
     if (data.market?.trends?.length) { h3("Tendances"); data.market.trends.forEach(li); }
-    p(data.market?.analysis);
+    if (data.market?.analysis) { h3("Analyse"); p(data.market.analysis); }
     src(data.market?.sources);
 
-    h2("Équipe");
+    // 6. Team
+    h2("👥 Équipe");
     p(data.team?.overview);
-    if (data.team?.teamSize) lines.push(`**Taille :** ${stripInlineSources(data.team.teamSize)}`);
+    if (data.team?.teamSize) lines.push(`**Taille de l'équipe :** ${stripInlineSources(data.team.teamSize)}`, "");
     if (data.team?.founders?.length) {
       h3("Fondateurs");
       data.team.founders.forEach((f) => {
-        lines.push(`- **${stripInlineSources(f.name || "")}** — ${stripInlineSources(f.role || "")}`);
+        lines.push(`#### ${stripInlineSources(f.name || "—")} — *${stripInlineSources(f.role || "—")}*`);
         if (f.background) p(f.background);
-        if (f.linkedin) lines.push(`  LinkedIn : ${f.linkedin}`);
+        if (f.linkedin) lines.push(`🔗 [LinkedIn](${f.linkedin})`, "");
       });
     }
     if (data.team?.keyExecutives?.length) {
       h3("Dirigeants clés");
-      data.team.keyExecutives.forEach((e) => lines.push(`- **${stripInlineSources(e.name || "")}** — ${stripInlineSources(e.role || "")} — ${stripInlineSources(e.background || "")}`));
+      lines.push("| Nom | Rôle | Background |", "|:---|:---|:---|");
+      data.team.keyExecutives.forEach((e) => lines.push(`| ${stripInlineSources(e.name || "—")} | ${stripInlineSources(e.role || "—")} | ${stripInlineSources(e.background || "—")} |`));
+      lines.push("");
     }
     if (data.team?.culture) { h3("Culture"); p(data.team.culture); }
-    if (data.team?.hiringTrends) { h3("Recrutement"); p(data.team.hiringTrends); }
+    if (data.team?.hiringTrends) { h3("Tendances de recrutement"); p(data.team.hiringTrends); }
     src(data.team?.sources);
 
-    h2("Concurrence");
+    // 7. Competition
+    h2("⚔️ Concurrence");
     p(data.competition?.landscape);
     if (data.competition?.competitiveAdvantage) { h3("Avantage concurrentiel"); p(data.competition.competitiveAdvantage); }
     if (data.competition?.moat) { h3("Moat"); p(data.competition.moat); }
     if (data.competition?.competitors?.length) {
-      h3("Concurrents");
+      h3("Concurrents identifiés");
       data.competition.competitors.forEach((c) => {
-        lines.push(`- **${stripInlineSources(c.name)}**${c.funding ? ` — ${stripInlineSources(c.funding)}` : ""}`);
-        if (c.description) p("  " + c.description);
+        lines.push(`- **${stripInlineSources(c.name)}**${c.funding ? ` — Financement : ${stripInlineSources(c.funding)}` : ""}`);
+        if (c.description) lines.push(`  *${stripInlineSources(c.description)}*`);
       });
+      lines.push("");
     }
     src(data.competition?.sources);
 
-    h2("Traction & Jalons");
+    // 8. Traction
+    h2("📈 Traction & Jalons");
     p(data.traction?.overview);
     if (data.traction?.customers) {
       const c = data.traction.customers;
-      if (c.count) lines.push(`- **Clients :** ${stripInlineSources(c.count)}`);
+      if (c.count) lines.push(`- **Nombre de clients :** ${stripInlineSources(c.count)}`);
       if (c.notable?.length) lines.push(`- **Clients notables :** ${c.notable.map(stripInlineSources).join(", ")}`);
       if (c.segments) lines.push(`- **Segments :** ${stripInlineSources(c.segments)}`);
+      lines.push("");
     }
     if (data.traction?.keyMilestones?.length) {
       h3("Jalons clés");
-      data.traction.keyMilestones.forEach((m) => lines.push(`- ${stripInlineSources(m.date || "")} — ${stripInlineSources(m.milestone || "")}`));
+      lines.push("| Date | Jalon |", "|:---|:---|");
+      data.traction.keyMilestones.forEach((m) => lines.push(`| ${stripInlineSources(m.date || "—")} | ${stripInlineSources(m.milestone || "—")} |`));
+      lines.push("");
     }
     if (data.traction?.partnerships?.length) { h3("Partenariats"); data.traction.partnerships.forEach(li); }
-    if (data.traction?.awards?.length) { h3("Prix / Récompenses"); data.traction.awards.forEach(li); }
+    if (data.traction?.awards?.length) { h3("🏆 Prix & Récompenses"); data.traction.awards.forEach(li); }
     src(data.traction?.sources);
 
-    h2("Risques");
+    // 9. Risks
+    h2("🛡️ Risques");
     (["marketRisks", "executionRisks", "financialRisks", "competitiveRisks", "regulatoryRisks"] as const).forEach((key) => {
       const arr = data.risks?.[key];
       if (Array.isArray(arr) && arr.length) {
-        h3(key.replace(/([A-Z])/g, " $1").trim());
+        h3(riskLabels[key] || key);
         (arr as string[]).forEach(li);
       }
     });
-    if (data.risks?.mitigations?.length) { h3("Mitigations"); data.risks.mitigations.forEach(li); }
-    if (data.risks?.overallRiskLevel) lines.push(`**Niveau de risque global :** ${stripInlineSources(data.risks.overallRiskLevel)}`);
+    if (data.risks?.mitigations?.length) { h3("Mesures d'atténuation"); data.risks.mitigations.forEach(li); }
+    if (data.risks?.overallRiskLevel) lines.push("", `**Niveau de risque global :** ${stripInlineSources(data.risks.overallRiskLevel)}`);
     src(data.risks?.sources);
 
+    // 10. Opportunities
     if (data.opportunities) {
-      h2("Opportunités");
-      if (data.opportunities.growthOpportunities?.length) { h3("Croissance"); data.opportunities.growthOpportunities.forEach(li); }
-      p(data.opportunities.marketExpansion ? "**Expansion marché :** " + stripInlineSources(data.opportunities.marketExpansion) : undefined);
-      p(data.opportunities.productExpansion ? "**Expansion produit :** " + stripInlineSources(data.opportunities.productExpansion) : undefined);
-      p(data.opportunities.strategicValue);
+      h2("💡 Opportunités");
+      if (data.opportunities.growthOpportunities?.length) { h3("Opportunités de croissance"); data.opportunities.growthOpportunities.forEach(li); }
+      if (data.opportunities.marketExpansion) p("**Expansion marché :** " + stripInlineSources(data.opportunities.marketExpansion));
+      if (data.opportunities.productExpansion) p("**Expansion produit :** " + stripInlineSources(data.opportunities.productExpansion));
+      if (data.opportunities.strategicValue) { h3("Valeur stratégique"); p(data.opportunities.strategicValue); }
       src(data.opportunities.sources);
     }
 
-    h2("Recommandation d'investissement");
+    // 11. Investment Recommendation
+    h2("🎯 Recommandation d'investissement");
     const rec = data.investmentRecommendation;
-    if (rec?.recommendation) lines.push(`**Recommandation :** ${stripInlineSources(rec.recommendation)}`);
+    if (rec?.recommendation) {
+      lines.push(`**${recEmoji(rec.recommendation)} Recommandation : ${stripInlineSources(rec.recommendation)}**`, "");
+    }
     if (rec?.rationale) p(rec.rationale);
-    if (rec?.strengths?.length) { h3("Points forts"); rec.strengths.forEach(li); }
-    if (rec?.weaknesses?.length) { h3("Points faibles"); rec.weaknesses.forEach(li); }
-    if (rec?.keyQuestions?.length) { h3("Questions clés"); rec.keyQuestions.forEach(li); }
-    if (rec?.suggestedNextSteps?.length) { h3("Prochaines étapes"); rec.suggestedNextSteps.forEach(li); }
-    if (rec?.targetReturn) lines.push(`- **Rendement cible :** ${stripInlineSources(rec.targetReturn)}`);
-    if (rec?.investmentHorizon) lines.push(`- **Horizon :** ${stripInlineSources(rec.investmentHorizon)}`);
-    if (rec?.suggestedTicket) lines.push(`- **Ticket suggéré :** ${stripInlineSources(rec.suggestedTicket)}`);
+    if (rec?.strengths?.length) { h3("✅ Forces"); rec.strengths.forEach(li); }
+    if (rec?.weaknesses?.length) { h3("⚠️ Faiblesses"); rec.weaknesses.forEach(li); }
+    if (rec?.keyQuestions?.length) { h3("❓ Questions clés"); rec.keyQuestions.forEach(li); }
+    if (rec?.suggestedNextSteps?.length) { h3("➡️ Prochaines étapes"); rec.suggestedNextSteps.forEach(li); }
+    if (rec?.targetReturn || rec?.investmentHorizon || rec?.suggestedTicket) {
+      lines.push("");
+      lines.push("| Paramètre | Valeur |", "|:---|:---|");
+      if (rec?.targetReturn) lines.push(`| Rendement cible | ${stripInlineSources(rec.targetReturn)} |`);
+      if (rec?.investmentHorizon) lines.push(`| Horizon | ${stripInlineSources(rec.investmentHorizon)} |`);
+      if (rec?.suggestedTicket) lines.push(`| Ticket suggéré | ${stripInlineSources(rec.suggestedTicket)} |`);
+    }
     lines.push("");
 
-    h2("Toutes les sources du rapport");
-    lines.push(`*${allSourcesAggregated.length} source(s) utilisée(s) pour cette analyse.*\n`);
-    (allSourcesAggregated.length > 0 ? allSourcesAggregated : (data.allSources || [])).forEach((s, i) => {
+    // 12. All Sources
+    h2("📚 Sources");
+    const sourcesList = allSourcesAggregated.length > 0 ? allSourcesAggregated : (data.allSources || []);
+    lines.push(`*${sourcesList.length} source(s) utilisée(s) pour cette analyse.*`, "");
+    sourcesList.forEach((s, i) => {
       if (s?.url) lines.push(`${i + 1}. [${s.name || s.url}](${s.url})`);
     });
 
+    lines.push("", "---", "", `*Rapport généré par DealFlow Compass — ${new Date().toLocaleDateString("fr-FR", { dateStyle: "long" })}*`);
+
+    // Trigger download — element must be in the DOM for reliable cross-browser download
     const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
+    const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
+    a.href = blobUrl;
     a.download = `Due-Diligence-${safeName}-${date}.md`;
+    a.style.display = "none";
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
-    toast({ title: "Export effectué", description: "Le rapport complet a été téléchargé (Markdown).", variant: "default" });
+    // Delay cleanup so the browser has time to start the download
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    }, 200);
+    toast({ title: "✅ Export effectué", description: `Le rapport "${companyName}" a été téléchargé au format Markdown.`, variant: "default" });
   };
 
   // Composant pour afficher les sources en bas de section

@@ -2,23 +2,23 @@
 import type { SourcingCandidate } from "./dedup-ranker.ts";
 
 export interface ScoringWeights {
-  thesisFit: number;         // 0.30 — adéquation thèse
+  thesisFit: number;         // 0.15 — adéquation thèse (nécessaire mais insuffisant)
   signalDiversity: number;   // 0.15 — diversité des signaux
-  sourceCorroboration: number; // 0.10 — corroboration multi-sources
-  frenchEcosystem: number;   // 0.15 — bonus biais FR
+  sourceCorroboration: number; // 0.15 — corroboration multi-sources
+  frenchEcosystem: number;   // 0.05 — bonus biais FR
   timing: number;            // 0.10 — "why now"
-  teamQuality: number;       // 0.12 — qualité de l'équipe
-  competitivePosition: number; // 0.08 — moat / différenciation
+  teamQuality: number;       // 0.20 — qualité de l'équipe
+  competitivePosition: number; // 0.20 — moat / différenciation
 }
 
 export const DEFAULT_WEIGHTS: ScoringWeights = {
-  thesisFit: 0.30,
+  thesisFit: 0.15,
   signalDiversity: 0.15,
-  sourceCorroboration: 0.10,
-  frenchEcosystem: 0.15,
+  sourceCorroboration: 0.15,
+  frenchEcosystem: 0.05,
   timing: 0.10,
-  teamQuality: 0.12,
-  competitivePosition: 0.08,
+  teamQuality: 0.20,
+  competitivePosition: 0.20,
 };
 
 export interface CriteriaScores {
