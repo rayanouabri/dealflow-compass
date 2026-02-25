@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight, Play, Sparkles, Zap } from "lucide-react";
 import { motion } from "framer-motion";
+import { Link } from "react-router-dom";
 
 interface HeroSectionProps {
   onStartTrial: () => void;
@@ -81,9 +82,10 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
           >
-            Notre IA analyse votre <span className="text-foreground font-medium">thèse d'investissement</span> et identifie 
-            des startups réelles qui correspondent parfaitement. Due diligence complète incluse.
-            <span className="block mt-2 text-primary font-medium">Automatisez votre sourcing. Investissez mieux.</span>
+            Notre outil lance <span className="text-foreground font-medium">100+ requêtes web</span> en parallèle
+            puis un <span className="text-foreground font-medium">agent IA</span> génère un rapport complet en{" "}
+            <span className="text-primary font-medium">~5 minutes</span>. Due diligence professionnelle automatisée.
+            <span className="block mt-2 text-primary font-medium">Automatisez votre analyse. Investissez mieux.</span>
           </motion.p>
 
           {/* CTAs */}
@@ -105,11 +107,13 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
             <Button 
               variant="outline" 
               size="lg" 
-              onClick={onWatchDemo}
+              asChild
               className="gap-2 px-6 h-14 text-base border-primary/30 hover:border-primary/60 hover:bg-primary/10 backdrop-blur-sm"
             >
-              <Play className="w-4 h-4" />
-              Voir la démo (2 min)
+              <Link to="/exemple-morfo" aria-label="Voir un exemple de rapport de due diligence">
+                <Play className="w-4 h-4" />
+                Voir un exemple
+              </Link>
             </Button>
           </motion.div>
 

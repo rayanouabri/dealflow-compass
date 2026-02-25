@@ -16,6 +16,7 @@ import MentionsLegales from "./pages/MentionsLegales";
 import ConditionsUtilisation from "./pages/ConditionsUtilisation";
 import Confidentialite from "./pages/Confidentialite";
 import PipelineProgress from "./pages/PipelineProgress";
+import ExempleMorfo from "./pages/ExempleMorfo";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -40,6 +41,7 @@ const App = () => (
             <Route path="/mentions-legales" element={<MentionsLegales />} />
             <Route path="/conditions-utilisation" element={<ConditionsUtilisation />} />
             <Route path="/confidentialite" element={<Confidentialite />} />
+            <Route path="/exemple-morfo" element={<ExempleMorfo />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
           </BrowserRouter>
