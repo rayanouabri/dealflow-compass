@@ -27,7 +27,7 @@ export default function Index() {
       return;
     }
     if (!user) {
-      setAuthView("signup");
+      setAuthView("login");
       setShowAuthDialog(true);
     } else {
       setShowPaywall(true);

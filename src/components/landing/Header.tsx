@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { BarChart3, Menu, X, Zap } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -12,6 +13,7 @@ const navLinks = [
   { label: "Comment ça marche", href: "#how-it-works" },
   { label: "Fonctionnalités", href: "#features" },
   { label: "Tarifs", href: "#pricing" },
+  { label: "Exemple d'analyse", href: "/exemple", isRoute: true },
 ];
 
 export function Header({ onStartTrial, onLogin }: HeaderProps) {
@@ -46,15 +48,25 @@ export function Header({ onStartTrial, onLogin }: HeaderProps) {
 
           {/* Desktop nav */}
           <nav className="hidden md:flex items-center gap-8">
-            {navLinks.map((link) => (
-              <button
-                key={link.href}
-                onClick={() => scrollToSection(link.href)}
-                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {link.label}
-              </button>
-            ))}
+            {navLinks.map((link) =>
+              link.isRoute ? (
+                <Link
+                  key={link.href}
+                  to={link.href}
+                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {link.label}
+                </Link>
+              ) : (
+                <button
+                  key={link.href}
+                  onClick={() => scrollToSection(link.href)}
+                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {link.label}
+                </button>
+              )
+            )}
           </nav>
 
           {/* CTAs */}
@@ -92,15 +104,26 @@ export function Header({ onStartTrial, onLogin }: HeaderProps) {
             className="md:hidden border-t border-border bg-card"
           >
             <div className="container px-4 py-4 space-y-4">
-              {navLinks.map((link) => (
-                <button
-                  key={link.href}
-                  onClick={() => scrollToSection(link.href)}
-                  className="block w-full text-left text-sm text-muted-foreground hover:text-foreground py-2"
-                >
-                  {link.label}
-                </button>
-              ))}
+              {navLinks.map((link) =>
+                link.isRoute ? (
+                  <Link
+                    key={link.href}
+                    to={link.href}
+                    className="block w-full text-left text-sm text-muted-foreground hover:text-foreground py-2"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    {link.label}
+                  </Link>
+                ) : (
+                  <button
+                    key={link.href}
+                    onClick={() => scrollToSection(link.href)}
+                    className="block w-full text-left text-sm text-muted-foreground hover:text-foreground py-2"
+                  >
+                    {link.label}
+                  </button>
+                )
+              )}
               <div className="pt-4 border-t border-border space-y-2">
                 <Button variant="outline" className="w-full" onClick={onLogin}>
                   Se connecter
