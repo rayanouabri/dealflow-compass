@@ -697,8 +697,12 @@ export default function DueDiligenceResult() {
     const a = document.createElement("a");
     a.href = url;
     a.download = `Due-Diligence-${safeName}-${date}.md`;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    }, 200);
     toast({ title: "Export effectué", description: "Le rapport complet a été téléchargé (Markdown).", variant: "default" });
   };
 

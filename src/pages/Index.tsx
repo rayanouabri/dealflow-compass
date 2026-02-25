@@ -27,7 +27,7 @@ export default function Index() {
       return;
     }
     if (!user) {
-      setAuthView("signup");
+      setAuthView("login");
       setShowAuthDialog(true);
     } else {
       setShowPaywall(true);
@@ -39,7 +39,15 @@ export default function Index() {
     setShowAuthDialog(true);
   };
 
-  if (authLoading) return null;
+  if (authLoading) {
+    return (
+      <LandingPage
+        onStartTrial={handleStartTrial}
+        onLogin={handleLogin}
+        trialRemaining={trialRemaining}
+      />
+    );
+  }
 
   return (
     <>

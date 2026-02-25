@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -7,7 +7,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { LoginForm } from "@/components/LoginForm";
-import { SignupForm } from "@/components/SignupForm";
 
 interface AuthDialogProps {
   open: boolean;
@@ -17,15 +16,6 @@ interface AuthDialogProps {
 }
 
 export function AuthDialog({ open, onOpenChange, defaultView = "login", onAuthSuccess }: AuthDialogProps) {
-  const [view, setView] = useState<"login" | "signup">(defaultView);
-
-  // Update view when defaultView changes
-  useEffect(() => {
-    if (open) {
-      setView(defaultView);
-    }
-  }, [defaultView, open]);
-
   const handleSuccess = () => {
     console.log("AuthDialog: handleSuccess called");
     // Close dialog - parent will handle redirect
@@ -36,39 +26,23 @@ export function AuthDialog({ open, onOpenChange, defaultView = "login", onAuthSu
         onAuthSuccess();
       }, 200);
     }
-    // Reset view to login for next time
-    setTimeout(() => setView("login"), 100);
   };
 
   // Debug: log when dialog open state changes
   useEffect(() => {
-    console.log("AuthDialog open state:", open, "view:", view);
-  }, [open, view]);
+    console.log("AuthDialog open state:", open);
+  }, [open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>
-            {view === "login" ? "Connexion" : "Créer un compte"}
-          </DialogTitle>
+          <DialogTitle>Connexion</DialogTitle>
           <DialogDescription>
-            {view === "login"
-              ? "Connectez-vous pour accéder à DealFlow Compass"
-              : "Créez un compte gratuit pour commencer à sourcer des startups"}
+            Connectez-vous pour accéder à DealFlow Compass
           </DialogDescription>
         </DialogHeader>
-        {view === "login" ? (
-          <LoginForm
-            onSuccess={handleSuccess}
-            onSwitchToSignup={() => setView("signup")}
-          />
-        ) : (
-          <SignupForm
-            onSuccess={handleSuccess}
-            onSwitchToLogin={() => setView("login")}
-          />
-        )}
+        <LoginForm onSuccess={handleSuccess} />
       </DialogContent>
     </Dialog>
   );
