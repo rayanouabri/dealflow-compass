@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Sparkles, Zap } from "lucide-react";
+import { Link } from "react-router-dom";
 
 interface CTASectionProps {
   onStartTrial: () => void;
@@ -43,6 +44,17 @@ export function CTASection({ onStartTrial }: CTASectionProps) {
               <Zap className="w-5 h-5" />
               Commencer maintenant
               <ArrowRight className="w-5 h-5 transition-transform group-hover:translate-x-1" />
+            </Button>
+            <Button
+              variant="outline"
+              size="lg"
+              asChild
+              className="gap-2 h-14 text-lg border-primary/30 hover:border-primary/60 hover:bg-primary/10"
+            >
+              <Link to="/exemple-morfo">
+                Voir un exemple
+                <ArrowRight className="w-4 h-4" />
+              </Link>
             </Button>
           </div>
           

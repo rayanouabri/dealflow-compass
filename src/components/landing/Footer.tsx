@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { BarChart3, Github, Linkedin, Twitter, Mail } from "lucide-react";
+import { BarChart3, Mail } from "lucide-react";
 
 const CONTACT_EMAIL = "rayan.ouabri@edhec.com";
 
@@ -30,17 +30,6 @@ export function Footer() {
               <Mail className="w-4 h-4" />
               {CONTACT_EMAIL}
             </a>
-            <div className="flex gap-4">
-              <a href="#" className="text-muted-foreground hover:text-foreground transition-colors" aria-label="Twitter">
-                <Twitter className="w-5 h-5" />
-              </a>
-              <a href="#" className="text-muted-foreground hover:text-foreground transition-colors" aria-label="LinkedIn">
-                <Linkedin className="w-5 h-5" />
-              </a>
-              <a href="#" className="text-muted-foreground hover:text-foreground transition-colors" aria-label="GitHub">
-                <Github className="w-5 h-5" />
-              </a>
-            </div>
           </div>
 
           {/* Produit */}
@@ -50,6 +39,7 @@ export function Footer() {
               <li><Link to="/#features" className="hover:text-foreground transition-colors">Fonctionnalités</Link></li>
               <li><Link to="/#pricing" className="hover:text-foreground transition-colors">Tarifs</Link></li>
               <li><Link to="/analyser" className="hover:text-foreground transition-colors">Analyser</Link></li>
+              <li><Link to="/exemple-morfo" className="hover:text-foreground transition-colors">Exemple de rapport</Link></li>
             </ul>
           </div>
 

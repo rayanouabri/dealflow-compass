@@ -1352,7 +1352,7 @@ export default function DueDiligenceResult() {
                               </div>
                               {c.description && <p className="text-sm text-gray-400 mb-2">{c.description}</p>}
                               <div className="grid md:grid-cols-2 gap-2 text-xs">
-                                {c.strengths && c.strengths.length > 0 && (
+                                {Array.isArray(c.strengths) && c.strengths.length > 0 && (
                                   <div>
                                     <p className="text-green-400 font-medium mb-1">Forces:</p>
                                     <ul className="text-gray-400">
@@ -1360,7 +1360,7 @@ export default function DueDiligenceResult() {
                                     </ul>
                                   </div>
                                 )}
-                                {c.weaknesses && c.weaknesses.length > 0 && (
+                                {Array.isArray(c.weaknesses) && c.weaknesses.length > 0 && (
                                   <div>
                                     <p className="text-red-400 font-medium mb-1">Faiblesses:</p>
                                     <ul className="text-gray-400">
@@ -1596,7 +1596,7 @@ export default function DueDiligenceResult() {
                     </div>
                     
                     <div className="grid md:grid-cols-2 gap-4">
-                      {data.investmentRecommendation?.strengths && data.investmentRecommendation.strengths.length > 0 && (
+                      {Array.isArray(data.investmentRecommendation?.strengths) && data.investmentRecommendation.strengths.length > 0 && (
                         <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-4">
                           <h4 className="font-semibold text-green-400 mb-2">Forces</h4>
                           <ul className="space-y-1 text-sm">
@@ -1607,7 +1607,7 @@ export default function DueDiligenceResult() {
                         </div>
                       )}
                       
-                      {data.investmentRecommendation?.weaknesses && data.investmentRecommendation.weaknesses.length > 0 && (
+                      {Array.isArray(data.investmentRecommendation?.weaknesses) && data.investmentRecommendation.weaknesses.length > 0 && (
                         <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-4">
                           <h4 className="font-semibold text-red-400 mb-2">Faiblesses</h4>
                           <ul className="space-y-1 text-sm">

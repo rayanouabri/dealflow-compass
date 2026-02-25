@@ -1,35 +1,39 @@
 import { motion } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
-import { Search, Sparkles, FileText, Send } from "lucide-react";
+import { Search, Sparkles, FileText, Send, Globe, Brain, Database, BarChart3 } from "lucide-react";
 
 const steps = [
   {
     number: "01",
     icon: Search,
-    title: "Définissez votre thèse",
-    description: "Entrez le nom de votre fonds VC. Notre IA analyse automatiquement votre thèse d'investissement basée sur votre portfolio réel.",
-    color: "primary"
+    title: "Saisie de l'entreprise",
+    description: "Entrez le nom et/ou le site web de la startup à analyser. L'outil démarre immédiatement le pipeline d'analyse.",
+    color: "primary",
+    badge: "Démarrage"
   },
   {
     number: "02",
-    icon: Sparkles,
-    title: "Sourcing intelligent",
-    description: "Notre algorithme identifie des startups réelles qui correspondent parfaitement à votre thèse d'investissement (secteur, stade, géographie).",
-    color: "accent"
+    icon: Globe,
+    title: "Phase Search — 100+ requêtes",
+    description: "L'outil lance 100+ requêtes web en parallèle : produit, marché, équipe, financement, traction, concurrents, technologie, actualités, recrutement. Déduplication et structuration automatique.",
+    color: "accent",
+    badge: "~2 min"
   },
   {
     number: "03",
-    icon: FileText,
-    title: "Due diligence automatisée",
-    description: "Recevez un rapport de due diligence complet : marché, produit, traction, équipe, analyse concurrentielle et recommandation d'investissement.",
-    color: "success"
+    icon: Brain,
+    title: "Phase IA — Analyse & rapport",
+    description: "Un agent IA reçoit le contexte structuré et génère un rapport JSON complet : résumé exécutif, produit, marché (TAM/SAM/SOM), équipe, financement, concurrents, traction, recommandation d'investissement.",
+    color: "success",
+    badge: "~3 min"
   },
   {
     number: "04",
-    icon: Send,
-    title: "Décision éclairée",
-    description: "Exportez vos rapports, partagez avec votre équipe et prenez des décisions d'investissement basées sur des données approfondies.",
-    color: "data-amber"
+    icon: FileText,
+    title: "Rapport structuré & export",
+    description: "Rapport complet avec sources vérifiées, recommandation d'investissement (INVEST/WATCH/PASS) et niveau de confiance. Exportable en Markdown.",
+    color: "data-amber",
+    badge: "Résultat"
   },
 ];
 
@@ -47,11 +51,11 @@ export function HowItWorksSection() {
               Comment ça marche
             </Badge>
             <h2 className="text-3xl md:text-5xl font-bold mb-4 text-foreground">
-              Du sourcing à la décision
-              <span className="block text-gradient-ai-vc">en 4 étapes automatisées</span>
+              Du nom de startup au rapport
+              <span className="block text-gradient-ai-vc">en ~5 minutes</span>
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
-              Plus besoin de passer des semaines à rechercher et analyser des startups. Automatisez votre sourcing et due diligence.
+              Un pipeline en 2 phases : 100+ requêtes web pour collecter les données, puis un agent IA pour générer le rapport complet.
             </p>
           </motion.div>
         </div>
@@ -78,6 +82,11 @@ export function HowItWorksSection() {
                   {step.number}
                 </div>
                 
+                {/* Badge */}
+                <div className="absolute top-2 right-3">
+                  <span className="text-xs text-primary/70 font-medium">{step.badge}</span>
+                </div>
+                
                 {/* Icon */}
                 <div className="w-14 h-14 rounded-xl bg-primary/20 flex items-center justify-center mb-4 group-hover:bg-primary/30 transition-all group-hover:scale-110">
                   <step.icon className="w-7 h-7 text-primary" />
@@ -89,6 +98,44 @@ export function HowItWorksSection() {
             </motion.div>
           ))}
         </div>
+
+        {/* 2-phase highlight */}
+        <motion.div
+          className="mt-12 grid md:grid-cols-2 gap-6 max-w-3xl mx-auto"
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.6 }}
+        >
+          <div className="p-5 rounded-2xl bg-card/80 border border-primary/30 backdrop-blur-sm">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
+                <Database className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <p className="font-semibold text-foreground text-sm">Phase 1 — Search</p>
+                <p className="text-xs text-muted-foreground">100+ requêtes web en parallèle</p>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Collecte de données sur le produit, le marché, l'équipe, le financement, la traction, les concurrents, la technologie et l'actualité. Déduplication et structuration automatiques.
+            </p>
+          </div>
+          <div className="p-5 rounded-2xl bg-card/80 border border-primary/30 backdrop-blur-sm">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
+                <BarChart3 className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <p className="font-semibold text-foreground text-sm">Phase 2 — Agent IA</p>
+                <p className="text-xs text-muted-foreground">Rapport structuré complet</p>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Résumé exécutif, produit, marché (TAM/SAM/SOM), équipe, financement, concurrents, traction, risques et recommandation d'investissement avec niveau de confiance.
+            </p>
+          </div>
+        </motion.div>
       </div>
     </section>
   );

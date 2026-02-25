@@ -4,45 +4,42 @@ import {
   Target, 
   Sparkles, 
   TrendingUp, 
-  Shield, 
   Globe, 
   Zap,
   BarChart3,
-  FileText,
-  Users
 } from "lucide-react";
 
 const features = [
   {
-    icon: Target,
-    title: "Sourcing IA avancé",
-    description: "Algorithme entraîné sur 10,000+ deals pour identifier les startups les plus pertinentes selon votre thèse d'investissement.",
+    icon: Globe,
+    title: "100+ requêtes web en parallèle",
+    description: "L'outil lance plus de 100 requêtes web simultanées pour collecter des données sur le produit, le marché, l'équipe, le financement et la traction.",
     highlight: true
   },
   {
     icon: Sparkles,
-    title: "Due diligence automatisée",
-    description: "Rapports d'analyse complets : marché, produit, traction, équipe, concurrents et recommandation d'investissement."
+    title: "Agent IA — rapport structuré",
+    description: "Un agent IA analyse le contexte collecté et génère un rapport JSON complet : résumé exécutif, TAM/SAM/SOM, équipe, concurrents et recommandation d'investissement."
   },
   {
     icon: TrendingUp,
-    title: "Intelligence marché",
-    description: "Données en temps réel sur les startups, leurs métriques, levées de fonds et positionnement concurrentiel."
+    title: "Pipeline en 2 phases",
+    description: "Phase 1 : recherche web (requêtes parallèles, déduplication, structuration). Phase 2 : analyse IA du contexte et génération du rapport complet."
   },
   {
     icon: BarChart3,
-    title: "Dashboard de suivi",
-    description: "Centralisez vos analyses de startups, suivez vos opportunités et mesurez votre pipeline de deals."
+    title: "10+ catégories analysées",
+    description: "Produit, marché, équipe, financement, traction, concurrents, technologie, actualités, recrutement — couverts de manière exhaustive."
   },
   {
-    icon: Globe,
-    title: "Couverture mondiale",
-    description: "Accès à des startups en Europe, Amérique du Nord, Asie et marchés émergents."
+    icon: Target,
+    title: "Recommandation d'investissement",
+    description: "INVEST / WATCH / PASS avec niveau de confiance, points forts, risques clés et prochaines étapes suggérées pour la due diligence."
   },
   {
     icon: Zap,
-    title: "Résultats rapides",
-    description: "Sourcing et due diligence complète en quelques minutes grâce à notre pipeline IA optimisé."
+    title: "Résultats en ~5 minutes",
+    description: "De la saisie du nom au rapport complet en environ 5 minutes. Sources vérifiées, rapport exportable en Markdown."
   },
 ];
 
