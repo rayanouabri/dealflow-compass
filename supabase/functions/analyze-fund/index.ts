@@ -21,7 +21,7 @@ function corsHeaders(req: Request | null): Record<string, string> {
 }
 
 interface AnalysisRequest {
-  phase?: "search" | "analyze";
+  phase?: "search" | "analyze" | "search_fund" | "search_market" | "search_startups" | "pick";
   jobId?: string;
   fundName?: string;
   customThesis?: {
@@ -31,6 +31,7 @@ interface AnalysisRequest {
     ticketSize?: string;
     description?: string;
     specificCriteria?: string;
+    sourcingInstructions?: string;
   };
   params?: {
     numberOfStartups?: number;
@@ -40,6 +41,10 @@ interface AnalysisRequest {
     includeMoat?: boolean;
     detailLevel?: number;
     slideCount?: number;
+    fundingStage?: string;
+    headquartersRegion?: string;
+    startupSector?: string;
+    [key: string]: unknown;
   };
 }
 
@@ -1238,6 +1243,8 @@ ${extraContext2}`;
       // Récupérer la thèse du fonds pour matcher les critères
       let fundThesisForPick: string = ctxP.fundThesisContext || "";
       const fundNameForPick: string = jobP.fund_name || "";
+      // Récupérer la liste des entreprises du portfolio à exclure
+      const portfolioCompaniesForPick: string[] = ctxP.portfolioCompanies || [];
       if (!pickContext && ctxP.systemPrompt) {
         // Anciens jobs : extraire la section des résultats depuis systemPrompt
         const marker = "=== STARTUPS POTENTIELLES TROUVÉES";
@@ -1295,21 +1302,28 @@ ${extraContext2}`;
       const fundThesisSection = fundThesisForPick
         ? `\n=== THÈSE DU FONDS "${fundNameForPick}" (critères à respecter OBLIGATOIREMENT) ===\n${fundThesisForPick.slice(0, 1500)}\n`
         : "";
+      // Construire la section liste noire du portfolio pour le pick prompt
+      const portfolioBlacklistForPick = portfolioCompaniesForPick.length > 0
+        ? `\n🚫 ENTREPRISES DU PORTFOLIO (NE JAMAIS SÉLECTIONNER — ce sont des investissements EXISTANTS du fonds) :\n${portfolioCompaniesForPick.join(", ")}\nCes entreprises sont INTERDITES car le fonds y a déjà investi. Trouve une NOUVELLE startup.\n`
+        : "";
+
       const pickPrompt = `Tu es un analyste VC senior spécialisé en sourcing. À partir des résultats de sourcing ci-dessous, identifie la MEILLEURE startup RÉELLE à analyser en due diligence.
 
 ⚠️ CRITÈRES DE SÉLECTION OBLIGATOIRES (par ordre de priorité) :
-1. CORRESPONDANCE THÈSE : La startup DOIT correspondre à la thèse d'investissement du fonds (secteurs, géographie, stade, ticket size). UNE STARTUP QUI NE CORRESPOND PAS À LA THÈSE EST ÉLIMINÉE, même si elle est connue.
-2. STADE PRÉCOCE : Privilégie les startups early-stage (Seed, Pre-Seed, Series A) sauf si la thèse du fonds cible un stade différent.
-3. GÉOGRAPHIE : La startup doit être dans la zone géographique ciblée par le fonds. Si le fonds est européen, NE PAS sélectionner de startups US/asiatiques.
-4. SIGNAUX POSITIFS : Funding récent, traction, équipe solide, marché en croissance.
-5. URL OFFICIELLE : La startup doit avoir un site web trouvable dans les résultats.
+1. NOUVELLE STARTUP UNIQUEMENT : La startup NE DOIT PAS faire partie du portfolio existant du fonds. Le but est de trouver une NOUVELLE opportunité d'investissement.
+2. CORRESPONDANCE THÈSE : La startup DOIT correspondre à la thèse d'investissement du fonds (secteurs, géographie, stade, ticket size). UNE STARTUP QUI NE CORRESPOND PAS À LA THÈSE EST ÉLIMINÉE, même si elle est connue.
+3. STADE PRÉCOCE : Privilégie les startups early-stage (Seed, Pre-Seed, Series A) sauf si la thèse du fonds cible un stade différent.
+4. GÉOGRAPHIE : La startup doit être dans la zone géographique ciblée par le fonds. Si le fonds est européen, NE PAS sélectionner de startups US/asiatiques.
+5. SIGNAUX POSITIFS : Funding récent, traction, équipe solide, marché en croissance, brevets déposés, sortie d'incubateur.
+6. URL OFFICIELLE : La startup doit avoir un site web trouvable dans les résultats.
 
 🚫 ÉLIMINER IMMÉDIATEMENT :
+- Les startups DÉJÀ dans le portfolio du fonds (voir liste noire ci-dessous)
 - Les grandes entreprises établies (>$100M de revenus, >500 employés, cotées en bourse)
 - Les startups hors zone géographique du fonds
 - Les startups dans un secteur différent de la thèse
 - Les entreprises qui ne sont pas des startups (médias, agences, cabinets de conseil)
-${fundThesisSection}
+${portfolioBlacklistForPick}${fundThesisSection}
 Réponds UNIQUEMENT avec ce JSON (sans markdown) :
 {"name":"Nom exact de la startup","website":"https://... (URL officielle trouvée dans les résultats, sinon chaîne vide)","description":"1-2 phrases résumant ce que fait la startup et pourquoi elle correspond à la thèse du fonds"}
 
@@ -1395,12 +1409,44 @@ ${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
       const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
       let fundThesisContext = "";
       let fundSources: { name: string; url: string }[] = [];
+      let portfolioCompanies: string[] = [];
       if (fundName) {
         const fundResults = await braveSearch(`${fundName} investment thesis criteria sectors stage geography ticket size`, 12);
         await sleep(1200);
-        const portfolioResults = await braveSearch(`${fundName} portfolio companies investments 2023 2024`, 8);
+        const portfolioResults = await braveSearch(`${fundName} portfolio companies investments 2023 2024 2025`, 12);
         await sleep(1100);
         const teamResults = await braveSearch(`${fundName} team partners investors`, 6);
+        
+        // === EXTRACTION DES ENTREPRISES DU PORTFOLIO ===
+        // Identifier les noms d'entreprises dans lesquelles le fonds a DÉJÀ investi
+        // pour les EXCLURE du sourcing (on cherche de NOUVELLES startups)
+        const portfolioText = portfolioResults.map(r => `${r.title} ${r.description}`).join("\n");
+        // Extraction par patterns courants dans les résultats de recherche sur les portfolios
+        const companyPatterns = [
+          // "invested in CompanyName" / "backed CompanyName"
+          /(?:invested in|backed|funded|portfolio company|invests in)\s+([A-Z][a-zA-Z0-9\-\.]+(?:\s+[A-Z][a-zA-Z0-9\-\.]+){0,3})/gi,
+          // "CompanyName, CompanyName, and CompanyName" (listes de portfolio)
+          /(?:portfolio includes?|companies include|investments include)\s*:?\s*([A-Z][a-zA-Z0-9\s,&\-\.]+)/gi,
+          // "CompanyName (Series A)" pattern
+          /([A-Z][a-zA-Z0-9\-\.]+(?:\s+[A-Z][a-zA-Z0-9\-\.]+){0,2})\s*\((?:Series|Seed|Pre-Seed|Round)/gi,
+        ];
+        const extractedNames = new Set<string>();
+        for (const pattern of companyPatterns) {
+          let match;
+          while ((match = pattern.exec(portfolioText)) !== null) {
+            const names = match[1].split(/[,;&]/).map(n => n.trim()).filter(n => n.length > 2 && n.length < 50);
+            names.forEach(n => {
+              // Nettoyer le nom
+              const clean = n.replace(/\s+(and|et|or|ou)\s*$/i, '').trim();
+              if (clean.length > 2 && /^[A-Z]/.test(clean)) {
+                extractedNames.add(clean);
+              }
+            });
+          }
+        }
+        portfolioCompanies = Array.from(extractedNames).slice(0, 30);
+        console.log(`[search_fund] Portfolio companies détectées (${portfolioCompanies.length}): ${portfolioCompanies.join(", ")}`);
+        
         fundThesisContext = fundResults.map((r: any) => `${r.title}: ${r.description}`).join("\n") + "\n\nPORTFOLIO EXAMPLES:\n" + portfolioResults.map((r: any) => `${r.title}: ${r.description}`).join("\n") + (teamResults.length ? "\n\nFUND TEAM/PARTNERS:\n" + teamResults.map((r: any) => `${r.title}: ${r.description}`).join("\n") : "");
         fundSources = [...fundResults, ...portfolioResults].slice(0, 8).map((r: any) => ({ name: r.title.substring(0, 60), url: r.url }));
       }
@@ -1411,7 +1457,7 @@ ${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
           fund_name: fundName || null,
           custom_thesis: customThesis || null,
           params: params || {},
-          search_context: { fundThesisContext, fundSources },
+          search_context: { fundThesisContext, fundSources, portfolioCompanies },
           status: "fund_done",
         }),
       });
@@ -1452,6 +1498,7 @@ ${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
     let contextFromJob = false;
     let fundThesisContext = "";
     let fundSources: { name: string; url: string }[] = [];
+    let portfolioCompanies: string[] = [];
     let marketData: { marketContext?: string; marketSources?: { name: string; url: string }[] } = {};
     let paramsFromJob = params;
     let customThesisFromJob = customThesis;
@@ -1468,6 +1515,7 @@ ${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
       const ctx = job.search_context as any;
       fundThesisContext = ctx.fundThesisContext || "";
       fundSources = ctx.fundSources || [];
+      portfolioCompanies = ctx.portfolioCompanies || [];
       marketData = { marketContext: ctx.marketContext, marketSources: ctx.marketSources || [] };
       paramsFromJob = job.params || {};
       customThesisFromJob = job.custom_thesis || null;
@@ -1573,7 +1621,7 @@ ${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
     }
     
     // Helper pour construire l'URL et les headers selon le provider
-    const getAIEndpoint = async (model?: string) => {
+    const getAIEndpoint = async (model?: string): Promise<{ url: string; headers: Record<string, string>; needsAuth: boolean }> => {
       const useModel = model || (AI_PROVIDER === "vertex" ? VERTEX_AI_MODEL : GEMINI_MODEL);
       
       if (AI_PROVIDER === "vertex") {
@@ -1645,6 +1693,7 @@ ${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
 
     let fundThesisContextLocal = fundThesisContext;
     let fundSourcesLocal = fundSources;
+    let portfolioCompaniesLocal = portfolioCompanies;
     let marketDataLocal = marketData;
     const primarySector = customThesis?.sectors?.[0] || "technology startups";
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -1652,30 +1701,54 @@ ${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
     if (!contextFromJob) {
       fundThesisContextLocal = "";
       fundSourcesLocal = [];
+      portfolioCompaniesLocal = [];
       marketDataLocal = {};
       const [fundData, marketDataRes] = await Promise.all([
         fundName
           ? (async () => {
               const fundResults = await braveSearch(`${fundName} investment thesis criteria sectors stage geography ticket size`, 12);
               await sleep(1200);
-              const portfolioResults = await braveSearch(`${fundName} portfolio companies investments 2023 2024`, 8);
+              const portfolioResults = await braveSearch(`${fundName} portfolio companies investments 2023 2024 2025`, 12);
               await sleep(1100);
               const teamResults = await braveSearch(`${fundName} team partners investors`, 6);
+              
+              // Extraire les noms du portfolio existant
+              const portfolioText = portfolioResults.map(r => `${r.title} ${r.description}`).join("\n");
+              const companyPatterns = [
+                /(?:invested in|backed|funded|portfolio company|invests in)\s+([A-Z][a-zA-Z0-9\-\.]+(?:\s+[A-Z][a-zA-Z0-9\-\.]+){0,3})/gi,
+                /(?:portfolio includes?|companies include|investments include)\s*:?\s*([A-Z][a-zA-Z0-9\s,&\-\.]+)/gi,
+                /([A-Z][a-zA-Z0-9\-\.]+(?:\s+[A-Z][a-zA-Z0-9\-\.]+){0,2})\s*\((?:Series|Seed|Pre-Seed|Round)/gi,
+              ];
+              const extractedNames = new Set<string>();
+              for (const pattern of companyPatterns) {
+                let match;
+                while ((match = pattern.exec(portfolioText)) !== null) {
+                  const names = match[1].split(/[,;&]/).map(n => n.trim()).filter(n => n.length > 2 && n.length < 50);
+                  names.forEach(n => {
+                    const clean = n.replace(/\s+(and|et|or|ou)\s*$/i, '').trim();
+                    if (clean.length > 2 && /^[A-Z]/.test(clean)) extractedNames.add(clean);
+                  });
+                }
+              }
+              
               return {
                 fundThesisContext: fundResults.map((r: any) => `${r.title}: ${r.description}`).join("\n") + "\n\nPORTFOLIO EXAMPLES:\n" + portfolioResults.map((r: any) => `${r.title}: ${r.description}`).join("\n") + (teamResults.length ? "\n\nFUND TEAM/PARTNERS:\n" + teamResults.map((r: any) => `${r.title}: ${r.description}`).join("\n") : ""),
                 fundSources: [...fundResults, ...portfolioResults].slice(0, 8).map((r: any) => ({ name: r.title.substring(0, 60), url: r.url })),
+                portfolioCompanies: Array.from(extractedNames).slice(0, 30),
               };
             })()
-          : Promise.resolve({ fundThesisContext: "", fundSources: [] as { name: string; url: string }[] }),
+          : Promise.resolve({ fundThesisContext: "", fundSources: [] as { name: string; url: string }[], portfolioCompanies: [] as string[] }),
         enrichMarketData(primarySector, customThesis?.geography || "global", false),
       ]);
       if (fundData.fundThesisContext) fundThesisContextLocal = fundData.fundThesisContext;
       if (fundData.fundSources?.length) fundSourcesLocal = fundData.fundSources;
+      if (fundData.portfolioCompanies?.length) portfolioCompaniesLocal = fundData.portfolioCompanies;
       marketDataLocal = marketDataRes;
     }
 
     fundThesisContext = fundThesisContextLocal;
     fundSources = fundSourcesLocal;
+    portfolioCompanies = portfolioCompaniesLocal;
     marketData = marketDataLocal;
     
     // Step 2.5: Use DigitalOcean Agent for enhanced sourcing (if configured)
@@ -1876,10 +1949,12 @@ RÈGLES:
     const RESULTS_PER_QUERY = isSearchPhase ? 10 : 15;
     const BATCH_DELAY_MS = 1200;
 
-    // Si on a un nom de fonds, ajouter une recherche spécifique sur les types de startups du portfolio
+    // === RECHERCHE DE NOUVELLES STARTUPS (PAS celles du portfolio existant) ===
+    // On NE cherche PAS les startups du portfolio du fonds — on veut sourcer de NOUVELLES opportunités
     if (fundName && !isSearchPhase) {
-      console.log(`[Brave] Recherche 0: startups similaires au portfolio de ${fundName}`);
-      const results0 = await braveSearch(`"${fundName}" portfolio startup investment 2024 2025`, 10);
+      // Chercher des startups SIMILAIRES à celles du secteur du fonds, mais PAS dans le portfolio
+      console.log(`[Brave] Recherche 0: nouvelles startups ${mainKeyword} hors portfolio ${fundName}`);
+      const results0 = await braveSearch(`${mainKeyword} new startup ${stage} ${geoTerm} NOT "${fundName}" 2024 2025`, 10);
       startupSearchResults.push(...results0);
       await sleep(BATCH_DELAY_MS);
     }
@@ -1890,8 +1965,8 @@ RÈGLES:
     await sleep(BATCH_DELAY_MS);
 
     if (!isSearchPhase) {
-      console.log(`[Brave] Recherche 2: best ${mainKeyword} startups ${geoTerm}`);
-      const results2 = await braveSearch(`best ${mainKeyword} startups ${geoTerm} 2024 emerging`, RESULTS_PER_QUERY);
+      console.log(`[Brave] Recherche 2: emerging ${mainKeyword} startups ${geoTerm}`);
+      const results2 = await braveSearch(`emerging ${mainKeyword} startups ${geoTerm} 2024 2025 under the radar`, RESULTS_PER_QUERY);
       startupSearchResults.push(...results2);
       await sleep(BATCH_DELAY_MS);
       
@@ -1907,9 +1982,10 @@ RÈGLES:
     }
 
     let ipInnovationContext = "";
+    let earlySignalsContext = "";
     if (!isSearchPhase) {
-      console.log(`[Brave] Recherche 3: ${mainKeyword} funding`);
-      const results3 = await braveSearch(`${mainKeyword} startup funding round ${geoTerm} 2024`, RESULTS_PER_QUERY);
+      console.log(`[Brave] Recherche 3: ${mainKeyword} funding rounds récents`);
+      const results3 = await braveSearch(`${mainKeyword} startup first funding round pre-seed seed ${geoTerm} 2024 2025`, RESULTS_PER_QUERY);
       startupSearchResults.push(...results3);
       await sleep(BATCH_DELAY_MS);
 
@@ -1939,11 +2015,79 @@ RÈGLES:
         await sleep(1100);
       }
 
+      // === SIGNAUX PRÉCOCES : BREVETS, INCUBATEURS, SPIN-OFFS ===
+      // Recherches spécifiques Seed/Pre-Seed : signaux faibles
+      const isEarlyStage = /pre-?seed|seed|early|amorçage/i.test(stage);
+      
       const ipInnovationQueries = [
         `${mainKeyword} startup patent filing 2024 2025 ${geoTerm}`,
         `${primarySector} patent portfolio company funding ${geoTerm}`,
         `${mainKeyword} university spin-off research startup ${geoTerm} 2024`,
       ];
+
+      // Requêtes spécifiques pour signaux très précoces (seed/pre-seed)
+      if (isEarlyStage) {
+        // Brevets et propriété intellectuelle — signaux d'innovation
+        ipInnovationQueries.push(
+          `${mainKeyword} new patent application INPI EPO ${geoTerm} 2024 2025`,
+          `"patent pending" ${primarySector} startup founder ${geoTerm} 2024`,
+          `site:patents.google.com ${primarySector} ${geoTerm} 2024`,
+        );
+        
+        // Incubateurs et accélérateurs — pépinières de startups early-stage
+        const incubatorQueries = [
+          `"Station F" ${mainKeyword} startup cohort 2024 2025`,
+          `"Y Combinator" ${mainKeyword} ${geoTerm} batch 2024 2025`,
+          `"Techstars" ${mainKeyword} ${geoTerm} startup 2024 2025`,
+          `"500 Global" OR "Plug and Play" ${mainKeyword} startup ${geoTerm} 2024`,
+          `incubateur accélérateur ${primarySector} startup ${geoTerm} 2024 2025`,
+          `"Agoranov" OR "Wilco" OR "Euratechnologies" ${mainKeyword} 2024 2025`,
+        ];
+        
+        // Signaux RH — recrutements critiques sont un indicateur de growth
+        const talentSignalQueries = [
+          `${mainKeyword} startup hiring CTO "VP Engineering" ${geoTerm} 2024 2025`,
+          `${primarySector} co-founder looking technical ${geoTerm} 2024`,
+        ];
+        
+        // Spin-offs universitaires et recherche — deeptech early signals
+        const spinoffQueries = [
+          `CNRS CEA INRIA ${primarySector} spin-off startup 2024 2025`,
+          `PhD founder ${mainKeyword} startup ${geoTerm} 2024`,
+          `"spin-off" OR "spinoff" university research ${mainKeyword} ${geoTerm} 2024`,
+          `"thèse CIFRE" OR "ERC grant" ${primarySector} startup founder 2024`,
+        ];
+        
+        // Concours et prix d'innovation — signaux de qualité pour early-stage
+        const competitionQueries = [
+          `"i-Lab" OR "i-Nov" OR "French Tech Seed" ${primarySector} lauréat 2024 2025`,
+          `"EIC Accelerator" OR "Horizon Europe" ${mainKeyword} startup ${geoTerm} 2024`,
+          `concours innovation startup ${primarySector} ${geoTerm} winner 2024 2025`,
+        ];
+        
+        // Exécuter les requêtes early-stage
+        const allEarlyQueries = [
+          ...incubatorQueries.slice(0, 4),
+          ...talentSignalQueries,
+          ...spinoffQueries.slice(0, 3),
+          ...competitionQueries.slice(0, 2),
+        ];
+        
+        console.log(`[Brave] Requêtes signaux précoces (seed/pre-seed): ${allEarlyQueries.length} requêtes`);
+        for (const q of allEarlyQueries) {
+          const results = await braveSearch(q, 5);
+          startupSearchResults.push(...results);
+          if (results.length > 0) {
+            earlySignalsContext += results.map(r => `${r.title}: ${r.description} | ${r.url}`).join("\n") + "\n";
+          }
+          await sleep(1100);
+        }
+        
+        if (earlySignalsContext) {
+          earlySignalsContext = `\n\n=== SIGNAUX PRÉCOCES SEED/PRE-SEED (incubateurs, brevets, spin-offs, prix, recrutements) ===\n${earlySignalsContext.slice(0, 3000)}`;
+        }
+      }
+
       for (const q of ipInnovationQueries) {
         const results = await braveSearch(q, 6);
         startupSearchResults.push(...results);
@@ -1999,18 +2143,35 @@ Propose EXACTEMENT 3 requêtes (en anglais, courtes) pour trouver d'autres start
     let startupSearchContext = finalUnique
       .slice(0, maxResultsForContext)
       .map(r => `${r.title}: ${r.description} | URL: ${r.url}`)
-      .join("\n") + ipInnovationContext + reflectionContext;
+      .join("\n") + ipInnovationContext + earlySignalsContext + reflectionContext;
     
     // Add DigitalOcean Agent results if available
     if (doAgentSourcingResult) {
       startupSearchContext = `=== SOURCING PAR AGENT DIGITALOCEAN (recherche approfondie) ===\n${doAgentSourcingResult}\n\n=== RÉSULTATS RECHERCHE WEB (Brave Search) ===\n${startupSearchContext}`;
     }
 
+    // Construire la liste noire des entreprises du portfolio
+    const portfolioBlacklistSection = portfolioCompanies.length > 0
+      ? `\n\n🚫 LISTE NOIRE — ENTREPRISES DU PORTFOLIO EXISTANT (NE JAMAIS SÉLECTIONNER) 🚫
+Les entreprises suivantes font DÉJÀ partie du portfolio du fonds "${fundName || ""}".
+Tu ne dois JAMAIS les sélectionner, même si elles apparaissent dans les résultats de recherche.
+Le but du sourcing est de trouver de NOUVELLES startups POTENTIELLES à investir, pas celles déjà investies.
+Entreprises à EXCLURE : ${portfolioCompanies.join(", ")}
+`
+      : "";
+
     const systemPrompt = `Tu es un analyste VC SENIOR avec 15+ ans d'expérience en sourcing de startups et due diligence approfondie pour les plus grands fonds (Sequoia, a16z, Accel, etc.).
 
-🎯 MISSION PRINCIPALE : SOURCING DE STARTUPS PRÉCOCES + DUE DILIGENCE PROFESSIONNELLE
+🎯 MISSION PRINCIPALE : SOURCING DE NOUVELLES STARTUPS PRÉCOCES + DUE DILIGENCE PROFESSIONNELLE
 
-⚠️ RÈGLE CRITIQUE : SOURCING DE STARTUPS FIABLES AVEC DONNÉES VÉRIFIABLES
+⚠️ RÈGLE CRITIQUE N°1 : TROUVER DE NOUVELLES STARTUPS UNIQUEMENT
+- Tu dois identifier des startups dans lesquelles le fonds N'A PAS ENCORE INVESTI
+- NE JAMAIS proposer une startup qui fait déjà partie du portfolio du fonds
+- Le but est de trouver de NOUVELLES opportunités d'investissement potentielles
+- Si tu reconnais une startup du portfolio (même avec un nom légèrement différent), IGNORE-LA
+${portfolioBlacklistSection}
+
+⚠️ RÈGLE CRITIQUE N°2 : SOURCING DE STARTUPS FIABLES AVEC DONNÉES VÉRIFIABLES
 - Tu dois trouver des startups RÉELLES avec des DONNÉES VÉRIFIABLES (site web, LinkedIn, sources)
 - PRIORITÉ aux startups avec au moins 2 sources vérifiables (site web + LinkedIn/Crunchbase)
 - Si une startup n'a PAS de site web vérifiable, de LinkedIn, ou de sources → NE L'UTILISE PAS, TROUVE-EN UNE AUTRE
@@ -2018,7 +2179,20 @@ Propose EXACTEMENT 3 requêtes (en anglais, courtes) pour trouver d'autres start
 - Si une startup n'a pas assez de données vérifiables, TROUVE-EN UNE AUTRE dans les résultats de recherche
 - NE JAMAIS utiliser une startup si tu ne peux pas vérifier son existence réelle avec au moins 2 sources
 
-⚠️ RÉFLEXION : Utilise TOUTES les couches fournies : thèse fonds, marché, startups, actualités/concurrence, et surtout la section PROPRIÉTÉ INTELLECTUELLE & INNOVATION (brevets, dépôts, spin-offs universitaires). Priorise les startups avec des signaux IP (brevets déposés, technologies protégées) ou issues de la recherche. Croise les données avant de produire ton analyse.
+⚠️ RÉFLEXION : Utilise TOUTES les couches fournies : thèse fonds, marché, startups, actualités/concurrence, et surtout :
+- La section PROPRIÉTÉ INTELLECTUELLE & INNOVATION (brevets, dépôts, spin-offs universitaires)
+- La section SIGNAUX PRÉCOCES (incubateurs, accélérateurs, prix innovation, recrutements clés)
+Priorise les startups avec des signaux IP (brevets déposés, technologies protégées), issues de la recherche, 
+ou sortant d'incubateurs/accélérateurs reconnus. Croise les données avant de produire ton analyse.
+
+⚠️ SIGNAUX SEED/PRE-SEED À DÉTECTER :
+Pour les startups early-stage (Pre-Seed, Seed), cherche ces signaux faibles d'opportunités :
+1. BREVETS : Nouvelles demandes de brevet ou technologies protégées dans le secteur cible
+2. INCUBATEURS : Startups récemment acceptées dans Station F, Y Combinator, Techstars, Agoranov, etc.
+3. SPIN-OFFS : Startups issues de labos de recherche (CNRS, CEA, INRIA, universités)
+4. RECRUTEMENTS : Startups qui recrutent des postes clés (CTO, VP Engineering) — signal de croissance
+5. PRIX/CONCOURS : Lauréats de i-Lab, i-Nov, EIC Accelerator, concours French Tech
+6. THÈSES CIFRE : Chercheurs qui fondent ou co-fondent des startups autour de leur recherche
 
 ⚠️ ATTENTION : TU NE DOIS PAS ANALYSER LE FONDS, MAIS SOURCER DES STARTUPS QUI CORRESPONDENT À SA THÈSE ⚠️
 
@@ -2503,7 +2677,7 @@ IMPORTANT :
         method: "PATCH",
         headers: { "apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          search_context: { systemPrompt, userPrompt, fundSources, marketSources: marketData.marketSources || [], startupSearchContext },
+          search_context: { systemPrompt, userPrompt, fundSources, marketSources: marketData.marketSources || [], startupSearchContext, portfolioCompanies },
           search_results_count: finalUnique?.length ?? 0,
           status: "search_done",
           updated_at: new Date().toISOString(),
@@ -2772,7 +2946,7 @@ IMPORTANT :
     }
 
     // Add market sources
-    if (marketData.marketSources?.length > 0) {
+    if ((marketData.marketSources?.length ?? 0) > 0) {
       analysisResult.marketSources = marketData.marketSources;
     }
 

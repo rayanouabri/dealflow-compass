@@ -108,7 +108,25 @@ export function buildFrenchBiasedQueries(
     },
   ];
 
-  // 9. Global outliers (si géographie non exclusivement FR)
+  // 9. Signaux early-stage (seed / pre-seed)
+  const isEarly = /seed|pre.?seed|amorçage|early/i.test(stage);
+  if (isEarly) {
+    groups.push({
+      category: "early_signals",
+      queries: [
+        `"concours i-Lab" OR "concours i-Nov" ${sectorStr} lauréat ${year}`,
+        `"French Tech Seed" OR "French Tech Tremplin" ${sectorStr} ${year}`,
+        `"thèse CIFRE" ${sectorStr} startup fondateur ${year}`,
+        `"EIC Pathfinder" OR "ERC Starting Grant" ${sectorStr} France ${year}`,
+        `"résidence startup" OR "programme incubation" ${sectorStr} ${year}`,
+        `"premier recrutement" OR "cofondateur technique" ${sectorStr} startup ${year}`,
+        `"hackathon" OR "concours innovation" ${sectorStr} startup gagnant ${year}`,
+        `"PhD founder" OR "chercheur fondateur" ${sectorStr} France ${year}`,
+      ],
+    });
+  }
+
+  // 10. Global outliers (si géographie non exclusivement FR)
   if (isGlobalGeo || !geography || !/fr|france/i.test(geography)) {
     groups.push({
       category: "global_outliers",

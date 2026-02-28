@@ -67,26 +67,28 @@ async function braveSearch(query: string, count: number = 5): Promise<BraveSearc
 // Détecte les entreprises qui recrutent massivement sur des postes critiques
 async function sourceByTalentSignals(sectors: string[], geography: string): Promise<BraveSearchResult[]> {
   const criticalRoles = [
-    "Head of Photonics",
-    "Quantum Lead",
-    "Chief Technology Officer",
+    "CTO",
     "VP Engineering",
     "Head of AI",
     "Chief Data Officer",
     "VP Product",
+    "Lead Developer",
+    "Head of R&D",
   ];
 
   const queries: string[] = [];
   
   for (const sector of sectors) {
-    for (const role of criticalRoles) {
-      queries.push(`${role} ${sector} ${geography} hiring jobs 2024`);
-      queries.push(`${sector} startup ${role} recruitment ${geography} 2024`);
+    for (const role of criticalRoles.slice(0, 4)) {
+      queries.push(`${sector} startup "${role}" hiring ${geography} 2024 2025`);
     }
+    // Signaux de recrutement massif (indicateur de croissance)
+    queries.push(`${sector} startup hiring spree ${geography} team growing 2024 2025`);
+    queries.push(`${sector} startup first hire CTO co-founder ${geography} 2024 2025`);
   }
 
   const allResults: BraveSearchResult[] = [];
-  for (const query of queries.slice(0, 10)) { // Limiter pour éviter trop de requêtes
+  for (const query of queries.slice(0, 10)) {
     const results = await braveSearch(query, 3);
     allResults.push(...results);
   }
@@ -100,13 +102,15 @@ async function sourceByIP(sectors: string[], geography: string): Promise<BraveSe
   const queries: string[] = [];
   
   for (const sector of sectors) {
-    queries.push(`${sector} patent filed ${geography} 2023 2024`);
-    queries.push(`${sector} patent cited by Intel Tesla Google ${geography}`);
-    queries.push(`new ${sector} technology patent application ${geography}`);
+    queries.push(`${sector} patent filed ${geography} 2024 2025`);
+    queries.push(`${sector} new patent application INPI EPO ${geography} 2024 2025`);
+    queries.push(`new ${sector} technology patent pending startup ${geography}`);
+    queries.push(`"patent pending" ${sector} startup founder ${geography} 2024`);
+    queries.push(`site:patents.google.com ${sector} ${geography} 2024`);
   }
 
   const allResults: BraveSearchResult[] = [];
-  for (const query of queries.slice(0, 8)) {
+  for (const query of queries.slice(0, 10)) {
     const results = await braveSearch(query, 3);
     allResults.push(...results);
   }
@@ -114,26 +118,39 @@ async function sourceByIP(sectors: string[], geography: string): Promise<BraveSe
   return allResults;
 }
 
-// 3. ANALYSE DES SPINOFFS UNIVERSITAIRES
-// Scrape les sites de laboratoires et thèses pour trouver des chercheurs qui fondent
+// 3. ANALYSE DES SPINOFFS UNIVERSITAIRES ET INCUBATEURS
+// Scrape les sites de laboratoires, incubateurs et thèses
 async function sourceUniversitySpinoffs(sectors: string[], geography: string): Promise<BraveSearchResult[]> {
   const queries: string[] = [];
   
-  const universities = geography === "europe" 
-    ? ["CNRS", "CEA", "INRIA", "Max Planck", "ETH Zurich", "Cambridge", "Oxford"]
+  const universities = geography === "europe" || geography === "france"
+    ? ["CNRS", "CEA", "INRIA", "Polytechnique", "CentraleSupélec", "Max Planck", "ETH Zurich", "Cambridge"]
     : ["MIT", "Stanford", "Harvard", "Berkeley", "Caltech"];
 
+  const incubators = geography === "europe" || geography === "france"
+    ? ["Station F", "Agoranov", "WILCO", "Euratechnologies", "Paris&Co", "Schoolab"]
+    : ["Y Combinator", "Techstars", "500 Global", "Plug and Play"];
+
   for (const sector of sectors) {
-    for (const uni of universities.slice(0, 5)) {
-      queries.push(`${uni} ${sector} spin-off startup founded researcher`);
-      queries.push(`${sector} PhD thesis startup founder ${uni}`);
-      queries.push(`${uni} lab ${sector} startup commercialization`);
+    // Spin-offs universitaires
+    for (const uni of universities.slice(0, 4)) {
+      queries.push(`${uni} ${sector} spin-off startup founder 2024 2025`);
+      queries.push(`${sector} PhD thesis startup founder ${uni} 2024`);
     }
+    // Incubateurs/accélérateurs
+    for (const incub of incubators.slice(0, 3)) {
+      queries.push(`"${incub}" ${sector} startup cohort batch 2024 2025`);
+    }
+    // Thèses CIFRE et grants
+    queries.push(`"thèse CIFRE" ${sector} startup founder 2024`);
+    queries.push(`"ERC grant" OR "EIC Accelerator" ${sector} startup ${geography} 2024`);
+    queries.push(`"i-Lab" OR "i-Nov" ${sector} lauréat startup 2024 2025`);
+    queries.push(`"French Tech Seed" ${sector} startup 2024 2025`);
   }
 
   const allResults: BraveSearchResult[] = [];
-  for (const query of queries.slice(0, 10)) {
-    const results = await braveSearch(query, 2);
+  for (const query of queries.slice(0, 15)) {
+    const results = await braveSearch(query, 3);
     allResults.push(...results);
   }
 
@@ -232,18 +249,29 @@ serve(async (req) => {
     // Build prompt for AI to structure the ninja-sourced companies
     const systemPrompt = `Tu es un expert en sourcing de startups pour fonds VC. Tu utilises des méthodes "Ninja" pour trouver des entreprises AVANT qu'elles ne soient sur Crunchbase ou Pitchbook.
 
+OBJECTIF : Trouver des startups INCONNUES, pas encore médiatisées, détectées via des signaux faibles.
+
 Analyse les résultats de recherche suivants et identifie ${numberOfStartups} startup(s) prometteuse(s) qui correspondent aux critères :
 - Secteurs: ${sectors.join(", ")}
 - Géographie: ${geography}
 - Stade: ${stage}
 
+SIGNAUX FAIBLES À PRIORISER :
+1. Recrutement de postes clés (CTO, VP Engineering) → startup en structuration
+2. Brevets récents déposés → innovation technologique validée
+3. Spin-off universitaire (CNRS, CEA, INRIA, grandes écoles) → deep tech
+4. Lauréats de concours (i-Lab, i-Nov, EIC Accelerator, French Tech Seed)
+5. Sortie d'incubateur/accélérateur (Station F, YC, Techstars, Agoranov)
+6. PhD/chercheur qui quitte un labo pour fonder → signal fort
+
 Pour chaque startup identifiée, fournis :
 - Nom de l'entreprise
-- Description (basée sur les signaux trouvés : recrutement, brevets, spinoff universitaire)
-- Raison pour laquelle elle a été trouvée (signal RH, IP, spinoff, etc.)
-- Potentiel d'investissement
+- Description (2-3 phrases basées sur les signaux trouvés)
+- Type de signal détecté (talent, IP, spinoff, incubateur, concours)
+- Score de potentiel (1-10) avec justification
+- Stade estimé (pre-seed, seed, series A)
 
-Format JSON avec un array "startups" contenant des objets avec : name, description, signalType, potential.`;
+Format JSON avec un array "startups" contenant des objets avec : name, description, signalType, potential, estimatedStage.`;
 
     const userPrompt = `Résultats de sourcing Ninja :
 
