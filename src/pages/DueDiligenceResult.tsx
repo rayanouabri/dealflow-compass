@@ -404,6 +404,14 @@ export default function DueDiligenceResult() {
     }
   };
 
+  // Safely convert any value to an array (AI sometimes returns string instead of array)
+  const toArray = (value: unknown): any[] => {
+    if (Array.isArray(value)) return value;
+    if (value == null) return [];
+    if (typeof value === 'string' && value.trim()) return [value];
+    return [];
+  };
+
   // Éviter [object Object] : extraire une chaîne affichable depuis n'importe quelle valeur (string, number, object)
   const toDisplayString = (value: unknown): string => {
     if (value == null) return "";
@@ -566,18 +574,18 @@ export default function DueDiligenceResult() {
     p(data.executiveSummary?.overview);
     if (data.executiveSummary?.recommendation) lines.push(`**Recommandation :** ${stripInlineSources(data.executiveSummary.recommendation)}`);
     if (data.executiveSummary?.confidenceLevel) lines.push(`**Niveau de confiance :** ${stripInlineSources(data.executiveSummary.confidenceLevel)}`);
-    if (data.executiveSummary?.keyHighlights?.length) { h3("Points forts"); data.executiveSummary.keyHighlights.forEach(li); }
-    if (data.executiveSummary?.keyRisks?.length) { h3("Risques clés"); data.executiveSummary.keyRisks.forEach(li); }
+    if (toArray(data.executiveSummary?.keyHighlights).length) { h3("Points forts"); toArray(data.executiveSummary?.keyHighlights).forEach(li); }
+    if (toArray(data.executiveSummary?.keyRisks).length) { h3("Risques clés"); toArray(data.executiveSummary?.keyRisks).forEach(li); }
     lines.push("");
 
     h2("Financements");
     p(data.financials?.totalFunding ? `**Financement total :** ${stripInlineSources(data.financials.totalFunding)}` : undefined);
     if (data.financials?.latestValuation) lines.push(`**Dernière valorisation :** ${stripInlineSources(data.financials.latestValuation)}`);
-    if (data.financials?.fundingHistory?.length) {
+    if (toArray(data.financials?.fundingHistory).length) {
       h3("Historique des levées");
-      data.financials.fundingHistory.forEach((r) => {
+      toArray(data.financials?.fundingHistory).forEach((r) => {
         const parts = [r.round, r.amount, r.date].filter(Boolean).map((x) => stripInlineSources(String(x)));
-        if (r.investors?.length) parts.push("Investisseurs : " + r.investors.map(stripInlineSources).join(", "));
+        if (toArray(r.investors).length) parts.push("Investisseurs : " + toArray(r.investors).map((inv) => stripInlineSources(toDisplayString(inv))).join(", "));
         lines.push("- " + parts.join(" — "));
       });
     }
@@ -592,7 +600,7 @@ export default function DueDiligenceResult() {
     if (data.product?.valueProposition) { h3("Proposition de valeur"); p(data.product.valueProposition); }
     if (data.product?.technology) { h3("Technologie"); p(data.product.technology); }
     if (data.product?.patents) { h3("Brevets"); p(data.product.patents); }
-    if (data.product?.keyFeatures?.length) { h3("Fonctionnalités clés"); data.product.keyFeatures.forEach(li); }
+    if (toArray(data.product?.keyFeatures).length) { h3("Fonctionnalités clés"); toArray(data.product?.keyFeatures).forEach(li); }
     src(data.product?.sources);
 
     h2("Marché");
@@ -600,24 +608,24 @@ export default function DueDiligenceResult() {
     if (data.market?.sam) lines.push(`- **SAM :** ${stripInlineSources(data.market.sam)}`);
     if (data.market?.som) lines.push(`- **SOM :** ${stripInlineSources(data.market.som)}`);
     if (data.market?.cagr) lines.push(`- **CAGR :** ${stripInlineSources(data.market.cagr)}`);
-    if (data.market?.trends?.length) { h3("Tendances"); data.market.trends.forEach(li); }
+    if (toArray(data.market?.trends).length) { h3("Tendances"); toArray(data.market?.trends).forEach(li); }
     p(data.market?.analysis);
     src(data.market?.sources);
 
     h2("Équipe");
     p(data.team?.overview);
     if (data.team?.teamSize) lines.push(`**Taille :** ${stripInlineSources(data.team.teamSize)}`);
-    if (data.team?.founders?.length) {
+    if (toArray(data.team?.founders).length) {
       h3("Fondateurs");
-      data.team.founders.forEach((f) => {
+      toArray(data.team?.founders).forEach((f) => {
         lines.push(`- **${stripInlineSources(f.name || "")}** — ${stripInlineSources(f.role || "")}`);
         if (f.background) p(f.background);
         if (f.linkedin) lines.push(`  LinkedIn : ${f.linkedin}`);
       });
     }
-    if (data.team?.keyExecutives?.length) {
+    if (toArray(data.team?.keyExecutives).length) {
       h3("Dirigeants clés");
-      data.team.keyExecutives.forEach((e) => lines.push(`- **${stripInlineSources(e.name || "")}** — ${stripInlineSources(e.role || "")} — ${stripInlineSources(e.background || "")}`));
+      toArray(data.team?.keyExecutives).forEach((e) => lines.push(`- **${stripInlineSources(e.name || "")}** — ${stripInlineSources(e.role || "")} — ${stripInlineSources(e.background || "")}`));
     }
     if (data.team?.culture) { h3("Culture"); p(data.team.culture); }
     if (data.team?.hiringTrends) { h3("Recrutement"); p(data.team.hiringTrends); }
@@ -627,9 +635,9 @@ export default function DueDiligenceResult() {
     p(data.competition?.landscape);
     if (data.competition?.competitiveAdvantage) { h3("Avantage concurrentiel"); p(data.competition.competitiveAdvantage); }
     if (data.competition?.moat) { h3("Moat"); p(data.competition.moat); }
-    if (data.competition?.competitors?.length) {
+    if (toArray(data.competition?.competitors).length) {
       h3("Concurrents");
-      data.competition.competitors.forEach((c) => {
+      toArray(data.competition?.competitors).forEach((c) => {
         lines.push(`- **${stripInlineSources(c.name)}**${c.funding ? ` — ${stripInlineSources(c.funding)}` : ""}`);
         if (c.description) p("  " + c.description);
       });
@@ -641,15 +649,15 @@ export default function DueDiligenceResult() {
     if (data.traction?.customers) {
       const c = data.traction.customers;
       if (c.count) lines.push(`- **Clients :** ${stripInlineSources(c.count)}`);
-      if (c.notable?.length) lines.push(`- **Clients notables :** ${c.notable.map(stripInlineSources).join(", ")}`);
+      if (toArray(c.notable).length) lines.push(`- **Clients notables :** ${toArray(c.notable).map((n) => stripInlineSources(toDisplayString(n))).join(", ")}`);
       if (c.segments) lines.push(`- **Segments :** ${stripInlineSources(c.segments)}`);
     }
-    if (data.traction?.keyMilestones?.length) {
+    if (toArray(data.traction?.keyMilestones).length) {
       h3("Jalons clés");
-      data.traction.keyMilestones.forEach((m) => lines.push(`- ${stripInlineSources(m.date || "")} — ${stripInlineSources(m.milestone || "")}`));
+      toArray(data.traction?.keyMilestones).forEach((m) => lines.push(`- ${stripInlineSources(m.date || "")} — ${stripInlineSources(m.milestone || "")}`));
     }
-    if (data.traction?.partnerships?.length) { h3("Partenariats"); data.traction.partnerships.forEach(li); }
-    if (data.traction?.awards?.length) { h3("Prix / Récompenses"); data.traction.awards.forEach(li); }
+    if (toArray(data.traction?.partnerships).length) { h3("Partenariats"); toArray(data.traction?.partnerships).forEach(li); }
+    if (toArray(data.traction?.awards).length) { h3("Prix / Récompenses"); toArray(data.traction?.awards).forEach(li); }
     src(data.traction?.sources);
 
     h2("Risques");
@@ -660,13 +668,13 @@ export default function DueDiligenceResult() {
         (arr as string[]).forEach(li);
       }
     });
-    if (data.risks?.mitigations?.length) { h3("Mitigations"); data.risks.mitigations.forEach(li); }
+    if (toArray(data.risks?.mitigations).length) { h3("Mitigations"); toArray(data.risks?.mitigations).forEach(li); }
     if (data.risks?.overallRiskLevel) lines.push(`**Niveau de risque global :** ${stripInlineSources(data.risks.overallRiskLevel)}`);
     src(data.risks?.sources);
 
     if (data.opportunities) {
       h2("Opportunités");
-      if (data.opportunities.growthOpportunities?.length) { h3("Croissance"); data.opportunities.growthOpportunities.forEach(li); }
+      if (toArray(data.opportunities?.growthOpportunities).length) { h3("Croissance"); toArray(data.opportunities?.growthOpportunities).forEach(li); }
       p(data.opportunities.marketExpansion ? "**Expansion marché :** " + stripInlineSources(data.opportunities.marketExpansion) : undefined);
       p(data.opportunities.productExpansion ? "**Expansion produit :** " + stripInlineSources(data.opportunities.productExpansion) : undefined);
       p(data.opportunities.strategicValue);
@@ -677,10 +685,10 @@ export default function DueDiligenceResult() {
     const rec = data.investmentRecommendation;
     if (rec?.recommendation) lines.push(`**Recommandation :** ${stripInlineSources(rec.recommendation)}`);
     if (rec?.rationale) p(rec.rationale);
-    if (rec?.strengths?.length) { h3("Points forts"); rec.strengths.forEach(li); }
-    if (rec?.weaknesses?.length) { h3("Points faibles"); rec.weaknesses.forEach(li); }
-    if (rec?.keyQuestions?.length) { h3("Questions clés"); rec.keyQuestions.forEach(li); }
-    if (rec?.suggestedNextSteps?.length) { h3("Prochaines étapes"); rec.suggestedNextSteps.forEach(li); }
+    if (toArray(rec?.strengths).length) { h3("Points forts"); toArray(rec?.strengths).forEach(li); }
+    if (toArray(rec?.weaknesses).length) { h3("Points faibles"); toArray(rec?.weaknesses).forEach(li); }
+    if (toArray(rec?.keyQuestions).length) { h3("Questions clés"); toArray(rec?.keyQuestions).forEach(li); }
+    if (toArray(rec?.suggestedNextSteps).length) { h3("Prochaines étapes"); toArray(rec?.suggestedNextSteps).forEach(li); }
     if (rec?.targetReturn) lines.push(`- **Rendement cible :** ${stripInlineSources(rec.targetReturn)}`);
     if (rec?.investmentHorizon) lines.push(`- **Horizon :** ${stripInlineSources(rec.investmentHorizon)}`);
     if (rec?.suggestedTicket) lines.push(`- **Ticket suggéré :** ${stripInlineSources(rec.suggestedTicket)}`);
@@ -963,14 +971,14 @@ export default function DueDiligenceResult() {
                 
                 <div className="grid md:grid-cols-2 gap-4 mt-4">
                   {/* Key Highlights */}
-                  {data.executiveSummary?.keyHighlights && data.executiveSummary.keyHighlights.length > 0 && (
+                  {toArray(data.executiveSummary?.keyHighlights).length > 0 && (
                     <div className="bg-green-500/5 border border-green-500/20 rounded-xl p-4">
                       <h4 className="font-semibold text-green-400 mb-2 flex items-center gap-2">
                         <CheckCircle2 className="w-4 h-4" />
                         Points Forts
                       </h4>
                       <ul className="space-y-2">
-                        {data.executiveSummary.keyHighlights.map((h, i) => (
+                        {toArray(data.executiveSummary?.keyHighlights).map((h, i) => (
                           <li key={i} className="text-sm text-foreground/90 flex items-start gap-2">
                             <ChevronRight className="w-3 h-3 mt-1 text-green-500 flex-shrink-0" />
                             {stripInlineSources(h)}
@@ -981,14 +989,14 @@ export default function DueDiligenceResult() {
                   )}
                   
                   {/* Key Risks */}
-                  {data.executiveSummary?.keyRisks && data.executiveSummary.keyRisks.length > 0 && (
+                  {toArray(data.executiveSummary?.keyRisks).length > 0 && (
                     <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-4">
                       <h4 className="font-semibold text-red-400 mb-2 flex items-center gap-2">
                         <AlertTriangle className="w-4 h-4" />
                         Risques Clés
                       </h4>
                       <ul className="space-y-2">
-                        {data.executiveSummary.keyRisks.map((r, i) => (
+                        {toArray(data.executiveSummary?.keyRisks).map((r, i) => (
                           <li key={i} className="text-sm text-foreground/90 flex items-start gap-2">
                             <ChevronRight className="w-3 h-3 mt-1 text-red-500 flex-shrink-0" />
                             {stripInlineSources(r)}
@@ -1099,11 +1107,11 @@ export default function DueDiligenceResult() {
                     </div>
 
                     {/* Funding History */}
-                    {data.financials?.fundingHistory && data.financials.fundingHistory.length > 0 && (
+                    {toArray(data.financials?.fundingHistory).length > 0 && (
                       <div>
                         <h4 className="font-semibold mb-4 text-base">Historique des Levées</h4>
                         <div className="space-y-3">
-                          {data.financials.fundingHistory.map((round, i) => (
+                          {toArray(data.financials?.fundingHistory).map((round, i) => (
                             <div key={i} className="bg-gradient-to-br from-gray-800/40 to-gray-800/20 rounded-lg p-4 border border-gray-700/40 hover:border-green-500/30 transition-colors">
                               <div className="flex justify-between items-start mb-2">
                                 <div className="flex items-center gap-2 flex-wrap">
@@ -1127,7 +1135,7 @@ export default function DueDiligenceResult() {
                     )}
 
                     {/* Other metrics */}
-                    {data.financials?.metrics && (
+                    {data.financials?.metrics && typeof data.financials.metrics === 'object' && Object.keys(data.financials.metrics).length > 0 && (
                       <div>
                         <h4 className="font-semibold mb-4 text-base">Métriques Détaillées</h4>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -1177,11 +1185,11 @@ export default function DueDiligenceResult() {
                         <p className="text-foreground/90">{stripInlineSources(data.product.technology)}</p>
                       </div>
                     )}
-                    {data.product?.keyFeatures && data.product.keyFeatures.length > 0 && (
+                    {toArray(data.product?.keyFeatures).length > 0 && (
                       <div>
                         <h4 className="font-semibold mb-2">Fonctionnalités Clés</h4>
                         <div className="flex flex-wrap gap-2">
-                          {data.product.keyFeatures.map((f, i) => (
+                          {toArray(data.product?.keyFeatures).map((f, i) => (
                             <Badge key={i} variant="secondary">{stripInlineSources(f)}</Badge>
                           ))}
                         </div>
@@ -1230,11 +1238,11 @@ export default function DueDiligenceResult() {
                       </div>
                     )}
                     
-                    {data.market?.trends && data.market.trends.length > 0 && (
+                    {toArray(data.market?.trends).length > 0 && (
                       <div>
                         <h4 className="font-semibold mb-2">Tendances</h4>
                         <ul className="space-y-1">
-                          {data.market.trends.map((t, i) => (
+                          {toArray(data.market?.trends).map((t, i) => (
                             <li key={i} className="text-sm text-foreground/90 flex items-start gap-2">
                               <TrendingUp className="w-3 h-3 mt-1 text-purple-400 flex-shrink-0" />
                               {stripInlineSources(t)}
@@ -1269,11 +1277,11 @@ export default function DueDiligenceResult() {
                       </div>
                     )}
                     
-                    {data.team?.founders && data.team.founders.length > 0 && (
+                    {toArray(data.team?.founders).length > 0 && (
                       <div>
                         <h4 className="font-semibold mb-3">Fondateurs</h4>
                         <div className="grid md:grid-cols-2 gap-4">
-                          {data.team.founders.map((f, i) => (
+                          {toArray(data.team?.founders).map((f, i) => (
                             <div key={i} className="bg-gray-800/30 rounded-lg p-4 border border-gray-700/50">
                               <div className="flex justify-between items-start mb-2">
                                 <div>
@@ -1293,11 +1301,11 @@ export default function DueDiligenceResult() {
                       </div>
                     )}
 
-                    {data.team?.keyExecutives && data.team.keyExecutives.length > 0 && (
+                    {toArray(data.team?.keyExecutives).length > 0 && (
                       <div>
                         <h4 className="font-semibold mb-3">Équipe Dirigeante</h4>
                         <div className="space-y-2">
-                          {data.team.keyExecutives.map((e, i) => (
+                          {toArray(data.team?.keyExecutives).map((e, i) => (
                             <div key={i} className="bg-gray-800/20 rounded-lg p-3">
                               <p className="font-medium">{e.name} <span className="text-sm text-muted-foreground">- {e.role}</span></p>
                               {e.background && <p className="text-sm text-gray-400 mt-1">{e.background}</p>}
@@ -1340,11 +1348,11 @@ export default function DueDiligenceResult() {
                       </div>
                     )}
                     
-                    {data.competition?.competitors && data.competition.competitors.length > 0 && (
+                    {toArray(data.competition?.competitors).length > 0 && (
                       <div>
                         <h4 className="font-semibold mb-3">Concurrents Principaux</h4>
                         <div className="space-y-3">
-                          {data.competition.competitors.map((c, i) => (
+                          {toArray(data.competition?.competitors).map((c, i) => (
                             <div key={i} className="bg-gray-800/30 rounded-lg p-4 border border-gray-700/50">
                               <div className="flex justify-between items-start mb-2">
                                 <p className="font-semibold">{c.name}</p>
@@ -1352,19 +1360,19 @@ export default function DueDiligenceResult() {
                               </div>
                               {c.description && <p className="text-sm text-gray-400 mb-2">{c.description}</p>}
                               <div className="grid md:grid-cols-2 gap-2 text-xs">
-                                {c.strengths && c.strengths.length > 0 && (
+                                {toArray(c.strengths).length > 0 && (
                                   <div>
                                     <p className="text-green-400 font-medium mb-1">Forces:</p>
                                     <ul className="text-gray-400">
-                                      {c.strengths.map((s, j) => <li key={j}>• {s}</li>)}
+                                      {toArray(c.strengths).map((s, j) => <li key={j}>• {toDisplayString(s)}</li>)}
                                     </ul>
                                   </div>
                                 )}
-                                {c.weaknesses && c.weaknesses.length > 0 && (
+                                {toArray(c.weaknesses).length > 0 && (
                                   <div>
                                     <p className="text-red-400 font-medium mb-1">Faiblesses:</p>
                                     <ul className="text-gray-400">
-                                      {c.weaknesses.map((w, j) => <li key={j}>• {w}</li>)}
+                                      {toArray(c.weaknesses).map((w, j) => <li key={j}>• {toDisplayString(w)}</li>)}
                                     </ul>
                                   </div>
                                 )}
@@ -1496,44 +1504,44 @@ export default function DueDiligenceResult() {
                   </CardHeader>
                   <CardContent className="space-y-5 pt-2">
                     <div className="grid md:grid-cols-2 gap-4">
-                      {data.risks?.marketRisks && data.risks.marketRisks.length > 0 && (
+                      {toArray(data.risks?.marketRisks).length > 0 && (
                         <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-4">
                           <h4 className="font-semibold text-red-400 mb-2">Risques Marché</h4>
                           <ul className="space-y-1 text-sm">
-                            {data.risks.marketRisks.map((r, i) => (
+                            {toArray(data.risks?.marketRisks).map((r, i) => (
                               <li key={i} className="text-gray-300">• {r}</li>
                             ))}
                           </ul>
                         </div>
                       )}
                       
-                      {data.risks?.executionRisks && data.risks.executionRisks.length > 0 && (
+                      {toArray(data.risks?.executionRisks).length > 0 && (
                         <div className="bg-orange-500/5 border border-orange-500/20 rounded-lg p-4">
                           <h4 className="font-semibold text-orange-400 mb-2">Risques Exécution</h4>
                           <ul className="space-y-1 text-sm">
-                            {data.risks.executionRisks.map((r, i) => (
+                            {toArray(data.risks?.executionRisks).map((r, i) => (
                               <li key={i} className="text-gray-300">• {r}</li>
                             ))}
                           </ul>
                         </div>
                       )}
                       
-                      {data.risks?.financialRisks && data.risks.financialRisks.length > 0 && (
+                      {toArray(data.risks?.financialRisks).length > 0 && (
                         <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-lg p-4">
                           <h4 className="font-semibold text-yellow-400 mb-2">Risques Financiers</h4>
                           <ul className="space-y-1 text-sm">
-                            {data.risks.financialRisks.map((r, i) => (
+                            {toArray(data.risks?.financialRisks).map((r, i) => (
                               <li key={i} className="text-gray-300">• {r}</li>
                             ))}
                           </ul>
                         </div>
                       )}
                       
-                      {data.risks?.competitiveRisks && data.risks.competitiveRisks.length > 0 && (
+                      {toArray(data.risks?.competitiveRisks).length > 0 && (
                         <div className="bg-purple-500/5 border border-purple-500/20 rounded-lg p-4">
                           <h4 className="font-semibold text-purple-400 mb-2">Risques Concurrentiels</h4>
                           <ul className="space-y-1 text-sm">
-                            {data.risks.competitiveRisks.map((r, i) => (
+                            {toArray(data.risks?.competitiveRisks).map((r, i) => (
                               <li key={i} className="text-gray-300">• {r}</li>
                             ))}
                           </ul>
@@ -1541,11 +1549,11 @@ export default function DueDiligenceResult() {
                       )}
                     </div>
                     
-                    {data.risks?.mitigations && data.risks.mitigations.length > 0 && (
+                    {toArray(data.risks?.mitigations).length > 0 && (
                       <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-4">
                         <h4 className="font-semibold text-green-400 mb-2">Facteurs Atténuants</h4>
                         <ul className="space-y-1 text-sm">
-                          {data.risks.mitigations.map((m, i) => (
+                          {toArray(data.risks?.mitigations).map((m, i) => (
                             <li key={i} className="text-gray-300 flex items-start gap-2">
                               <CheckCircle2 className="w-3 h-3 mt-1 text-green-400 flex-shrink-0" />
                               {m}
@@ -1596,22 +1604,22 @@ export default function DueDiligenceResult() {
                     </div>
                     
                     <div className="grid md:grid-cols-2 gap-4">
-                      {data.investmentRecommendation?.strengths && data.investmentRecommendation.strengths.length > 0 && (
+                      {toArray(data.investmentRecommendation?.strengths).length > 0 && (
                         <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-4">
                           <h4 className="font-semibold text-green-400 mb-2">Forces</h4>
                           <ul className="space-y-1 text-sm">
-                            {data.investmentRecommendation.strengths.map((s, i) => (
+                            {toArray(data.investmentRecommendation?.strengths).map((s, i) => (
                               <li key={i} className="text-gray-300">• {toDisplayString(s)}</li>
                             ))}
                           </ul>
                         </div>
                       )}
                       
-                      {data.investmentRecommendation?.weaknesses && data.investmentRecommendation.weaknesses.length > 0 && (
+                      {toArray(data.investmentRecommendation?.weaknesses).length > 0 && (
                         <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-4">
                           <h4 className="font-semibold text-red-400 mb-2">Faiblesses</h4>
                           <ul className="space-y-1 text-sm">
-                            {data.investmentRecommendation.weaknesses.map((w, i) => (
+                            {toArray(data.investmentRecommendation?.weaknesses).map((w, i) => (
                               <li key={i} className="text-gray-300">• {toDisplayString(w)}</li>
                             ))}
                           </ul>
@@ -1619,22 +1627,22 @@ export default function DueDiligenceResult() {
                       )}
                     </div>
                     
-                    {data.investmentRecommendation?.keyQuestions && data.investmentRecommendation.keyQuestions.length > 0 && (
+                    {toArray(data.investmentRecommendation?.keyQuestions).length > 0 && (
                       <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-4">
                         <h4 className="font-semibold text-blue-400 mb-2">Questions à Creuser</h4>
                         <ul className="space-y-1 text-sm">
-                          {data.investmentRecommendation.keyQuestions.map((q, i) => (
+                          {toArray(data.investmentRecommendation?.keyQuestions).map((q, i) => (
                             <li key={i} className="text-gray-300">• {toDisplayString(q)}</li>
                           ))}
                         </ul>
                       </div>
                     )}
                     
-                    {data.investmentRecommendation?.suggestedNextSteps && data.investmentRecommendation.suggestedNextSteps.length > 0 && (
+                    {toArray(data.investmentRecommendation?.suggestedNextSteps).length > 0 && (
                       <div>
                         <h4 className="font-semibold mb-2">Prochaines Étapes Suggérées</h4>
                         <ol className="space-y-2">
-                          {data.investmentRecommendation.suggestedNextSteps.map((s, i) => (
+                          {toArray(data.investmentRecommendation?.suggestedNextSteps).map((s, i) => (
                             <li key={i} className="flex items-start gap-3 text-sm text-gray-300">
                               <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-xs font-semibold flex-shrink-0">
                                 {i + 1}
@@ -1673,11 +1681,11 @@ export default function DueDiligenceResult() {
                             {data.dataQuality.overallScore}
                           </Badge>
                         </div>
-                        {data.dataQuality.limitations && data.dataQuality.limitations.length > 0 && (
+                        {toArray(data.dataQuality?.limitations).length > 0 && (
                           <div className="text-xs text-muted-foreground mt-3 pt-3 border-t border-gray-700/30">
                             <p className="font-medium mb-2 text-gray-300">Limitations:</p>
                             <ul className="space-y-1">
-                              {data.dataQuality.limitations.map((l, i) => (
+                              {toArray(data.dataQuality?.limitations).map((l, i) => (
                                 <li key={i} className="flex items-start gap-2">
                                   <span className="text-muted-foreground/60 mt-0.5">•</span>
                                   <span>{l}</span>
