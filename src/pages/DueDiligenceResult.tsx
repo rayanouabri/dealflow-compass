@@ -52,6 +52,8 @@ interface DueDiligenceData {
     sector?: string;
     stage?: string;
     employeeCount?: string;
+    legalName?: string;
+    registrationNumber?: string;
   };
   executiveSummary?: {
     overview?: string;
@@ -65,7 +67,11 @@ interface DueDiligenceData {
     valueProposition?: string;
     technology?: string;
     patents?: string;
+    ipStrategy?: string;
+    maturity?: string;
     keyFeatures?: string[];
+    certifications?: string;
+    openSource?: string;
     sources?: { name: string; url: string }[];
   };
   market?: {
@@ -75,6 +81,8 @@ interface DueDiligenceData {
     cagr?: string;
     trends?: string[];
     analysis?: string;
+    barriers?: string;
+    regulation?: string;
     sources?: { name: string; url: string }[];
   };
   competition?: {
@@ -82,12 +90,15 @@ interface DueDiligenceData {
     competitors?: {
       name: string;
       description?: string;
+      country?: string;
+      stage?: string;
       funding?: string;
-      strengths?: string[];
-      weaknesses?: string[];
+      strengths?: string | string[];
+      weaknesses?: string | string[];
     }[];
     competitiveAdvantage?: string;
     moat?: string;
+    newEntrantsRisk?: string;
     sources?: { name: string; url: string }[];
   };
   financials?: {
@@ -95,13 +106,16 @@ interface DueDiligenceData {
       round?: string;
       amount?: string;
       date?: string;
-      investors?: string[];
+      lead?: string;
+      investors?: string | string[];
       valuation?: string;
       source?: string;
     }[];
     totalFunding?: string;
     latestValuation?: string;
     metrics?: Record<string, string>;
+    unitEconomics?: string;
+    profitabilityTimeline?: string;
     sources?: { name: string; url: string }[];
   };
   team?: {
@@ -111,6 +125,8 @@ interface DueDiligenceData {
       role?: string;
       linkedin?: string;
       background?: string;
+      education?: string;
+      previousCompanies?: string;
       source?: string;
     }[];
     keyExecutives?: {
@@ -118,7 +134,9 @@ interface DueDiligenceData {
       role?: string;
       background?: string;
     }[];
+    advisors?: string;
     teamSize?: string;
+    teamBreakdown?: string;
     culture?: string;
     hiringTrends?: string;
     sources?: { name: string; url: string }[];
@@ -134,9 +152,12 @@ interface DueDiligenceData {
       count?: string;
       notable?: string[];
       segments?: string;
+      geography?: string;
     };
+    growthMetrics?: string;
     partnerships?: string[];
     awards?: string[];
+    accelerators?: string;
     sources?: { name: string; url: string }[];
   };
   risks?: {
@@ -178,6 +199,7 @@ interface DueDiligenceData {
     dataAvailability?: Record<string, string>;
     limitations?: string[];
     sourcesCount?: string;
+    dataFreshness?: string;
   };
   metadata?: {
     companyName?: string;
@@ -274,12 +296,12 @@ export default function DueDiligenceResult() {
       if (!jobId) {
         throw new Error("Réponse recherche invalide (jobId manquant).");
       }
-      setProgress(50);
-      setStatusMessage("Analyse IA en cours (génération du rapport)…");
+      setProgress(40);
+      setStatusMessage("Analyse IA approfondie en cours (3 itérations d'enrichissement)…");
 
       // ——— Phase 2 : analyse IA ———
       const controller2 = new AbortController();
-      const timeout2 = setTimeout(() => controller2.abort(), 200_000);
+      const timeout2 = setTimeout(() => controller2.abort(), 300_000);
       const resAnalyze = await fetch(`${supabaseUrl}/functions/v1/due-diligence`, {
         method: "POST",
         signal: controller2.signal,
@@ -599,8 +621,15 @@ export default function DueDiligenceResult() {
     p(data.product?.description);
     if (data.product?.valueProposition) { h3("Proposition de valeur"); p(data.product.valueProposition); }
     if (data.product?.technology) { h3("Technologie"); p(data.product.technology); }
-    if (data.product?.patents) { h3("Brevets"); p(data.product.patents); }
+    if (data.product?.maturity) lines.push(`- **Maturité :** ${stripInlineSources(data.product.maturity)}`);
     if (toArray(data.product?.keyFeatures).length) { h3("Fonctionnalités clés"); toArray(data.product?.keyFeatures).forEach(li); }
+    if (data.product?.patents || data.product?.ipStrategy) {
+      h3("Propriété Intellectuelle");
+      if (data.product?.patents) p(`**Brevets :** ${data.product.patents}`);
+      if (data.product?.ipStrategy) p(`**Stratégie IP :** ${data.product.ipStrategy}`);
+    }
+    if (data.product?.certifications) lines.push(`- **Certifications :** ${stripInlineSources(data.product.certifications)}`);
+    if (data.product?.openSource) lines.push(`- **Open Source :** ${stripInlineSources(data.product.openSource)}`);
     src(data.product?.sources);
 
     h2("Marché");
@@ -610,16 +639,21 @@ export default function DueDiligenceResult() {
     if (data.market?.cagr) lines.push(`- **CAGR :** ${stripInlineSources(data.market.cagr)}`);
     if (toArray(data.market?.trends).length) { h3("Tendances"); toArray(data.market?.trends).forEach(li); }
     p(data.market?.analysis);
+    if (data.market?.barriers) { h3("Barrières à l'entrée"); p(data.market.barriers); }
+    if (data.market?.regulation) { h3("Réglementation"); p(data.market.regulation); }
     src(data.market?.sources);
 
     h2("Équipe");
     p(data.team?.overview);
     if (data.team?.teamSize) lines.push(`**Taille :** ${stripInlineSources(data.team.teamSize)}`);
+    if (data.team?.teamBreakdown) lines.push(`**Répartition :** ${stripInlineSources(data.team.teamBreakdown)}`);
     if (toArray(data.team?.founders).length) {
       h3("Fondateurs");
       toArray(data.team?.founders).forEach((f) => {
         lines.push(`- **${stripInlineSources(f.name || "")}** — ${stripInlineSources(f.role || "")}`);
-        if (f.background) p(f.background);
+        if (f.background) p(`  ${f.background}`);
+        if (f.education) lines.push(`  🎓 Formation : ${stripInlineSources(f.education)}`);
+        if (f.previousCompanies) lines.push(`  💼 Expériences : ${stripInlineSources(f.previousCompanies)}`);
         if (f.linkedin) lines.push(`  LinkedIn : ${f.linkedin}`);
       });
     }
@@ -627,6 +661,7 @@ export default function DueDiligenceResult() {
       h3("Dirigeants clés");
       toArray(data.team?.keyExecutives).forEach((e) => lines.push(`- **${stripInlineSources(e.name || "")}** — ${stripInlineSources(e.role || "")} — ${stripInlineSources(e.background || "")}`));
     }
+    if (data.team?.advisors) { h3("Advisors & Board"); p(data.team.advisors); }
     if (data.team?.culture) { h3("Culture"); p(data.team.culture); }
     if (data.team?.hiringTrends) { h3("Recrutement"); p(data.team.hiringTrends); }
     src(data.team?.sources);
@@ -1190,9 +1225,49 @@ export default function DueDiligenceResult() {
                         <h4 className="font-semibold mb-2">Fonctionnalités Clés</h4>
                         <div className="flex flex-wrap gap-2">
                           {toArray(data.product?.keyFeatures).map((f, i) => (
-                            <Badge key={i} variant="secondary">{stripInlineSources(f)}</Badge>
+                            <Badge key={i} variant="secondary">{stripInlineSources(toDisplayString(f))}</Badge>
                           ))}
                         </div>
+                      </div>
+                    )}
+                    {/* IP & Patents Section */}
+                    {(data.product?.patents || data.product?.ipStrategy) && (
+                      <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-4">
+                        <h4 className="font-semibold text-amber-400 mb-2">🔒 Propriété Intellectuelle</h4>
+                        {data.product?.patents && (
+                          <div className="mb-2">
+                            <p className="text-xs text-muted-foreground mb-1">Brevets</p>
+                            <p className="text-foreground/90 text-sm">{stripInlineSources(data.product.patents)}</p>
+                          </div>
+                        )}
+                        {data.product?.ipStrategy && (
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-1">Stratégie IP</p>
+                            <p className="text-foreground/90 text-sm">{stripInlineSources(data.product.ipStrategy)}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {(data.product?.maturity || data.product?.certifications || data.product?.openSource) && (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {data.product?.maturity && (
+                          <div className="bg-card border border-gray-700/30 rounded-lg p-3">
+                            <p className="text-xs text-muted-foreground mb-1">Maturité</p>
+                            <p className="text-sm font-medium">{stripInlineSources(data.product.maturity)}</p>
+                          </div>
+                        )}
+                        {data.product?.certifications && (
+                          <div className="bg-card border border-gray-700/30 rounded-lg p-3">
+                            <p className="text-xs text-muted-foreground mb-1">Certifications</p>
+                            <p className="text-sm font-medium">{stripInlineSources(data.product.certifications)}</p>
+                          </div>
+                        )}
+                        {data.product?.openSource && (
+                          <div className="bg-card border border-gray-700/30 rounded-lg p-3">
+                            <p className="text-xs text-muted-foreground mb-1">Open Source</p>
+                            <p className="text-sm font-medium">{stripInlineSources(data.product.openSource)}</p>
+                          </div>
+                        )}
                       </div>
                     )}
                     {/* Sources */}
@@ -1245,10 +1320,26 @@ export default function DueDiligenceResult() {
                           {toArray(data.market?.trends).map((t, i) => (
                             <li key={i} className="text-sm text-foreground/90 flex items-start gap-2">
                               <TrendingUp className="w-3 h-3 mt-1 text-purple-400 flex-shrink-0" />
-                              {stripInlineSources(t)}
+                              {stripInlineSources(toDisplayString(t))}
                             </li>
                           ))}
                         </ul>
+                      </div>
+                    )}
+                    {(data.market?.barriers || data.market?.regulation) && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {data.market?.barriers && (
+                          <div className="bg-card border border-gray-700/30 rounded-lg p-4">
+                            <h4 className="font-semibold mb-2 text-sm">Barrières à l'Entrée</h4>
+                            <p className="text-foreground/90 text-sm">{stripInlineSources(data.market.barriers)}</p>
+                          </div>
+                        )}
+                        {data.market?.regulation && (
+                          <div className="bg-card border border-gray-700/30 rounded-lg p-4">
+                            <h4 className="font-semibold mb-2 text-sm">Réglementation</h4>
+                            <p className="text-foreground/90 text-sm">{stripInlineSources(data.market.regulation)}</p>
+                          </div>
+                        )}
                       </div>
                     )}
                     {/* Sources */}
@@ -1271,12 +1362,20 @@ export default function DueDiligenceResult() {
                       <p className="text-foreground/90 leading-relaxed">{stripInlineSources(data.team.overview)}</p>
                     )}
                     
-                    {data.team?.teamSize && (
-                      <div className="bg-cyan-500/10 rounded-lg p-3 inline-block">
-                        <p className="text-sm"><strong>Taille de l'équipe:</strong> {stripInlineSources(data.team.teamSize)}</p>
-                      </div>
-                    )}
-                    
+                    {/* Team Size & Breakdown */}
+                    <div className="flex flex-wrap gap-3">
+                      {data.team?.teamSize && (
+                        <div className="bg-cyan-500/10 rounded-lg p-3">
+                          <p className="text-sm"><strong>Taille de l'équipe:</strong> {stripInlineSources(data.team.teamSize)}</p>
+                        </div>
+                      )}
+                      {data.team?.teamBreakdown && (
+                        <div className="bg-cyan-500/10 rounded-lg p-3">
+                          <p className="text-sm"><strong>Répartition:</strong> {stripInlineSources(data.team.teamBreakdown)}</p>
+                        </div>
+                      )}
+                    </div>
+
                     {toArray(data.team?.founders).length > 0 && (
                       <div>
                         <h4 className="font-semibold mb-3">Fondateurs</h4>
@@ -1285,8 +1384,8 @@ export default function DueDiligenceResult() {
                             <div key={i} className="bg-gray-800/30 rounded-lg p-4 border border-gray-700/50">
                               <div className="flex justify-between items-start mb-2">
                                 <div>
-                                  <p className="font-semibold">{f.name}</p>
-                                  <p className="text-sm text-cyan-400">{f.role}</p>
+                                  <p className="font-semibold">{stripInlineSources(toDisplayString(f.name))}</p>
+                                  <p className="text-sm text-cyan-400">{stripInlineSources(toDisplayString(f.role))}</p>
                                 </div>
                                 {f.linkedin && (
                                   <a href={f.linkedin} target="_blank" rel="noopener noreferrer">
@@ -1294,7 +1393,13 @@ export default function DueDiligenceResult() {
                                   </a>
                                 )}
                               </div>
-                              {f.background && <p className="text-sm text-gray-400">{f.background}</p>}
+                              {f.background && <p className="text-sm text-gray-400 mb-1">{stripInlineSources(f.background)}</p>}
+                              {f.education && (
+                                <p className="text-xs text-cyan-400/80 mt-1">🎓 {stripInlineSources(f.education)}</p>
+                              )}
+                              {f.previousCompanies && (
+                                <p className="text-xs text-muted-foreground mt-1">💼 {stripInlineSources(f.previousCompanies)}</p>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -1307,11 +1412,35 @@ export default function DueDiligenceResult() {
                         <div className="space-y-2">
                           {toArray(data.team?.keyExecutives).map((e, i) => (
                             <div key={i} className="bg-gray-800/20 rounded-lg p-3">
-                              <p className="font-medium">{e.name} <span className="text-sm text-muted-foreground">- {e.role}</span></p>
-                              {e.background && <p className="text-sm text-gray-400 mt-1">{e.background}</p>}
+                              <p className="font-medium">{stripInlineSources(toDisplayString(e.name))} <span className="text-sm text-muted-foreground">- {stripInlineSources(toDisplayString(e.role))}</span></p>
+                              {e.background && <p className="text-sm text-gray-400 mt-1">{stripInlineSources(e.background)}</p>}
                             </div>
                           ))}
                         </div>
+                      </div>
+                    )}
+
+                    {data.team?.advisors && (
+                      <div>
+                        <h4 className="font-semibold mb-2">Advisors & Board</h4>
+                        <p className="text-sm text-foreground/90">{stripInlineSources(data.team.advisors)}</p>
+                      </div>
+                    )}
+
+                    {(data.team?.culture || data.team?.hiringTrends) && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {data.team?.culture && (
+                          <div className="bg-card border border-gray-700/30 rounded-lg p-4">
+                            <h4 className="font-semibold mb-2 text-sm">Culture d'Entreprise</h4>
+                            <p className="text-foreground/90 text-sm">{stripInlineSources(data.team.culture)}</p>
+                          </div>
+                        )}
+                        {data.team?.hiringTrends && (
+                          <div className="bg-card border border-gray-700/30 rounded-lg p-4">
+                            <h4 className="font-semibold mb-2 text-sm">Tendances de Recrutement</h4>
+                            <p className="text-foreground/90 text-sm">{stripInlineSources(data.team.hiringTrends)}</p>
+                          </div>
+                        )}
                       </div>
                     )}
                     {/* Sources */}
