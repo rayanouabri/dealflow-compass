@@ -415,14 +415,15 @@ serve(async (req) => {
       });
       const jobList = await jobRes.json();
       const job = Array.isArray(jobList) ? jobList[0] : jobList;
-      if (!job || job.status !== "search_done" || !job.search_context) {
+      if (!job || job.status !== "search_done") {
         return new Response(JSON.stringify({ error: "Job introuvable ou déjà analysé" }), {
           status: 400,
           headers: { ...corsHeaders(req), "Content-Type": "application/json" },
         });
       }
       companyName = job.company_name || "";
-      const analyzeContext = job.search_context;
+      // search_context peut être vide si aucun résultat de recherche ; l'IA analysera avec ses connaissances
+      const analyzeContext = job.search_context || `ENTREPRISE À ANALYSER: ${companyName}`;
       const analyzeSearchCount = job.search_results_count || 0;
 
       const systemPromptAnalyze = `Tu es un analyste VC senior spécialisé en due diligence avec 20 ans d'expérience. 
@@ -1011,7 +1012,7 @@ Réponds UNIQUEMENT avec le JSON complet.`;
       return context;
     };
 
-    const searchContext = buildSearchContext();
+    const searchContext = buildSearchContext() || `ENTREPRISE: ${companyName}\nAucun résultat de recherche trouvé — l'IA analysera avec ses connaissances générales.`;
 
     // Phase search : sauvegarder le contexte et retourner jobId (analyse IA en phase 2 séparée)
     const jobIdNew = crypto.randomUUID();
