@@ -513,7 +513,76 @@ Tu dois produire un rapport de due diligence COMPLET et PROFESSIONNEL sur l'entr
 
 Réponds UNIQUEMENT avec du JSON valide.`;
 
-      const enrichedAnalyzeContext = analyzeContext;
+      let enrichedAnalyzeContext = analyzeContext;
+
+      // Gap analysis : identifier les lacunes et faire des recherches complémentaires
+      // Optimisé : max 3 requêtes, délais réduits, pour rester sous 150s total
+      try {
+        const aiEndpointGap = await getAIEndpoint();
+        const contextExtract = typeof analyzeContext === "string" ? analyzeContext.slice(0, 6000) : "";
+        const gapPrompt = `Tu es un analyste VC. Contexte de recherche pour une due diligence sur "${companyName}".
+
+CONTEXTE :
+${contextExtract}
+
+TÂCHE : Identifie 2 à 3 thèmes où les infos sont INSUFFISANTES. Priorité : (1) équipe/fondateurs, (2) marché TAM/SAM, (3) financements/métriques.
+Pour chaque thème, 1 requête web en ANGLAIS, courte ; inclure "${companyName}".
+Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 3 gaps, 1 query par gap. Si suffisant : {"gaps":[]}.`;
+
+        const gapBody = AI_PROVIDER === "vertex"
+          ? { contents: [{ role: "user", parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 400 } }
+          : { contents: [{ parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 400, responseMimeType: "application/json" as const } };
+        const gapRes = await fetch(aiEndpointGap.url, { method: "POST", headers: aiEndpointGap.headers, body: JSON.stringify(gapBody) });
+        if (gapRes.ok) {
+          const gapData = await gapRes.json();
+          const gapText: string = gapData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+          let gaps: { queries?: string[] }[] = [];
+          if (gapText) {
+            const firstBrace = gapText.indexOf("{");
+            const lastBrace = gapText.lastIndexOf("}");
+            if (firstBrace >= 0 && lastBrace > firstBrace) {
+              try {
+                const parsed = JSON.parse(gapText.slice(firstBrace, lastBrace + 1));
+                gaps = Array.isArray(parsed?.gaps) ? parsed.gaps : [];
+              } catch (_) {}
+            }
+          }
+          const allQueries: string[] = [];
+          for (const g of gaps.slice(0, 3)) {
+            const qs = (Array.isArray(g.queries) ? g.queries : []).map((x: string) => String(x).trim().slice(0, 120)).filter((x: string) => x.length >= 8);
+            allQueries.push(...qs.slice(0, 1));
+          }
+          const seenQ = new Set<string>();
+          const uniqueQueries = allQueries.filter((q) => {
+            const k = q.toLowerCase().replace(/\s+/g, " ");
+            if (seenQ.has(k)) return false;
+            seenQ.add(k);
+            return true;
+          }).slice(0, 3);
+          if (uniqueQueries.length > 0) {
+            const extraLines: string[] = [];
+            const seenUrl = new Set<string>();
+            // Lancer les 3 recherches en parallèle (pas de délai séquentiel)
+            const searchResults = await Promise.all(uniqueQueries.map(q => braveSearch(q, 6).catch(() => [] as BraveSearchResult[])));
+            for (const results of searchResults) {
+              for (const r of results) {
+                if (r?.url && !seenUrl.has(r.url)) {
+                  seenUrl.add(r.url);
+                  const line = `${r.title || ""}: ${r.description || ""} | ${r.url}`.trim();
+                  if (line.length > 20) extraLines.push(line);
+                }
+              }
+            }
+            const extraContext = extraLines.join("\n").slice(0, 4500);
+            if (extraContext) {
+              enrichedAnalyzeContext = `${analyzeContext}\n\n=== RECHERCHES COMPLÉMENTAIRES (lacunes — à utiliser en priorité) ===\n${extraContext}`;
+              console.log(`[DueDiligence] Enrichissement: ${uniqueQueries.length} requêtes, ${extraLines.length} résultats`);
+            }
+          }
+        }
+      } catch (gapErr) {
+        console.warn("[DueDiligence] Gap analysis ignorée:", gapErr);
+      }
 
       const userPromptAnalyze = `Effectue une due diligence COMPLÈTE sur l'entreprise "${companyName}".
 
