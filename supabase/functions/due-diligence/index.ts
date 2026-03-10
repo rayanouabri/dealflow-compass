@@ -513,10 +513,10 @@ Tu dois produire un rapport de due diligence COMPLET et PROFESSIONNEL sur l'entr
 
 Réponds UNIQUEMENT avec du JSON valide.`;
 
-      const sleepAnalyze = (ms: number) => new Promise((r) => setTimeout(r, ms));
-      const MAX_GAP_QUERIES_DD = 8;
-      const GAP_QUERY_MIN_LEN = 8;
-      const GAP_QUERY_MAX_LEN = 120;
+      const PHASE_START = Date.now();
+      const elapsed = () => Date.now() - PHASE_START;
+      const TIME_BUDGET_MS = 140_000; // Garder 10s de marge sur le hard limit 150s
+
       const extractJsonObject = (raw: string): string | null => {
         const noMarkdown = raw.replace(/```json?\s*/gi, "").trim();
         const start = noMarkdown.indexOf("{");
@@ -530,20 +530,22 @@ Réponds UNIQUEMENT avec du JSON valide.`;
         return end > start ? noMarkdown.slice(start, end + 1) : null;
       };
       let enrichedAnalyzeContext = analyzeContext;
+
+      // ——— Gap analysis 1 : identifier lacunes + recherches complémentaires ———
       try {
         const aiEndpointGap = await getAIEndpoint();
-        const contextExtract = typeof analyzeContext === "string" ? analyzeContext.slice(0, 7000) : "";
+        const contextExtract = typeof analyzeContext === "string" ? analyzeContext.slice(0, 6000) : "";
         const gapPrompt = `Tu es un analyste VC. Contexte de recherche pour une due diligence sur "${companyName}".
 
 CONTEXTE :
 ${contextExtract}
 
-TÂCHE : Identifie 2 à 4 thèmes où les infos sont INSUFFISANTES pour remplir le rapport. Priorité : (1) équipe/fondateurs (LinkedIn, parcours, formation), (2) marché (TAM/SAM, évolution, tendances, acteurs), (3) clients/traction (customers, partenariats, chiffres), (4) financements/métriques. Pour chaque thème, 1 à 2 requêtes web en ANGLAIS, courtes ; inclure "${companyName}" (ex: "${companyName} founder LinkedIn", "${companyName} market size TAM").
-Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 4 gaps, 2 queries par gap. Si suffisant : {"gaps":[]}.`;
+TÂCHE : Identifie 2 à 4 thèmes où les infos sont INSUFFISANTES pour remplir le rapport. Priorité : (1) équipe/fondateurs (LinkedIn, parcours, formation), (2) marché (TAM/SAM, évolution, tendances, acteurs), (3) clients/traction (customers, partenariats, chiffres), (4) financements/métriques. Pour chaque thème, 1 requête web en ANGLAIS, courte ; inclure "${companyName}".
+Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 4 gaps, 1 query par gap. Si suffisant : {"gaps":[]}.`;
 
         const gapBody = AI_PROVIDER === "vertex"
-          ? { contents: [{ role: "user", parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 600 } }
-          : { contents: [{ parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 600, responseMimeType: "application/json" as const } };
+          ? { contents: [{ role: "user", parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 400 } }
+          : { contents: [{ parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 400, responseMimeType: "application/json" as const } };
         const gapRes = await fetch(aiEndpointGap.url, { method: "POST", headers: aiEndpointGap.headers, body: JSON.stringify(gapBody) });
         if (gapRes.ok) {
           const gapData = await gapRes.json();
@@ -560,8 +562,8 @@ Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 4 gap
           }
           const allQueries: string[] = [];
           for (const g of gaps.slice(0, 4)) {
-            const qs = (Array.isArray(g.queries) ? g.queries : []).map((x: string) => String(x).trim().slice(0, GAP_QUERY_MAX_LEN)).filter((x: string) => x.length >= GAP_QUERY_MIN_LEN);
-            allQueries.push(...qs.slice(0, 2));
+            const qs = (Array.isArray(g.queries) ? g.queries : []).map((x: string) => String(x).trim().slice(0, 120)).filter((x: string) => x.length >= 8);
+            allQueries.push(...qs.slice(0, 1));
           }
           const seenQ = new Set<string>();
           const uniqueQueries = allQueries.filter((q) => {
@@ -569,32 +571,32 @@ Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 4 gap
             if (seenQ.has(k)) return false;
             seenQ.add(k);
             return true;
-          }).slice(0, MAX_GAP_QUERIES_DD);
+          }).slice(0, 4);
           if (uniqueQueries.length > 0) {
             const extraLines: string[] = [];
             const seenUrl = new Set<string>();
-            for (const q of uniqueQueries) {
-              try {
-                const results = await braveSearch(q, 6);
-                for (const r of results) {
-                  if (r?.url && !seenUrl.has(r.url)) {
-                    seenUrl.add(r.url);
-                    const line = `${r.title || ""}: ${r.description || ""} | ${r.url}`.trim();
-                    if (line.length > 20) extraLines.push(line);
-                  }
+            // Recherches en PARALLÈLE (au lieu de séquentiel avec 1200ms de délai)
+            const batchResults = await Promise.all(
+              uniqueQueries.map(q => braveSearch(q, 6).catch(() => [] as BraveSearchResult[]))
+            );
+            for (const results of batchResults) {
+              for (const r of results) {
+                if (r?.url && !seenUrl.has(r.url)) {
+                  seenUrl.add(r.url);
+                  const line = `${r.title || ""}: ${r.description || ""} | ${r.url}`.trim();
+                  if (line.length > 20) extraLines.push(line);
                 }
-                await sleepAnalyze(1200);
-              } catch (_) {}
+              }
             }
             const extraContext = extraLines.join("\n").slice(0, 4500);
             if (extraContext) {
               enrichedAnalyzeContext = `${analyzeContext}\n\n=== RECHERCHES COMPLÉMENTAIRES (lacunes — à utiliser en priorité) ===\n${extraContext}`;
-              console.log(`[DueDiligence] Enrichissement 1: ${uniqueQueries.length} requêtes`);
+              console.log(`[DueDiligence] Enrichissement 1: ${uniqueQueries.length} requêtes, ${extraLines.length} résultats (${elapsed()}ms)`);
             }
           }
         }
       } catch (gapErr) {
-        console.warn("[DueDiligence] Boucle lacunes ignorée:", gapErr);
+        console.warn("[DueDiligence] Gap analysis 1 ignorée:", gapErr);
       }
 
       const userPromptAnalyze = `Effectue une due diligence COMPLÈTE sur l'entreprise "${companyName}".
@@ -760,49 +762,49 @@ Réponds UNIQUEMENT avec du JSON valide.`;
       }
       dueDiligenceResult.metadata = { companyName, generatedAt: new Date().toISOString(), searchResultsCount: analyzeSearchCount, aiProvider: AI_PROVIDER };
 
-      // ——— 2e itération : lacunes sur le rapport → recherches → enrichissement ———
-      try {
-        const reportSummary = JSON.stringify(dueDiligenceResult).slice(0, 4000);
-        const gapPrompt2 = `Rapport de due diligence (brouillon) sur "${companyName}". Extrait : ${reportSummary}
-Identifie 1 à 3 thèmes où des infos manquent encore (équipe, financements, métriques, concurrence). Pour chaque thème, 1 requête de recherche en anglais, courte ; inclure "${companyName}" si pertinent.
-Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 3 gaps, 1-2 queries chacun. Si rien : {"gaps":[]}.`;
+      // ——— 2e itération : SEULEMENT si on a du temps restant (time budget) ———
+      const timeAfterMain = elapsed();
+      console.log(`[DueDiligence] Temps après analyse principale: ${timeAfterMain}ms`);
+      if (timeAfterMain < 90_000) {
+        try {
+          const reportSummary = JSON.stringify(dueDiligenceResult).slice(0, 4000);
+          const gapPrompt2 = `Rapport de due diligence (brouillon) sur "${companyName}". Extrait : ${reportSummary}
+Identifie 1 à 2 thèmes où des infos manquent encore (équipe, financements, métriques, concurrence). Pour chaque thème, 1 requête de recherche en anglais, courte ; inclure "${companyName}" si pertinent.
+Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 2 gaps, 1 query chacun. Si rien : {"gaps":[]}.`;
 
-        const aiEndpointGap2 = await getAIEndpoint();
-        const gapBody2 = AI_PROVIDER === "vertex"
-          ? { contents: [{ role: "user", parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 500 } }
-          : { contents: [{ parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 500, responseMimeType: "application/json" as const } };
-        const gapRes2 = await fetch(aiEndpointGap2.url, { method: "POST", headers: aiEndpointGap2.headers, body: JSON.stringify(gapBody2) });
-        if (gapRes2.ok) {
-          const gapData2 = await gapRes2.json();
-          const gapText2: string = gapData2.candidates?.[0]?.content?.parts?.[0]?.text || "";
-          let gaps2: { queries?: string[] }[] = [];
-          if (gapText2) {
-            const jsonStr2 = extractJsonObject(gapText2);
-            if (jsonStr2) {
-              try {
-                const parsed2 = JSON.parse(jsonStr2);
-                gaps2 = Array.isArray(parsed2?.gaps) ? parsed2.gaps : [];
-              } catch (_) {}
+          const aiEndpointGap2 = await getAIEndpoint();
+          const gapBody2 = AI_PROVIDER === "vertex"
+            ? { contents: [{ role: "user", parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 300 } }
+            : { contents: [{ parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 300, responseMimeType: "application/json" as const } };
+          const gapRes2 = await fetch(aiEndpointGap2.url, { method: "POST", headers: aiEndpointGap2.headers, body: JSON.stringify(gapBody2) });
+          if (gapRes2.ok && elapsed() < TIME_BUDGET_MS - 30_000) {
+            const gapData2 = await gapRes2.json();
+            const gapText2: string = gapData2.candidates?.[0]?.content?.parts?.[0]?.text || "";
+            let gaps2: { queries?: string[] }[] = [];
+            if (gapText2) {
+              const jsonStr2 = extractJsonObject(gapText2);
+              if (jsonStr2) {
+                try {
+                  const parsed2 = JSON.parse(jsonStr2);
+                  gaps2 = Array.isArray(parsed2?.gaps) ? parsed2.gaps : [];
+                } catch (_) {}
+              }
             }
-          }
-          const queries2: string[] = [];
-          for (const g of gaps2.slice(0, 3)) {
-            const qs = (Array.isArray(g.queries) ? g.queries : []).map((x: string) => String(x).trim().slice(0, 120)).filter((x: string) => x.length >= 8);
-            queries2.push(...qs.slice(0, 2));
-          }
-          const seenQ2 = new Set<string>();
-          const uniqueQueries2 = queries2.filter((q) => {
-            const k = q.toLowerCase().replace(/\s+/g, " ");
-            if (seenQ2.has(k)) return false;
-            seenQ2.add(k);
-            return true;
-          }).slice(0, 4);
-          if (uniqueQueries2.length > 0) {
-            const extraLines2: string[] = [];
-            const seenUrl2 = new Set<string>();
-            for (const q of uniqueQueries2) {
-              try {
-                const results = await braveSearch(q, 5);
+            const queries2: string[] = [];
+            for (const g of gaps2.slice(0, 2)) {
+              const qs = (Array.isArray(g.queries) ? g.queries : []).map((x: string) => String(x).trim().slice(0, 120)).filter((x: string) => x.length >= 8);
+              queries2.push(...qs.slice(0, 1));
+            }
+            const uniqueQueries2 = [...new Set(queries2.map(q => q.toLowerCase().replace(/\s+/g, " ")))].map(k => queries2.find(q => q.toLowerCase().replace(/\s+/g, " ") === k)!).slice(0, 2);
+
+            if (uniqueQueries2.length > 0 && elapsed() < TIME_BUDGET_MS - 25_000) {
+              // Recherches en parallèle
+              const batchResults2 = await Promise.all(
+                uniqueQueries2.map(q => braveSearch(q, 5).catch(() => [] as BraveSearchResult[]))
+              );
+              const extraLines2: string[] = [];
+              const seenUrl2 = new Set<string>();
+              for (const results of batchResults2) {
                 for (const r of results) {
                   if (r?.url && !seenUrl2.has(r.url)) {
                     seenUrl2.add(r.url);
@@ -810,51 +812,52 @@ Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 3 gap
                     if (line.length > 20) extraLines2.push(line);
                   }
                 }
-                await sleepAnalyze(1200);
-              } catch (_) {}
-            }
-            const extraContext2 = extraLines2.join("\n").slice(0, 3500);
-            if (extraContext2) {
-              const enrichPrompt = `Rapport de due diligence (JSON) et données complémentaires. Intègre les nouvelles données où pertinent. Retourne le JSON COMPLET, même structure.
+              }
+              const extraContext2 = extraLines2.join("\n").slice(0, 3500);
+              if (extraContext2 && elapsed() < TIME_BUDGET_MS - 15_000) {
+                const enrichPrompt = `Rapport de due diligence (JSON) et données complémentaires. Intègre les nouvelles données où pertinent. Retourne le JSON COMPLET, même structure.
 
 RAPPORT ACTUEL :
-${JSON.stringify(dueDiligenceResult).slice(0, 26000)}
+${JSON.stringify(dueDiligenceResult).slice(0, 20000)}
 
 DONNÉES COMPLÉMENTAIRES :
 ${extraContext2}
 
 Réponds UNIQUEMENT avec le JSON complet.`;
-              const enrichBody = AI_PROVIDER === "vertex"
-                ? { contents: [{ role: "user", parts: [{ text: enrichPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 32768 } }
-                : { contents: [{ parts: [{ text: enrichPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 32768, responseMimeType: "application/json" as const } };
-              const enrichRes = await fetch(aiEndpointGap2.url, { method: "POST", headers: aiEndpointGap2.headers, body: JSON.stringify(enrichBody) });
-              if (enrichRes.ok) {
-                const enrichData = await enrichRes.json();
-                const enrichText: string = enrichData.candidates?.[0]?.content?.parts?.[0]?.text || "";
-                if (enrichText) {
-                  let enriched = parseJSONResponse(enrichText);
-                  if (enriched && typeof enriched === "object") {
-                    enriched = cleanUrlsAnalyze(stripSrc(enriched));
-                    if (enriched.traction?.keyMilestones) {
-                      enriched.traction.keyMilestones = (enriched.traction.keyMilestones as any[]).map((m: any) => ({ date: typeof m?.date === "string" ? m.date : "", milestone: toStr(m?.milestone ?? m) })).filter((m: any) => m.milestone);
+                const enrichBody = AI_PROVIDER === "vertex"
+                  ? { contents: [{ role: "user", parts: [{ text: enrichPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 16384 } }
+                  : { contents: [{ parts: [{ text: enrichPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 16384, responseMimeType: "application/json" as const } };
+                const enrichRes = await fetch(aiEndpointGap2.url, { method: "POST", headers: aiEndpointGap2.headers, body: JSON.stringify(enrichBody) });
+                if (enrichRes.ok) {
+                  const enrichData = await enrichRes.json();
+                  const enrichText: string = enrichData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+                  if (enrichText) {
+                    let enriched = parseJSONResponse(enrichText);
+                    if (enriched && typeof enriched === "object") {
+                      enriched = cleanUrlsAnalyze(stripSrc(enriched));
+                      if (enriched.traction?.keyMilestones) {
+                        enriched.traction.keyMilestones = (enriched.traction.keyMilestones as any[]).map((m: any) => ({ date: typeof m?.date === "string" ? m.date : "", milestone: toStr(m?.milestone ?? m) })).filter((m: any) => m.milestone);
+                      }
+                      if (enriched.investmentRecommendation) {
+                        const ir = enriched.investmentRecommendation;
+                        if (!ir.targetReturn || typeof ir.targetReturn !== "string") ir.targetReturn = "Non disponible";
+                        if (!ir.investmentHorizon || typeof ir.investmentHorizon !== "string") ir.investmentHorizon = "Non disponible";
+                        if (!ir.suggestedTicket || typeof ir.suggestedTicket !== "string") ir.suggestedTicket = "Non disponible";
+                      }
+                      enriched.metadata = dueDiligenceResult.metadata;
+                      dueDiligenceResult = enriched;
+                      console.log(`[DueDiligence] Enrichissement 2 appliqué (${elapsed()}ms)`);
                     }
-                    if (enriched.investmentRecommendation) {
-                      const ir = enriched.investmentRecommendation;
-                      if (!ir.targetReturn || typeof ir.targetReturn !== "string") ir.targetReturn = "Non disponible";
-                      if (!ir.investmentHorizon || typeof ir.investmentHorizon !== "string") ir.investmentHorizon = "Non disponible";
-                      if (!ir.suggestedTicket || typeof ir.suggestedTicket !== "string") ir.suggestedTicket = "Non disponible";
-                    }
-                    enriched.metadata = dueDiligenceResult.metadata;
-                    dueDiligenceResult = enriched;
-                    console.log("[DueDiligence] Enrichissement 2 (rapport) appliqué");
                   }
                 }
               }
             }
           }
+        } catch (round2Err) {
+          console.warn("[DueDiligence] 2e itération ignorée:", round2Err);
         }
-      } catch (round2Err) {
-        console.warn("[DueDiligence] 2e itération ignorée:", round2Err);
+      } else {
+        console.log(`[DueDiligence] 2e itération SKIPPÉE — temps écoulé: ${timeAfterMain}ms > 90s`);
       }
 
       const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/due_diligence_jobs?id=eq.${encodeURIComponent(jobId)}`, {

@@ -277,17 +277,43 @@ export default function DueDiligenceResult() {
       setProgress(50);
       setStatusMessage("Analyse IA en cours (génération du rapport)…");
 
-      // ——— Phase 2 : analyse IA ———
-      const controller2 = new AbortController();
-      const timeout2 = setTimeout(() => controller2.abort(), 200_000);
-      const resAnalyze = await fetch(`${supabaseUrl}/functions/v1/due-diligence`, {
-        method: "POST",
-        signal: controller2.signal,
-        headers,
-        body: JSON.stringify({ phase: "analyze", jobId }),
-      });
-      clearTimeout(timeout2);
+      // ——— Phase 2 : analyse IA (avec retry automatique sur erreur réseau/546) ———
+      const MAX_RETRIES = 2;
+      let resAnalyze: Response | null = null;
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        try {
+          if (attempt > 0) {
+            setStatusMessage(`Nouvelle tentative d'analyse (${attempt + 1}/${MAX_RETRIES})…`);
+            await new Promise(r => setTimeout(r, 2000));
+          }
+          const controller2 = new AbortController();
+          const timeout2 = setTimeout(() => controller2.abort(), 200_000);
+          resAnalyze = await fetch(`${supabaseUrl}/functions/v1/due-diligence`, {
+            method: "POST",
+            signal: controller2.signal,
+            headers,
+            body: JSON.stringify({ phase: "analyze", jobId }),
+          });
+          clearTimeout(timeout2);
+          // Si 546 (timeout serveur) et qu'on peut retry, on retry
+          if (resAnalyze.status === 546 && attempt < MAX_RETRIES - 1) {
+            console.warn(`[DD] Tentative ${attempt + 1} : 546 timeout, retry...`);
+            continue;
+          }
+          break; // Succès ou erreur non-retriable
+        } catch (fetchErr) {
+          // Erreur réseau (Failed to fetch) → retry si possible
+          if (attempt < MAX_RETRIES - 1) {
+            console.warn(`[DD] Tentative ${attempt + 1} : erreur réseau, retry...`, fetchErr);
+            continue;
+          }
+          throw fetchErr; // Dernière tentative échouée
+        }
+      }
       clearInterval(progressInterval);
+      if (!resAnalyze) {
+        throw new Error("Impossible de contacter le serveur après plusieurs tentatives.");
+      }
 
       const text = await resAnalyze.text();
       let result: DueDiligenceData | null = null;
