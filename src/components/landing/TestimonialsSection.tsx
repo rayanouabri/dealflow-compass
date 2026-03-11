@@ -54,7 +54,7 @@ export function TestimonialsSection() {
             <Badge variant="outline" className="mb-4 border-primary/30 bg-primary/5">
               Témoignages
             </Badge>
-            <h2 className="text-3xl md:text-5xl font-bold mb-4">
+            <h2 className="text-3xl md:text-5xl font-bold mb-4 text-foreground">
               Ils investissent mieux avec
               <span className="text-gradient-success"> DealFlow Compass</span>
             </h2>
@@ -96,7 +96,7 @@ export function TestimonialsSection() {
                   {testimonial.avatar}
                 </div>
                 <div className="flex-1">
-                  <p className="font-semibold">{testimonial.author}</p>
+                  <p className="font-semibold text-foreground">{testimonial.author}</p>
                   <p className="text-sm text-muted-foreground">
                     {testimonial.role}, {testimonial.company}
                   </p>
