@@ -103,18 +103,9 @@ export function LoginForm({ onSuccess, onSwitchToSignup }: LoginFormProps) {
         )}
       </Button>
 
-      {onSwitchToSignup && (
-        <p className="text-sm text-center text-muted-foreground">
-          Pas encore de compte ?{" "}
-          <button
-            type="button"
-            onClick={onSwitchToSignup}
-            className="text-primary hover:underline"
-          >
-            Créer un compte
-          </button>
-        </p>
-      )}
+      <p className="text-sm text-center text-muted-foreground">
+        Les inscriptions sont temporairement désactivées.
+      </p>
     </form>
   );
 }

@@ -16,6 +16,7 @@ import MentionsLegales from "./pages/MentionsLegales";
 import ConditionsUtilisation from "./pages/ConditionsUtilisation";
 import Confidentialite from "./pages/Confidentialite";
 import PipelineProgress from "./pages/PipelineProgress";
+import ExempleAnalyse from "./pages/ExempleAnalyse";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -35,6 +36,7 @@ const App = () => (
             <Route path="/due-diligence" element={<DueDiligence />} />
             <Route path="/due-diligence/result" element={<DueDiligenceResult />} />
             <Route path="/pipeline" element={<PipelineProgress />} />
+            <Route path="/exemple" element={<ExempleAnalyse />} />
             <Route path="/contact" element={<Contact />} />
             <Route path="/a-propos" element={<APropos />} />
             <Route path="/mentions-legales" element={<MentionsLegales />} />
