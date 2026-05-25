@@ -9,6 +9,9 @@ export interface SourcingCandidate {
   categories: Set<string>;
   sources: string[];
   score: number;
+  recencyScore: number;
+  signalYear: number | null;
+  crossSignalBonus: number;
 }
 
 const SIGNAL_WEIGHTS: Record<string, number> = {
@@ -19,6 +22,14 @@ const SIGNAL_WEIGHTS: Record<string, number> = {
   incubator: 2,
   grant: 2,
   press: 1,
+  github: 4,
+  arxiv_hal: 4,
+  pappers: 3,
+  producthunt: 3,
+  wellfound: 3,
+  show_hn: 3,
+  job_board: 2,
+  conference: 2,
 };
 
 export function normalizeUrl(url: string): string {
@@ -56,6 +67,36 @@ export function extractCompanyName(title: string, url: string): string {
   return name;
 }
 
+function computeRecencyScore(descriptions: string[]): { score: number; year: number | null } {
+  const text = descriptions.join(" ");
+  const currentYear = new Date().getFullYear();
+
+  // Extract years from descriptions
+  const years = text.match(/\b(202[4-9]|203\d)\b/g);
+  if (!years || years.length === 0) return { score: 1, year: null };
+
+  const latestYear = Math.max(...years.map(Number));
+  const yearDiff = currentYear - latestYear;
+
+  // Scoring: 2024 = 10, 2023 = 7, 2022 = 4, earlier = 1
+  let score = 1;
+  if (yearDiff === 0) score = 10;
+  else if (yearDiff === 1) score = 7;
+  else if (yearDiff === 2) score = 4;
+
+  return { score, year: latestYear };
+}
+
+function computeCrossSignalBonus(categories: Set<string>): number {
+  const highValueSignals = ["github", "arxiv_hal", "pappers", "show_hn", "ip", "spinoff", "producthunt", "wellfound", "university", "talent"];
+  const highValueCount = Array.from(categories).filter(cat => highValueSignals.includes(cat)).length;
+
+  if (highValueCount >= 4) return 25;
+  if (highValueCount === 3) return 15;
+  if (highValueCount === 2) return 5;
+  return 0;
+}
+
 // Regroupe les résultats par startup et calcule les scores
 export function deduplicateAndRank(
   results: (SearchResult & { category?: string })[],
@@ -78,6 +119,9 @@ export function deduplicateAndRank(
         categories: new Set(),
         sources: [],
         score: 0,
+        recencyScore: 0,
+        signalYear: null,
+        crossSignalBonus: 0,
       });
     }
 
@@ -91,22 +135,32 @@ export function deduplicateAndRank(
     }
   }
 
-  // Scoring pondéré : sum(signal_weights) × min(mentionCount, 15)
-  // Filtre bruit : skip si mentionCount < 2 ET categories < 2
+  // Scoring pondéré avec recency + cross-signal bonus
   const candidates: SourcingCandidate[] = [];
   for (const c of byUrl.values()) {
-    // Filter noise
-    if (c.mentionCount < 2 && c.categories.size < 2) {
+    // Compute recency score and year
+    const { score: recencyScore, year: signalYear } = computeRecencyScore(c.descriptions);
+    c.recencyScore = recencyScore;
+    c.signalYear = signalYear;
+
+    // Compute cross-signal bonus
+    c.crossSignalBonus = computeCrossSignalBonus(c.categories);
+
+    // Filter noise with relaxed rules for high-value signals
+    const hasHighValueSignal = Array.from(c.categories).some(cat =>
+      ["github", "arxiv_hal", "pappers", "show_hn"].includes(cat)
+    );
+    if (c.mentionCount < 2 && c.categories.size < 2 && !hasHighValueSignal) {
       continue;
     }
 
-    // Weighted score
+    // Weighted score: (sum_weights × min(mentions, 15)) + recencyScore + crossSignalBonus
     let weight = 0;
     for (const cat of c.categories) {
       weight += (SIGNAL_WEIGHTS[cat] ?? 1);
     }
     const cappedMentions = Math.min(c.mentionCount, 15); // Diminishing returns
-    c.score = weight * cappedMentions;
+    c.score = weight * cappedMentions + c.recencyScore + c.crossSignalBonus;
     candidates.push(c);
   }
 

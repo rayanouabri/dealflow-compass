@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { buildWeakSignalQueries, filterByStage } from "../_shared/weak-signals.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -226,6 +227,55 @@ async function sourceByLookalike(referenceCompany: string, geography: string, ma
   return allResults;
 }
 
+// 5. SIGNAUX FAIBLES (8 catégories)
+// GitHub, ProductHunt, Wellfound, Job Boards, arXiv/HAL, Pappers, Conférences, Show HN
+async function sourceByWeakSignals(sectors: string[], geography: string, stage: string = "seed"): Promise<BraveSearchResult[]> {
+  const year = new Date().getFullYear();
+  const allQueryGroups = buildWeakSignalQueries(sectors[0] || "tech", geography, year);
+  const filteredGroups = filterByStage(allQueryGroups, stage);
+
+  const allResults: BraveSearchResult[] = [];
+
+  // Limit to 3 queries per category to stay within budget
+  for (const group of filteredGroups) {
+    const selectedQueries = group.queries.slice(0, 3);
+    for (const query of selectedQueries) {
+      const results = await braveSearch(query, group.resultsPerQuery);
+      // Tag results with category
+      const taggedResults = results.map(r => ({
+        ...r,
+        extra_snippets: [...(r.extra_snippets || []), `[${group.category.toUpperCase()}]`],
+      }));
+      allResults.push(...taggedResults);
+    }
+  }
+
+  return allResults;
+}
+
+// 6. SHOW HN
+// Détecte les entrepreneurs qui partagent leurs projets sur Hacker News
+async function sourceByShowHN(sectors: string[], geography: string): Promise<BraveSearchResult[]> {
+  const queries = [
+    `site:news.ycombinator.com "Show HN" ${sectors[0] || "tech"} startup 2024 2025`,
+    `"Show HN" ${sectors[0] || "tech"} startup ${geography} founder 2024`,
+    `hacker news "Show HN" "I built" ${sectors[0] || "tech"} 2024`,
+    `site:news.ycombinator.com "Show HN" ${sectors[1] || "saas"} startup 2024`,
+  ];
+
+  const allResults: BraveSearchResult[] = [];
+  for (const query of queries) {
+    const results = await braveSearch(query, 4);
+    const taggedResults = results.map(r => ({
+      ...r,
+      extra_snippets: [...(r.extra_snippets || []), "[SHOW_HN]"],
+    }));
+    allResults.push(...taggedResults);
+  }
+
+  return allResults;
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -252,11 +302,15 @@ serve(async (req) => {
       ipResults,
       spinoffResults,
       lookalikeResults,
+      weakSignalResults,
+      showHnResults,
     ] = await Promise.all([
       sourceByTalentSignals(sectors, geography),
       sourceByIP(sectors, geography),
       sourceByUniversitySpinoffs(sectors, geography),
       fundName ? sourceByLookalike(fundName, geography) : Promise.resolve([]),
+      sourceByWeakSignals(sectors, geography, stage),
+      sourceByShowHN(sectors, geography),
     ]);
 
     // Combine all results
@@ -265,6 +319,8 @@ serve(async (req) => {
       ...ipResults,
       ...spinoffResults,
       ...lookalikeResults,
+      ...weakSignalResults,
+      ...showHnResults,
     ];
 
     // Extract unique company names from results
@@ -310,13 +366,19 @@ Analyse les résultats de recherche suivants et identifie ${numberOfStartups} st
 - Géographie: ${geography}
 - Stade: ${stage}
 
-SIGNAUX FAIBLES À PRIORISER :
-1. Recrutement de postes clés (CTO, VP Engineering) → startup en structuration
-2. Brevets récents déposés → innovation technologique validée
-3. Spin-off universitaire (CNRS, CEA, INRIA, grandes écoles) → deep tech
-4. Lauréats de concours (i-Lab, i-Nov, EIC Accelerator, French Tech Seed)
-5. Sortie d'incubateur/accélérateur (Station F, YC, Techstars, Agoranov)
-6. PhD/chercheur qui quitte un labo pour fonder → signal fort
+12 SIGNAUX FAIBLES À PRIORISER (par ordre de force) :
+1. Brevets récents (GitHub + Patents Google / INPI / EPO) → innovation validée
+2. arXiv/HAL + spin-off recherche → deeptech talent
+3. Pappers (immatriculation récente) → startup légale confirmée
+4. GitHub orgs/repos (ex-GAFAM founders, "new organization") → product validation
+5. ProductHunt launches + Show HN → product-market fit early signal
+6. Wellfound/AngelList (seed/pre-seed) → fundraising stage signal
+7. Incubateurs de prestige (Station F, YC, Techstars, Agoranov) → vetting externe
+8. Conférences (VivaTech, Web Summit, NeurIPS) → visibility & validation
+9. Job boards early (1-5 offres) → team building signal
+10. Recrutement clés (CTO, VP Eng) → growth & scaling signal
+11. Concours innovation (i-Lab, i-Nov, EIC, French Tech) → official recognition
+12. Thèses CIFRE / ERC Grants → academic + entrepreneurial hybrid
 
 Pour chaque startup identifiée, fournis :
 - Nom de l'entreprise
@@ -401,6 +463,8 @@ Identifie ${numberOfStartups} startup(s) les plus prometteuses et structure-les 
         talentSignals: talentResults.length,
         ip: ipResults.length,
         spinoffs: spinoffResults.length,
+        weakSignals: weakSignalResults.length,
+        showHn: showHnResults.length,
       },
     }), {
       status: 200,

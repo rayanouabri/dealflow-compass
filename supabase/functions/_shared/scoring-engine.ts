@@ -5,20 +5,22 @@ export interface ScoringWeights {
   thesisFit: number;         // 0.30 — adéquation thèse
   signalDiversity: number;   // 0.15 — diversité des signaux
   sourceCorroboration: number; // 0.10 — corroboration multi-sources
-  frenchEcosystem: number;   // 0.15 — bonus biais FR
+  frenchEcosystem: number;   // 0.13 — bonus biais FR
   timing: number;            // 0.10 — "why now"
   teamQuality: number;       // 0.12 — qualité de l'équipe
-  competitivePosition: number; // 0.08 — moat / différenciation
+  competitivePosition: number; // 0.07 — moat / différenciation
+  recency: number;           // 0.05 — fraîcheur des signaux
 }
 
 export const DEFAULT_WEIGHTS: ScoringWeights = {
   thesisFit: 0.30,
   signalDiversity: 0.15,
   sourceCorroboration: 0.10,
-  frenchEcosystem: 0.15,
+  frenchEcosystem: 0.13,
   timing: 0.10,
   teamQuality: 0.12,
-  competitivePosition: 0.08,
+  competitivePosition: 0.07,
+  recency: 0.05,
 };
 
 export function buildContextualWeights(geography: string): ScoringWeights {
@@ -32,7 +34,8 @@ export function buildContextualWeights(geography: string): ScoringWeights {
     frenchEcosystem: 0,
     timing: 0.10,
     teamQuality: 0.17,
-    competitivePosition: 0.08,
+    competitivePosition: 0.07,
+    recency: 0.05,
   };
 }
 
@@ -44,6 +47,7 @@ export interface CriteriaScores {
   timing: number;
   teamQuality: number;
   competitivePosition: number;
+  recency: number;
 }
 
 // Calcule le score pondéré (0-100)
@@ -65,6 +69,8 @@ export function buildScoringPrompt(
 ): string {
   const descriptions = candidate.descriptions.slice(0, 5).join("\n");
   const categories = Array.from(candidate.categories).join(", ");
+  const signalTypesCount = candidate.categories.size;
+  const signalSummary = signalTypesCount >= 3 ? `⚡ CROSS-SIGNAL CORROBORATION: ${signalTypesCount} types de signaux détectés` : `Signal type: ${categories || "standard"}`;
 
   return `Tu es un analyste VC senior. Évalue cette startup par rapport à la thèse du fonds ci-dessous.
 
@@ -77,6 +83,9 @@ ${JSON.stringify(thesis, null, 2)}
 - Sources : ${candidate.sources.join(", ")}
 - Catégories de signal : ${categories}
 - Nombre de mentions : ${candidate.mentionCount}
+- Année signal le plus récent : ${candidate.signalYear || "inconnue"}
+- Bonus corroboration croisée : ${candidate.crossSignalBonus > 0 ? `+${candidate.crossSignalBonus}` : "0"}
+- ${signalSummary}
 - Descriptions :
 ${descriptions}
 
@@ -90,8 +99,10 @@ Réponds UNIQUEMENT en JSON valide avec ce schéma :
     "frenchEcosystem": <0-100>,
     "timing": <0-100>,
     "teamQuality": <0-100>,
-    "competitivePosition": <0-100>
+    "competitivePosition": <0-100>,
+    "recency": <0-100>
   },
+  "weakSignalSummary": "<résumé des signaux faibles détectés>",
   "redFlags": ["<flag1>", ...],
   "whyNow": "<explication courte>",
   "whyThisStartup": "<3 raisons clés>",
@@ -99,5 +110,5 @@ Réponds UNIQUEMENT en JSON valide avec ce schéma :
   "riskLevel": "low" | "medium" | "high"
 }
 
-Sois strict, sceptique, et basé sur les données disponibles.`;
+Sois strict, sceptique, et basé sur les données disponibles. Utilise la dimension "recency" pour évaluer la fraîcheur et l'actualité des signaux détectés.`;
 }

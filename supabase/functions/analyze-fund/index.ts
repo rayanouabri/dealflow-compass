@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { callDigitalOceanAgent, formatSourcingPrompt } from "../_shared/digitalocean-agent.ts";
+import { buildWeakSignalQueries, filterByStage } from "../_shared/weak-signals.ts";
 
 const ALLOWED_ORIGINS = [
   "https://ai-vc-sourcing.vercel.app",
@@ -2009,7 +2010,7 @@ RÈGLES:
 
       console.log(`[Brave] Recherche 6: ${mainKeyword} traction metrics`);
       const results6 = await braveSearch(`${mainKeyword} startup traction revenue growth metrics ${geoTerm} 2024`, RESULTS_PER_QUERY);
-      startupSearchResults.push(...results5);
+      startupSearchResults.push(...results6);
 
       if (startupSearchResults.length < 20) {
         await sleep(BATCH_DELAY_MS);
@@ -2080,10 +2081,10 @@ RÈGLES:
         
         // Exécuter les requêtes early-stage
         const allEarlyQueries = [
-          ...incubatorQueries.slice(0, 4),
+          ...incubatorQueries.slice(0, 6),
           ...talentSignalQueries,
-          ...spinoffQueries.slice(0, 3),
-          ...competitionQueries.slice(0, 2),
+          ...spinoffQueries.slice(0, 4),
+          ...competitionQueries.slice(0, 3),
         ];
         
         console.log(`[Brave] Requêtes signaux précoces (seed/pre-seed): ${allEarlyQueries.length} requêtes`);
@@ -2114,13 +2115,47 @@ RÈGLES:
       }
     }
 
+    // === SIGNAUX FAIBLES (8 catégories) ===
+    let weakSignalContext = "";
+    if (!isSearchPhase) {
+      try {
+        const year = new Date().getFullYear();
+        const primarySector = sectors[0] || "technology";
+        const allWeakSignalGroups = buildWeakSignalQueries(primarySector, geography, year);
+        const filteredWeakGroups = filterByStage(allWeakSignalGroups, stage);
+
+        const weakSignalResults: BraveSearchResult[] = [];
+
+        // Limiter à 2 requêtes par catégorie pour rester dans le budget
+        for (const group of filteredWeakGroups.slice(0, 6)) {
+          const selectedQueries = group.queries.slice(0, 2);
+          for (const query of selectedQueries) {
+            const results = await braveSearch(query, group.resultsPerQuery);
+            weakSignalResults.push(...results);
+            startupSearchResults.push(...results);
+            await sleep(1100);
+          }
+        }
+
+        if (weakSignalResults.length > 0) {
+          const categoryBreakdown = filteredWeakGroups.slice(0, 6)
+            .map(g => `[${g.category.toUpperCase()}] x${g.queries.slice(0, 2).length} queries`)
+            .join(", ");
+          weakSignalContext = `\n\n=== SIGNAUX FAIBLES (8 catégories : GitHub, ProductHunt, Wellfound, Job Boards, arXiv/HAL, Pappers, Conférences, Show HN) ===\n${categoryBreakdown}\n\n${weakSignalResults.slice(0, 25).map(r => `${r.title}: ${r.description} | ${r.url}`).join("\n")}`;
+          weakSignalContext = weakSignalContext.slice(0, 4000);
+        }
+      } catch (err) {
+        console.warn("Weak signals layer skipped:", err);
+      }
+    }
+
     console.log(`[Brave] Total résultats: ${startupSearchResults.length}${isSearchPhase ? " (phase search légère)" : ""}`);
 
     const searchSeen = new Set<string>();
     const uniqueSearchResults = startupSearchResults.filter(r => r.url && !searchSeen.has(r.url) && (searchSeen.add(r.url), true));
 
     let reflectionContext = "";
-    if (!isSearchPhase && uniqueSearchResults.length < 25) {
+    if (!isSearchPhase && uniqueSearchResults.length < 60) {
       try {
         const refPrompt = `Tu es un assistant VC spécialisé dans le sourcing. Fonds: "${fundName || "thèse personnalisée"}". 
 Secteurs: ${sectors.join(", ")}. Géographie: ${geography}. Stade: ${stage}
@@ -2156,7 +2191,7 @@ Propose EXACTEMENT 3 requêtes (en anglais, courtes) pour trouver d'autres start
     let startupSearchContext = finalUnique
       .slice(0, maxResultsForContext)
       .map(r => `${r.title}: ${r.description} | URL: ${r.url}`)
-      .join("\n") + ipInnovationContext + earlySignalsContext + reflectionContext;
+      .join("\n") + ipInnovationContext + earlySignalsContext + weakSignalContext + reflectionContext;
     
     // Add DigitalOcean Agent results if available
     if (doAgentSourcingResult) {
@@ -2198,14 +2233,20 @@ ${portfolioBlacklistSection}
 Priorise les startups avec des signaux IP (brevets déposés, technologies protégées), issues de la recherche, 
 ou sortant d'incubateurs/accélérateurs reconnus. Croise les données avant de produire ton analyse.
 
-⚠️ SIGNAUX SEED/PRE-SEED À DÉTECTER :
-Pour les startups early-stage (Pre-Seed, Seed), cherche ces signaux faibles d'opportunités :
-1. BREVETS : Nouvelles demandes de brevet ou technologies protégées dans le secteur cible
-2. INCUBATEURS : Startups récemment acceptées dans Station F, Y Combinator, Techstars, Agoranov, etc.
-3. SPIN-OFFS : Startups issues de labos de recherche (CNRS, CEA, INRIA, universités)
-4. RECRUTEMENTS : Startups qui recrutent des postes clés (CTO, VP Engineering) — signal de croissance
-5. PRIX/CONCOURS : Lauréats de i-Lab, i-Nov, EIC Accelerator, concours French Tech
-6. THÈSES CIFRE : Chercheurs qui fondent ou co-fondent des startups autour de leur recherche
+⚠️ 12 SIGNAUX FAIBLES (WEAK SIGNALS) À PRIORISER :
+Pour les startups early-stage (Pre-Seed, Seed), utilise ces signaux d'opportunités de manière exhaustive :
+1. BREVETS (Patents) : Demandes Google Patents, INPI, EPO → innovation validée
+2. ARXIV/HAL : Publications académiques + spin-off recherche → deeptech founder
+3. PAPPERS : Immatriculation récente (Pappers.fr, KBIS, societe.com) → startup légale confirmée
+4. GITHUB : Nouveaux orgs/repos, ex-GAFAM founders, "founded 2024" → product validation
+5. PRODUCTHUNT : Lancements récents, vote utilisateurs → product-market fit early signal
+6. SHOW HN : "Show HN: I built X" sur Hacker News → founder entrepreneurial spirit
+7. WELLFOUND : Startups en fundraising (seed/pre-seed) → stade de financement immédiat
+8. INCUBATEURS : Station F, Y Combinator, Techstars, Agoranov → vetting externe validé
+9. JOB BOARDS : 1-5 offres (Welcome to the Jungle, Lever) → early team building signal
+10. CONFÉRENCES : Speakers VivaTech, Web Summit, NeurIPS → visibility & industry validation
+11. PRIX/CONCOURS : i-Lab, i-Nov, EIC Accelerator, French Tech Seed → official recognition
+12. RECRUTEMENTS CLÉS : CTO, VP Engineering, Head of R&D → growth & scaling signal
 
 ⚠️ ATTENTION : TU NE DOIS PAS ANALYSER LE FONDS, MAIS SOURCER DES STARTUPS QUI CORRESPONDENT À SA THÈSE ⚠️
 
