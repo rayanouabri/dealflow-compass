@@ -1,164 +1,67 @@
-# Configuration AI — Gemini ou Vertex AI
+# AI Configuration: Gemini vs Vertex AI
 
-Ce guide explique comment configurer le provider AI (Gemini ou Vertex AI) et choisir le modèle.
+Configure your AI provider (Gemini or Vertex AI) and model selection for analysis functions.
 
-## 📋 Vue d'ensemble
+## Setup
 
-Le système supporte deux providers :
-- **Gemini** (par défaut, gratuit via API key)
-- **Vertex AI** (Google Cloud, nécessite un projet GCP)
+Set secrets in Supabase Dashboard → Edge Functions → Settings → Secrets
 
-## 🔧 Configuration dans Supabase
+## Option 1: Gemini (Recommended)
 
-Tous les secrets se configurent dans :
-**Supabase Dashboard → Edge Functions → [analyze-fund ou ai-qa] → Settings → Secrets**
+**Secrets**:
+- `AI_PROVIDER` = `gemini` (default if omitted)
+- `GEMINI_API_KEY` — Get free key at https://makersuite.google.com/app/apikey
+- `GEMINI_MODEL` (optional, default `gemini-2.5-pro`)
+  - `gemini-2.5-pro` (recommended, most capable)
+  - `gemini-2.0-flash` (fastest)
+  - `gemini-1.5-pro` (very capable)
+  - `gemini-1.5-flash` (fast, good)
+- `BRAVE_API_KEY` — Web search API key
 
----
+## Option 2: Vertex AI (Google Cloud)
 
-## Option 1 : Gemini (Recommandé pour commencer)
+**Prerequisites**:
+- GCP project with Vertex AI API enabled
+- Service Account with "Vertex AI User" role
 
-### Secrets requis :
+**Secrets**:
+- `AI_PROVIDER` = `vertex`
+- `VERTEX_AI_PROJECT_ID` — GCP project ID
+- `VERTEX_AI_CREDENTIALS` — Service Account JSON (key.json from GCP)
+- `VERTEX_AI_LOCATION` (optional, default `us-central1`)
+- `VERTEX_AI_MODEL` (optional, default `gemini-pro`)
+- `BRAVE_API_KEY`
 
-1. **AI_PROVIDER** = `gemini` (ou laissez vide, c'est le défaut)
-2. **GEMINI_KEY_2** ou **GEMINI_API_KEY**
-   - Obtention : https://makersuite.google.com/app/apikey (gratuit)
-   - Exemple : `AIzaSyD...`
-3. **GEMINI_MODEL** (optionnel)
-   - Défaut : `gemini-2.5-pro`
-   - Options disponibles :
-     - `gemini-2.5-pro` ⭐ (recommandé - le plus puissant et stable)
-     - `gemini-2.0-flash` ⚡ (rapide)
-     - `gemini-pro` (puissant)
-     - `gemini-1.5-pro` (très puissant)
-     - `gemini-1.5-flash` (rapide et efficace)
-     - ⚠️ Note : `gemini-3.0-pro` n'est pas encore disponible via l'API publique
+**Get credentials**:
+1. Google Cloud Console → IAM & Admin → Service Accounts
+2. Create → grant "Vertex AI User" role → download JSON key
+3. Paste JSON in `VERTEX_AI_CREDENTIALS` secret
 
-### Exemple de configuration :
+## Switch Providers
 
-```
-AI_PROVIDER = gemini
-GEMINI_KEY_2 = AIzaSyD...
-GEMINI_MODEL = gemini-2.0-flash
-BRAVE_API_KEY = BSAjI6tJ9s5t2qMZZYNTtBDxHQhqVFJ
-```
+1. Update `AI_PROVIDER` secret in Supabase
+2. Add corresponding secrets (GEMINI_* or VERTEX_AI_*)
+3. Redeploy Edge Functions (or wait for next Vercel deploy)
 
----
+## Current Default
 
-## Option 2 : Vertex AI (Google Cloud)
+**`gemini-2.5-pro`** — Most capable, recommended.
 
-### Prérequis :
-- Compte Google Cloud Platform
-- Projet GCP avec Vertex AI API activé
-- Service Account avec permissions Vertex AI
+To change, set `GEMINI_MODEL` secret and redeploy functions.
 
-### Secrets requis :
+## Model Comparison
 
-1. **AI_PROVIDER** = `vertex`
-2. **VERTEX_AI_PROJECT_ID**
-   - ID du projet GCP (ex: `my-project-123456`)
-3. **VERTEX_AI_CREDENTIALS** (JSON)
-   - Service Account JSON avec permissions Vertex AI
-   - Format : `{"type":"service_account","project_id":"...","private_key":"...",...}`
-4. **VERTEX_AI_LOCATION** (optionnel)
-   - Défaut : `us-central1`
-   - Options : `us-central1`, `us-east1`, `europe-west1`, etc.
-5. **VERTEX_AI_MODEL** (optionnel)
-   - Défaut : `gemini-pro`
-   - Options : `gemini-pro`, `gemini-1.5-pro`, `gemini-1.5-flash`
+| Model | Speed | Quality | Cost |
+|-------|-------|---------|------|
+| `gemini-2.5-pro` | Fast | Excellent | Free |
+| `gemini-2.0-flash` | Fastest | Good | Free |
+| `gemini-1.5-pro` | Slow | Excellent | Paid (Vertex) |
 
-### Exemple de configuration :
+## Deploy
 
-```
-AI_PROVIDER = vertex
-VERTEX_AI_PROJECT_ID = my-project-123456
-VERTEX_AI_LOCATION = us-central1
-VERTEX_AI_MODEL = gemini-pro
-VERTEX_AI_CREDENTIALS = {"type":"service_account","project_id":"my-project-123456",...}
-BRAVE_API_KEY = BSAjI6tJ9s5t2qMZZYNTtBDxHQhqVFJ
-```
-
-### Comment obtenir VERTEX_AI_CREDENTIALS :
-
-1. Allez sur [Google Cloud Console](https://console.cloud.google.com/)
-2. Créez ou sélectionnez un projet
-3. Activez l'API Vertex AI
-4. Créez un Service Account :
-   - IAM & Admin → Service Accounts
-   - Créez un compte avec le rôle "Vertex AI User"
-   - Téléchargez la clé JSON
-5. Copiez le contenu JSON dans **VERTEX_AI_CREDENTIALS**
-
----
-
-## 🔄 Changer de provider
-
-Pour passer de Gemini à Vertex AI (ou vice versa) :
-
-1. Modifiez **AI_PROVIDER** dans les secrets Supabase
-2. Ajoutez les secrets correspondants (voir ci-dessus)
-3. Redéployez les Edge Functions (ou attendez le prochain déploiement)
-
----
-
-## 📊 Comparaison des modèles Gemini
-
-| Modèle | Vitesse | Qualité | Coût | Recommandation |
-|--------|---------|---------|------|----------------|
-| `gemini-2.5-pro` | ⚡⚡ | ⭐⭐⭐⭐⭐ | Gratuit | **Recommandé** - Le plus puissant et stable |
-| `gemini-2.0-flash` | ⚡⚡⚡ | ⭐⭐⭐ | Gratuit | Rapide et efficace |
-| `gemini-1.5-flash` | ⚡⚡⚡ | ⭐⭐⭐⭐ | Gratuit | Bon compromis |
-| `gemini-pro` | ⚡⚡ | ⭐⭐⭐⭐ | Gratuit | Puissant, un peu plus lent |
-| `gemini-1.5-pro` | ⚡ | ⭐⭐⭐⭐⭐ | Payant (Vertex) | Meilleure qualité, plus lent |
-| `gemini-3.0-pro` | ❌ | ❌ | ❌ | Pas encore disponible via l'API publique |
-
----
-
-## ⚙️ Configuration actuelle
-
-**Version actuelle utilisée** : `gemini-2.5-pro` (par défaut)
-
-Pour changer le modèle Gemini :
-- Ajoutez `GEMINI_MODEL` dans les secrets avec la valeur souhaitée
-- Redéployez les Edge Functions
-
----
-
-## 🚀 Déploiement
-
-Après avoir configuré les secrets, redéployez les fonctions :
-
+After updating secrets, redeploy Edge Functions:
 ```bash
-# Si vous avez Supabase CLI configuré
-npx supabase functions deploy analyze-fund --no-verify-jwt
-npx supabase functions deploy ai-qa --no-verify-jwt
+npx supabase functions deploy analyze-fund
+npx supabase functions deploy ai-qa
 ```
-
-Ou via le Dashboard Supabase → Edge Functions → Deploy
-
----
-
-## ❓ Questions fréquentes
-
-**Q: Quel provider choisir ?**
-- **Gemini** : Plus simple, gratuit, parfait pour commencer
-- **Vertex AI** : Si vous avez déjà un compte GCP, meilleure intégration entre services
-
-**Q: Quel modèle Gemini choisir ?**
-- **gemini-2.5-pro** : Recommandé - Le plus puissant et performant disponible (par défaut)
-- **gemini-2.0-flash** : Si vous avez besoin de rapidité maximale
-- **gemini-1.5-pro** : Alternative puissante (via Vertex AI)
-- ⚠️ **gemini-3.0-pro** : Pas encore disponible via l'API publique (erreur 404)
-
-**Q: Puis-je utiliser Vertex AI avec une clé API ?**
-- Non, Vertex AI nécessite un projet GCP et des credentials de service account
-
-**Q: Les deux providers utilisent-ils les mêmes modèles ?**
-- Oui, mais l'API est différente. Vertex AI offre parfois des modèles plus récents.
-
----
-
-## 📝 Notes
-
-- Les secrets doivent être configurés pour **chaque fonction** (analyze-fund et ai-qa)
-- Le provider choisi s'applique automatiquement à toutes les fonctions
-- Brave Search est requis dans tous les cas (pour les recherches web)
+Or push to main → Vercel auto-deploys.
