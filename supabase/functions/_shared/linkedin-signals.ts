@@ -190,7 +190,7 @@ export function extractLinkedInSignals(
   }
 
   // Pattern: "vp" or "head of" = department_head
-  if /(vp|head of|chief) (engineer|product|sales|revenue|marketing)/i.test(text)) {
+  if (/(vp|head of|chief) (engineer|product|sales|revenue|marketing)/i.test(text)) {
     return {
       type: "department_head",
       company: title,
