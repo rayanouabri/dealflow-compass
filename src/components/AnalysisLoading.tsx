@@ -2,6 +2,8 @@ import { Loader2, Search, BarChart3, FileCheck, Sparkles, CheckCircle2, Clock } 
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 
+type Phase = "search_fund" | "search_market" | "search_startups" | "pick";
+
 const STEPS = [
   { icon: Search, label: "Recherche thèse et marché", color: "text-blue-400" },
   { icon: BarChart3, label: "Sourcing startups", color: "text-purple-400" },
@@ -9,15 +11,28 @@ const STEPS = [
   { icon: FileCheck, label: "Transfert → Due Diligence", color: "text-green-400" },
 ];
 
-export function AnalysisLoading() {
-  const [currentStep, setCurrentStep] = useState(0);
+const PHASE_TO_STEP: Record<Phase, number> = {
+  search_fund: 0,
+  search_market: 1,
+  search_startups: 2,
+  pick: 3,
+};
+
+interface AnalysisLoadingProps {
+  currentPhase?: Phase | null;
+}
+
+export function AnalysisLoading({ currentPhase }: AnalysisLoadingProps) {
+  const [fallbackStep, setFallbackStep] = useState(0);
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setCurrentStep((prev) => (prev < STEPS.length - 1 ? prev + 1 : prev));
+      setFallbackStep((prev) => (prev < STEPS.length - 1 ? prev + 1 : prev));
     }, 2000);
     return () => clearInterval(interval);
   }, []);
+
+  const currentStep = currentPhase ? PHASE_TO_STEP[currentPhase] ?? 0 : fallbackStep;
 
   const getStepStatus = (index: number) => {
     if (index < currentStep) return "completed";

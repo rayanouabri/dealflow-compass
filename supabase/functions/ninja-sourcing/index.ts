@@ -27,8 +27,43 @@ interface BraveSearchResult {
   extra_snippets?: string[];
 }
 
-// Search using Brave Search API
-async function braveSearch(query: string, count: number = 5): Promise<BraveSearchResult[]> {
+async function serperSearch(query: string, count: number, apiKey: string): Promise<BraveSearchResult[]> {
+  try {
+    console.log(`[Serper] Searching: ${query.substring(0, 50)}...`);
+    const response = await fetch("https://google.serper.dev/search", {
+      method: "POST",
+      headers: {
+        "X-API-KEY": apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        q: query,
+        num: Math.min(count, 20),
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[Serper] Error ${response.status}: ${errorText.substring(0, 200)}`);
+      return [];
+    }
+
+    const data = await response.json();
+    const results = (data.organic || []).slice(0, count).map((r: any) => ({
+      title: r.title || "",
+      url: r.link || "",
+      description: r.snippet || "",
+      extra_snippets: [],
+    }));
+    console.log(`[Serper] Found ${results.length} results`);
+    return results;
+  } catch (error) {
+    console.error("[Serper] Failed:", error);
+    return [];
+  }
+}
+
+async function braveSearchFallback(query: string, count: number = 5): Promise<BraveSearchResult[]> {
   const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY");
   if (!BRAVE_API_KEY) {
     console.warn("BRAVE_API_KEY not configured - skipping web search");
@@ -37,7 +72,7 @@ async function braveSearch(query: string, count: number = 5): Promise<BraveSearc
 
   try {
     const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}&text_decorations=false&result_filter=web`;
-    
+
     const response = await fetch(url, {
       headers: {
         "Accept": "application/json",
@@ -61,6 +96,22 @@ async function braveSearch(query: string, count: number = 5): Promise<BraveSearc
     console.error("Brave Search failed:", error);
     return [];
   }
+}
+
+async function braveSearch(query: string, count: number = 5): Promise<BraveSearchResult[]> {
+  const SERPER_API_KEY = Deno.env.get("SERPER_API_KEY") || Deno.env.get("serper_api");
+  const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY");
+
+  if (SERPER_API_KEY) {
+    return serperSearch(query, count, SERPER_API_KEY);
+  }
+
+  if (BRAVE_API_KEY) {
+    return braveSearchFallback(query, count);
+  }
+
+  console.warn("No search API configured (SERPER_API_KEY or BRAVE_API_KEY)");
+  return [];
 }
 
 // 1. SOURCING PAR LES TALENTS (Signal RH)
@@ -200,10 +251,12 @@ serve(async (req) => {
       talentResults,
       ipResults,
       spinoffResults,
+      lookalikeResults,
     ] = await Promise.all([
       sourceByTalentSignals(sectors, geography),
       sourceByIP(sectors, geography),
       sourceByUniversitySpinoffs(sectors, geography),
+      fundName ? sourceByLookalike(fundName, geography) : Promise.resolve([]),
     ]);
 
     // Combine all results
@@ -211,6 +264,7 @@ serve(async (req) => {
       ...talentResults,
       ...ipResults,
       ...spinoffResults,
+      ...lookalikeResults,
     ];
 
     // Extract unique company names from results

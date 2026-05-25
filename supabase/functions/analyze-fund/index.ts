@@ -257,11 +257,14 @@ async function enrichStartupData(startup: any): Promise<any> {
   
   const combinedQuery = `${name} startup funding revenue ARR investors LinkedIn Crunchbase 2024`;
   const teamQuery = `${name} founders CEO team LinkedIn background`;
-  const combinedResults = await braveSearch(combinedQuery, 18);
+  const productQuery = `${name} product features pricing demo`;
+  const combinedResults = await braveSearch(combinedQuery, 16);
   await sleep(1200);
   const teamResults = await braveSearch(teamQuery, 10);
   await sleep(1200);
-  const allCombined = [...combinedResults, ...teamResults];
+  const productResults = await braveSearch(productQuery, 8);
+  await sleep(1200);
+  const allCombined = [...combinedResults, ...teamResults, ...productResults];
   
   // Séparer les résultats par type (dédupliquer par URL)
   const seen = new Set<string>();
@@ -717,7 +720,8 @@ function sanitizeSlideMetrics(slide: { metrics?: Record<string, unknown> }): voi
       continue;
     }
     const n = parseFloat(s.replace(/[^\d.,]/g, "").replace(",", "."));
-    if (!Number.isFinite(n)) {
+    if (!Number.isFinite(n) || n > 100) { // Reject if > 100 (hallucination)
+      if (n > 100) console.warn(`[Sanitize] Rejecting implausible score (>100) for ${key}: ${n}`);
       delete m[key];
       continue;
     }
@@ -734,7 +738,8 @@ function sanitizeSlideMetrics(slide: { metrics?: Record<string, unknown> }): voi
       continue;
     }
     const n = parseFloat(s.replace(/[^\d.,]/g, "").replace(",", "."));
-    if (!Number.isFinite(n)) {
+    if (!Number.isFinite(n) || n > 100) { // Reject if > 100 (hallucination)
+      if (n > 100) console.warn(`[Sanitize] Rejecting implausible score (>100) for ${key}: ${n}`);
       delete m[key];
       continue;
     }
@@ -764,7 +769,7 @@ function sanitizeSlideMetrics(slide: { metrics?: Record<string, unknown> }): voi
     const keyUpper = key.toUpperCase();
     const s = String(value).trim();
     
-    // Team size - doit être un nombre entre 1 et 50000 (pas de millions!)
+    // Team size - doit être un nombre entre 1 et 1000 (pas de millions, pas > 1000!)
     if (keyUpper.includes('TEAM') && (keyUpper.includes('SIZE') || keyUpper.includes('EMPLOYEES') || keyUpper.includes('HEADCOUNT'))) {
       if (looksLikeMoney(value)) {
         delete m[key];
@@ -776,7 +781,8 @@ function sanitizeSlideMetrics(slide: { metrics?: Record<string, unknown> }): voi
         continue;
       }
       const n = parseFloat(s.replace(/[^\d.,]/g, "").replace(",", "."));
-      if (!Number.isFinite(n) || n <= 0 || n > 50000) {
+      if (!Number.isFinite(n) || n <= 0 || n > 1000) {
+        if (n > 1000) console.warn(`[Sanitize] Rejecting implausible team size: ${n}`);
         delete m[key];
         continue;
       }
@@ -1004,7 +1010,9 @@ serve((req) => {
 
       // ——— Boucle IA ↔ recherche (limites réduites pour éviter 546) ———
       let enrichedUserPrompt = userPrompt;
-      const MAX_GAP_QUERIES = 4;
+      const contextSize = userPrompt.length;
+      // Adaptive gap queries: if context already > 50k chars, skip gap detection
+      const MAX_GAP_QUERIES = contextSize > 50000 ? 0 : 4;
       const MAX_EXTRA_CONTEXT_CHARS = 2800;
       const MAX_EXTRA_CONTEXT_CHARS_ROUND2 = 2000;
       const GAP_QUERY_MIN_LEN = 8;
@@ -1959,8 +1967,8 @@ RÈGLES:
       await sleep(BATCH_DELAY_MS);
     }
 
-    console.log(`[Brave] Recherche 1: ${mainKeyword} ${stage} startup ${geoTerm}`);
-    const results1 = await braveSearch(`${mainKeyword} ${stage} startup ${geoTerm} 2024 2025 funding`, RESULTS_PER_QUERY);
+    console.log(`[Brave] Recherche 1: ${mainKeyword} ${stage} startup ${geoTerm} funding`);
+    const results1 = await braveSearch(`${mainKeyword} ${stage} startup ${geoTerm} 2024 2025 ("raised" OR "seed round" OR "funding round")`, RESULTS_PER_QUERY);
     startupSearchResults.push(...results1);
     await sleep(BATCH_DELAY_MS);
 
@@ -1989,19 +1997,24 @@ RÈGLES:
       startupSearchResults.push(...results3);
       await sleep(BATCH_DELAY_MS);
 
-      console.log(`[Brave] Recherche 4: ${mainKeyword} founders traction`);
-      const results4 = await braveSearch(`${mainKeyword} ${stage} startup founders CEO team ${geoTerm} 2024`, RESULTS_PER_QUERY);
+      console.log(`[Brave] Recherche 4: ${mainKeyword} founders team LinkedIn`);
+      const results4 = await braveSearch(`site:linkedin.com/company ${mainKeyword} OR site:linkedin.com/in ${mainKeyword} ${geoTerm} founder CEO 2024`, RESULTS_PER_QUERY);
       startupSearchResults.push(...results4);
       await sleep(BATCH_DELAY_MS);
 
-      console.log(`[Brave] Recherche 5: ${mainKeyword} traction metrics`);
-      const results5 = await braveSearch(`${mainKeyword} startup traction revenue growth metrics ${geoTerm} 2024`, RESULTS_PER_QUERY);
+      console.log(`[Brave] Recherche 5: ${mainKeyword} product features demo`);
+      const results5 = await braveSearch(`${mainKeyword} startup product features pricing demo ${geoTerm} 2024 2025`, RESULTS_PER_QUERY);
+      startupSearchResults.push(...results5);
+      await sleep(BATCH_DELAY_MS);
+
+      console.log(`[Brave] Recherche 6: ${mainKeyword} traction metrics`);
+      const results6 = await braveSearch(`${mainKeyword} startup traction revenue growth metrics ${geoTerm} 2024`, RESULTS_PER_QUERY);
       startupSearchResults.push(...results5);
 
       if (startupSearchResults.length < 20) {
         await sleep(BATCH_DELAY_MS);
-        const results6 = await braveSearch(`${mainSector} company ${geoTerm} innovative 2024`, 10);
-        startupSearchResults.push(...results6);
+        const resultsFallback = await braveSearch(`${mainSector} company ${geoTerm} innovative 2024`, 10);
+        startupSearchResults.push(...resultsFallback);
       }
 
       const deepQueries = [

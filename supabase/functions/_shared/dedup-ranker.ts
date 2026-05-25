@@ -11,8 +11,17 @@ export interface SourcingCandidate {
   score: number;
 }
 
-// Normalise une URL pour la déduplication
-function normalizeUrl(url: string): string {
+const SIGNAL_WEIGHTS: Record<string, number> = {
+  ip: 4,
+  spinoff: 3,
+  university: 3,
+  talent: 3,
+  incubator: 2,
+  grant: 2,
+  press: 1,
+};
+
+export function normalizeUrl(url: string): string {
   try {
     const u = new URL(url.toLowerCase());
     // Retire www. et le slash final
@@ -22,13 +31,13 @@ function normalizeUrl(url: string): string {
   }
 }
 
-// Extrait un nom d'entreprise plausible depuis le titre d'un résultat
-function extractCompanyName(title: string, url: string): string {
+export function extractCompanyName(title: string, url: string): string {
   // Supprime les suffixes courants de titres
   let name = title
     .replace(/\s*[|\-–—]\s*.+$/, "")  // "Acme - Homepage" → "Acme"
     .replace(/\s*:.*$/, "")            // "Acme: About" → "Acme"
     .replace(/\s+\|\s+.*$/, "")
+    .replace(/["«»]/g, "")             // Guillemets français
     .trim();
 
   if (name.length > 60 || name.length < 2) {
@@ -37,7 +46,8 @@ function extractCompanyName(title: string, url: string): string {
       name = new URL(url).hostname
         .replace(/^www\./, "")
         .split(".")[0]
-        .replace(/-/g, " ");
+        .replace(/-/g, " ")
+        .replace(/([a-z])([A-Z])/g, "$1 $2"); // camelCase → spaced
     } catch {
       name = url;
     }
@@ -81,10 +91,24 @@ export function deduplicateAndRank(
     }
   }
 
-  // Score = diversité de catégories × nombre de mentions
+  // Scoring pondéré : sum(signal_weights) × min(mentionCount, 15)
+  // Filtre bruit : skip si mentionCount < 2 ET categories < 2
+  const candidates: SourcingCandidate[] = [];
   for (const c of byUrl.values()) {
-    c.score = c.categories.size * c.mentionCount;
+    // Filter noise
+    if (c.mentionCount < 2 && c.categories.size < 2) {
+      continue;
+    }
+
+    // Weighted score
+    let weight = 0;
+    for (const cat of c.categories) {
+      weight += (SIGNAL_WEIGHTS[cat] ?? 1);
+    }
+    const cappedMentions = Math.min(c.mentionCount, 15); // Diminishing returns
+    c.score = weight * cappedMentions;
+    candidates.push(c);
   }
 
-  return Array.from(byUrl.values()).sort((a, b) => b.score - a.score);
+  return candidates.sort((a, b) => b.score - a.score);
 }

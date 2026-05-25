@@ -40,6 +40,7 @@ export default function Analyse() {
   const [showPaywall, setShowPaywall] = useState(false);
   const [restoredState, setRestoredState] = useState<AnalyseState | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [currentPhase, setCurrentPhase] = useState<"search_fund" | "search_market" | "search_startups" | "pick" | null>(null);
 
   const analyseState = (state as AnalyseState | null) ?? restoredState;
 
@@ -111,6 +112,7 @@ export default function Analyse() {
         if (!supabaseUrl || !supabaseKey) throw new Error("Configuration Supabase manquante.");
 
         const runPhase = async (phase: string, body: object) => {
+          setCurrentPhase(phase as any);
           const ctrl = new AbortController();
           const t = setTimeout(() => ctrl.abort(), TIMEOUT_PHASE_MS);
           const res = await fetch(`${supabaseUrl}/functions/v1/analyze-fund`, {
@@ -139,6 +141,7 @@ export default function Analyse() {
         await runPhase("search_startups", { phase: "search_startups", jobId });
 
         // Phase pick : sélectionne la meilleure startup (mini appel IA, sans générer de rapport)
+        setCurrentPhase("pick");
         const ctrlPick = new AbortController();
         const tPick = setTimeout(() => ctrlPick.abort(), TIMEOUT_PHASE_MS);
         const resPick = await fetch(`${supabaseUrl}/functions/v1/analyze-fund`, {
@@ -214,7 +217,7 @@ export default function Analyse() {
           onLogin={handleLogin}
           onSignOut={signOut}
         >
-          <AnalysisLoading />
+          <AnalysisLoading currentPhase={currentPhase} />
         </AppLayout>
         <AuthDialog open={showAuthDialog} onOpenChange={setShowAuthDialog} defaultView="login" onAuthSuccess={() => setShowAuthDialog(false)} />
         <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} trialRemaining={trialRemaining} />

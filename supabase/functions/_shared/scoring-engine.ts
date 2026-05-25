@@ -21,6 +21,21 @@ export const DEFAULT_WEIGHTS: ScoringWeights = {
   competitivePosition: 0.08,
 };
 
+export function buildContextualWeights(geography: string): ScoringWeights {
+  const isFrench = /france|french|paris|fr\b/i.test(geography);
+  if (isFrench) return DEFAULT_WEIGHTS;
+  // For non-French geographies, redistribute frenchEcosystem bonus to thesisFit and teamQuality
+  return {
+    thesisFit: 0.40,
+    signalDiversity: 0.15,
+    sourceCorroboration: 0.10,
+    frenchEcosystem: 0,
+    timing: 0.10,
+    teamQuality: 0.17,
+    competitivePosition: 0.08,
+  };
+}
+
 export interface CriteriaScores {
   thesisFit: number;
   signalDiversity: number;
