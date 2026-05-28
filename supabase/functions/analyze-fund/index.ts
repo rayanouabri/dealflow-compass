@@ -104,20 +104,26 @@ function validateAndCleanUrl(url: string): string | null {
 }
 
 // Search using Serper.dev API (Google Search) - 2500 free searches/month
-// Fallback to Brave Search if Serper not configured
+// Falls back to Brave Search if Serper fails (out of credits, network error, etc.)
 async function braveSearch(query: string, count: number = 10, retries: number = 2): Promise<BraveSearchResult[]> {
   const SERPER_API_KEY = Deno.env.get("SERPER_API_KEY") || Deno.env.get("serper_api");
   const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY");
-  
-  // Préférer Serper (2500/mois gratuit) à Brave (2000/mois, 1 req/sec)
+
   if (SERPER_API_KEY) {
-    return serperSearch(query, count, SERPER_API_KEY);
+    const results = await serperSearch(query, count, SERPER_API_KEY);
+    if (results.length > 0) return results;
+    // Serper returned empty (likely out of credits or rate-limited) — fall through to Brave
+    if (BRAVE_API_KEY) {
+      console.warn("[Search] Serper returned 0 results, falling back to Brave");
+      return braveSearchFallback(query, count, BRAVE_API_KEY, retries);
+    }
+    return results;
   }
-  
+
   if (BRAVE_API_KEY) {
     return braveSearchFallback(query, count, BRAVE_API_KEY, retries);
   }
-  
+
   console.warn("Aucune API de recherche configurée (SERPER_API_KEY ou BRAVE_API_KEY)");
   return [];
 }
@@ -1268,37 +1274,60 @@ ${extraContext2}`;
       if (!pickContext) {
         return new Response(JSON.stringify({ error: "Contexte de sourcing vide — relancer une analyse" }), { status: 400, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
       }
-      // Phase pick is lightweight — always prefer Gemini direct API (no OAuth overhead)
-      // Falls back to Vertex only if no Gemini key is available
+      // Phase pick: respect AI_PROVIDER env; build both configs when possible to enable fallback on 429
       const GEMINI_API_KEY_P = Deno.env.get("GEMINI_KEY_2") || Deno.env.get("GEMINI_API_KEY");
       const GEMINI_MODEL_P = Deno.env.get("GEMINI_MODEL") || "gemini-2.0-flash";
-      const AI_PROVIDER_P = GEMINI_API_KEY_P ? "gemini" : (Deno.env.get("AI_PROVIDER") || "gemini").toLowerCase();
       const VERTEX_AI_PROJECT_P = Deno.env.get("VERTEX_AI_PROJECT_ID");
       const VERTEX_AI_CREDENTIALS_P = Deno.env.get("VERTEX_AI_CREDENTIALS");
       const VERTEX_AI_MODEL_P = Deno.env.get("VERTEX_AI_MODEL") || "gemini-2.0-flash";
       const VERTEX_AI_LOCATION_P = Deno.env.get("VERTEX_AI_LOCATION") || "us-central1";
+      const AI_PROVIDER_ENV = (Deno.env.get("AI_PROVIDER") || "gemini").toLowerCase();
+      // Prefer the env-configured provider; if it's not available, pick whichever is
+      let AI_PROVIDER_P: "gemini" | "vertex";
+      if (AI_PROVIDER_ENV === "vertex" && VERTEX_AI_PROJECT_P && VERTEX_AI_CREDENTIALS_P) {
+        AI_PROVIDER_P = "vertex";
+      } else if (GEMINI_API_KEY_P) {
+        AI_PROVIDER_P = "gemini";
+      } else if (VERTEX_AI_PROJECT_P && VERTEX_AI_CREDENTIALS_P) {
+        AI_PROVIDER_P = "vertex";
+      } else {
+        return new Response(JSON.stringify({ error: "Aucun provider IA configuré (phase pick)" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+      }
       console.log(`[pick] AI_PROVIDER resolved to: ${AI_PROVIDER_P}, GEMINI_KEY present: ${!!GEMINI_API_KEY_P}, VERTEX creds present: ${!!VERTEX_AI_CREDENTIALS_P}`);
+
+      // Helper: build Vertex AI config (token + URL) on demand
+      const buildVertexConfig = async (): Promise<{ url: string; headers: Record<string, string> } | null> => {
+        if (!VERTEX_AI_PROJECT_P || !VERTEX_AI_CREDENTIALS_P) return null;
+        try {
+          const credsP = typeof VERTEX_AI_CREDENTIALS_P === "string" ? JSON.parse(VERTEX_AI_CREDENTIALS_P) : VERTEX_AI_CREDENTIALS_P;
+          const b64P = (d: Uint8Array | string) => { const b = typeof d === "string" ? new TextEncoder().encode(d) : d; return btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, ""); };
+          const nowP = Math.floor(Date.now() / 1000);
+          const msgP = `${b64P(JSON.stringify({ alg: "RS256", typ: "JWT" }))}.${b64P(JSON.stringify({ iss: credsP.client_email, sub: credsP.client_email, aud: "https://oauth2.googleapis.com/token", iat: nowP, exp: nowP + 3600, scope: "https://www.googleapis.com/auth/cloud-platform" }))}`;
+          const pemP = credsP.private_key.replace(/\\n/g, "\n").replace(/-----BEGIN PRIVATE KEY-----/, "").replace(/-----END PRIVATE KEY-----/, "").replace(/\s/g, "");
+          const keyBufP = Uint8Array.from(atob(pemP), (c: string) => c.charCodeAt(0));
+          const privKeyP = await crypto.subtle.importKey("pkcs8", keyBufP, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
+          const sigP = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", privKeyP, new TextEncoder().encode(msgP));
+          const jwtP = `${msgP}.${b64P(new Uint8Array(sigP))}`;
+          const trP = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: jwtP }) });
+          if (!trP.ok) return null;
+          const tokenP = (await trP.json()).access_token;
+          return {
+            url: `https://${VERTEX_AI_LOCATION_P}-aiplatform.googleapis.com/v1/projects/${VERTEX_AI_PROJECT_P}/locations/${VERTEX_AI_LOCATION_P}/publishers/google/models/${VERTEX_AI_MODEL_P}:generateContent`,
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${tokenP}` },
+          };
+        } catch (vErr) {
+          console.error("[pick] Vertex config build failed:", vErr);
+          return null;
+        }
+      };
 
       let aiUrlP: string;
       let aiHeadersP: Record<string, string>;
-      if (AI_PROVIDER_P === "vertex") {
-        if (!VERTEX_AI_PROJECT_P || !VERTEX_AI_CREDENTIALS_P) {
-          return new Response(JSON.stringify({ error: "Vertex AI non configuré (phase pick)" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
-        }
-        const credsP = typeof VERTEX_AI_CREDENTIALS_P === "string" ? JSON.parse(VERTEX_AI_CREDENTIALS_P) : VERTEX_AI_CREDENTIALS_P;
-        const b64P = (d: Uint8Array | string) => { const b = typeof d === "string" ? new TextEncoder().encode(d) : d; return btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, ""); };
-        const nowP = Math.floor(Date.now() / 1000);
-        const msgP = `${b64P(JSON.stringify({ alg: "RS256", typ: "JWT" }))}.${b64P(JSON.stringify({ iss: credsP.client_email, sub: credsP.client_email, aud: "https://oauth2.googleapis.com/token", iat: nowP, exp: nowP + 3600, scope: "https://www.googleapis.com/auth/cloud-platform" }))}`;
-        const pemP = credsP.private_key.replace(/\\n/g, "\n").replace(/-----BEGIN PRIVATE KEY-----/, "").replace(/-----END PRIVATE KEY-----/, "").replace(/\s/g, "");
-        const keyBufP = Uint8Array.from(atob(pemP), (c: string) => c.charCodeAt(0));
-        const privKeyP = await crypto.subtle.importKey("pkcs8", keyBufP, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
-        const sigP = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", privKeyP, new TextEncoder().encode(msgP));
-        const jwtP = `${msgP}.${b64P(new Uint8Array(sigP))}`;
-        const trP = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: jwtP }) });
-        if (!trP.ok) return new Response(JSON.stringify({ error: "Vertex token failed (phase pick)" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
-        const tokenP = (await trP.json()).access_token;
-        aiUrlP = `https://${VERTEX_AI_LOCATION_P}-aiplatform.googleapis.com/v1/projects/${VERTEX_AI_PROJECT_P}/locations/${VERTEX_AI_LOCATION_P}/publishers/google/models/${VERTEX_AI_MODEL_P}:generateContent`;
-        aiHeadersP = { "Content-Type": "application/json", "Authorization": `Bearer ${tokenP}` };
+      let currentProvider: "gemini" | "vertex" = AI_PROVIDER_P;
+      if (currentProvider === "vertex") {
+        const v = await buildVertexConfig();
+        if (!v) return new Response(JSON.stringify({ error: "Vertex AI non configuré (phase pick)" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+        aiUrlP = v.url; aiHeadersP = v.headers;
       } else {
         if (!GEMINI_API_KEY_P) return new Response(JSON.stringify({ error: "GEMINI_API_KEY requis (phase pick)" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
         aiUrlP = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL_P}:generateContent?key=${GEMINI_API_KEY_P}`;
@@ -1339,22 +1368,34 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
 RÉSULTATS DE SOURCING :
 ${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
 
-      // First attempt: with responseMimeType for Gemini; second attempt: without it (some models block JSON mode)
+      // Up to 3 attempts. On Gemini quota/rate errors (429/403), switch to Vertex AI if available.
       let pickText = "";
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const pickBody = AI_PROVIDER_P === "vertex"
+      let switchedToVertex = currentProvider === "vertex";
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const pickBody = currentProvider === "vertex"
           ? { contents: [{ role: "user", parts: [{ text: pickPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 300 } }
           : attempt === 0
             ? { contents: [{ parts: [{ text: pickPrompt }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 400, responseMimeType: "application/json" } }
             : { contents: [{ parts: [{ text: pickPrompt }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 400 } };
         try {
-          console.log(`[pick] Appel IA attempt ${attempt + 1}, provider=${AI_PROVIDER_P}, jsonMode=${attempt === 0}, context length=${pickContext.length}`);
+          console.log(`[pick] Appel IA attempt ${attempt + 1}, provider=${currentProvider}, context length=${pickContext.length}`);
           const pickRes = await fetch(aiUrlP, { method: "POST", headers: aiHeadersP, body: JSON.stringify(pickBody) });
           if (!pickRes.ok) {
             const errBody = await pickRes.text();
             console.error(`[pick] IA HTTP ${pickRes.status}: ${errBody.substring(0, 300)}`);
-            if (attempt === 0) { await new Promise(r => setTimeout(r, 2000)); continue; }
-            return new Response(JSON.stringify({ error: `IA indisponible pour phase pick (${pickRes.status})` }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+            // On quota/rate-limit from Gemini, switch to Vertex AI and retry
+            if ((pickRes.status === 429 || pickRes.status === 403) && currentProvider === "gemini" && !switchedToVertex) {
+              const v = await buildVertexConfig();
+              if (v) {
+                console.warn("[pick] Gemini quota exceeded — switching to Vertex AI");
+                aiUrlP = v.url; aiHeadersP = v.headers; currentProvider = "vertex"; switchedToVertex = true;
+                continue;
+              }
+            }
+            if (attempt < 2) { await new Promise(r => setTimeout(r, 2000)); continue; }
+            // All AI attempts failed (quota/billing) — fall through to manual extraction from search results
+            console.warn(`[pick] IA indisponible (${pickRes.status}) après tous les essais — bascule sur extraction manuelle`);
+            break;
           }
           const pickData = await pickRes.json();
           console.log(`[pick] IA response keys: ${Object.keys(pickData).join(",")}, candidates: ${pickData.candidates?.length ?? 0}, finishReason: ${pickData.candidates?.[0]?.finishReason ?? "N/A"}`);
@@ -1362,10 +1403,10 @@ ${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
           if (pickText) break;
           // If blocked by safety or empty, retry
           console.warn(`[pick] Réponse IA vide (attempt ${attempt + 1}), finishReason: ${pickData.candidates?.[0]?.finishReason}`);
-          if (attempt === 0) await new Promise(r => setTimeout(r, 1500));
+          if (attempt < 2) await new Promise(r => setTimeout(r, 1500));
         } catch (fetchErr) {
           console.error(`[pick] Fetch error attempt ${attempt + 1}:`, fetchErr);
-          if (attempt === 0) await new Promise(r => setTimeout(r, 2000));
+          if (attempt < 2) await new Promise(r => setTimeout(r, 2000));
         }
       }
 
@@ -1383,23 +1424,48 @@ ${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
         }
       }
 
-      // Fallback: extract first real startup from search context if AI failed
+      // Fallback: pick the best real startup from search context when AI is unavailable.
+      // Scores candidates so we favour company homepages over blog posts / listicles.
       if (!startup.name && pickContext) {
-        console.warn("[pick] Fallback: extraction manuelle depuis pickContext");
-        const NEWS_DOMAINS = ["google.com","youtube.com","facebook.com","twitter.com","x.com","reddit.com","wikipedia.org","crunchbase.com/lists","news.crunchbase.com","techcrunch.com","bloomberg.com","reuters.com","forbes.com","wsj.com","cnbc.com","maddyness.com","lesechos.fr","lemonde.fr","bfmtv.com","usine-digitale.fr","venturebeat.com","theverge.com","wired.com","sifted.eu","pitchbook.com","cbinsights.com","dealroom.co","linkedin.com","github.com"];
+        console.warn("[pick] Fallback: extraction manuelle (scoring) depuis pickContext");
+        const NEWS_DOMAINS = ["google.com","youtube.com","facebook.com","twitter.com","x.com","reddit.com","wikipedia.org","crunchbase.com","news.crunchbase.com","techcrunch.com","bloomberg.com","reuters.com","forbes.com","wsj.com","cnbc.com","maddyness.com","lesechos.fr","lemonde.fr","bfmtv.com","usine-digitale.fr","venturebeat.com","theverge.com","wired.com","sifted.eu","pitchbook.com","cbinsights.com","dealroom.co","linkedin.com","github.com","medium.com","substack.com","startup-book.com","welcometothejungle.com","glassdoor.com","indeed.com","wellfound.com","angel.co","producthunt.com","f6s.com","eu-startups.com","tracxn.com"];
         const isNewsDomain = (url: string) => NEWS_DOMAINS.some(d => url.includes(d));
+        // URL paths that signal an article/listicle rather than a company homepage
+        const ARTICLE_PATH = /\/(blog|posts?|article|news|20\d{2}|guide|resources?|category|tag|wiki|search)\//i;
+        // Title phrases that signal editorial content, not a startup name
+        const ARTICLE_TITLE = /(continued|challenges|how to|guide|top \d+|best \d+|liste|classement|meilleur|ultimate|introduction|overview|what is|pourquoi|comment|\d+ startups?)/i;
         const lines = pickContext.split("\n").filter(l => l.includes("URL:") || l.includes("http"));
+        let best: { name: string; website: string; description: string } | null = null;
+        let bestScore = -Infinity;
         for (const line of lines) {
           const urlMatch = line.match(/https?:\/\/[^\s|,]+/);
           const title = line.split(":")[0]?.trim();
-          if (title && title.length > 3 && title.length < 80 && urlMatch) {
-            const url = urlMatch[0].replace(/[.,;:!?)}\]]+$/, "");
-            if (!isNewsDomain(url)) {
-              startup = { name: title, website: url, description: line.split("|")[0]?.replace(title + ":", "").trim().substring(0, 200) || "" };
-              console.log(`[pick] Fallback startup: ${startup.name} / ${startup.website}`);
-              break;
-            }
+          if (!title || title.length <= 3 || title.length >= 80 || !urlMatch) continue;
+          const url = urlMatch[0].replace(/[.,;:!?)}\]]+$/, "");
+          if (isNewsDomain(url)) continue;
+          let score = 0;
+          // Prefer homepage-like URLs (root or very short path)
+          try {
+            const u = new URL(url);
+            const pathDepth = u.pathname.split("/").filter(Boolean).length;
+            if (pathDepth === 0) score += 5;
+            else if (pathDepth === 1) score += 2;
+            else score -= pathDepth; // deeper paths look like articles
+            if (ARTICLE_PATH.test(u.pathname)) score -= 6;
+            // .com/.io/.ai/.co company TLDs slight boost
+            if (/\.(io|ai|co|tech|app)$/.test(u.hostname)) score += 1;
+          } catch { /* ignore parse errors */ }
+          if (ARTICLE_TITLE.test(title)) score -= 6;
+          // Short, capitalized names look like company names
+          if (/^[A-Z][A-Za-z0-9]+$/.test(title.split(/\s/)[0])) score += 1;
+          if (score > bestScore) {
+            bestScore = score;
+            best = { name: title, website: url, description: line.split("|")[0]?.replace(title + ":", "").trim().substring(0, 200) || "" };
           }
+        }
+        if (best) {
+          startup = best;
+          console.log(`[pick] Fallback startup (score ${bestScore}): ${startup.name} / ${startup.website}`);
         }
       }
 
