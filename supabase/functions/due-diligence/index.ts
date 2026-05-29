@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { callDigitalOceanAgent, formatDueDiligencePrompt } from "../_shared/digitalocean-agent.ts";
+import { getCachedSearch, setCachedSearch } from "../_shared/search-cache.ts";
 
 const ALLOWED_ORIGINS = [
   "https://ai-vc-sourcing.vercel.app",
@@ -76,17 +77,35 @@ function validateAndCleanUrl(url: string): string | null {
 // Search using Serper.dev API (Google Search) - 2500 free searches/month
 // Fallback to Brave Search if Serper not configured
 async function braveSearch(query: string, count: number = 20, retries: number = 2): Promise<BraveSearchResult[]> {
+  const cached = await getCachedSearch<BraveSearchResult>(query, count);
+  if (cached) {
+    console.log(`[Search] cache HIT (${cached.length}) for: ${query.substring(0, 50)}`);
+    return cached;
+  }
+  const results = await braveSearchUncached(query, count, retries);
+  if (results.length > 0) await setCachedSearch(query, count, results);
+  return results;
+}
+
+async function braveSearchUncached(query: string, count: number, retries: number): Promise<BraveSearchResult[]> {
   const SERPER_API_KEY = Deno.env.get("SERPER_API_KEY") || Deno.env.get("serper_api");
   const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY");
-  
+
   if (SERPER_API_KEY) {
-    return serperSearch(query, count, SERPER_API_KEY);
+    const results = await serperSearch(query, count, SERPER_API_KEY);
+    if (results.length > 0) return results;
+    // Serper failed/empty (e.g. out of credits) — fall through to Brave
+    if (BRAVE_API_KEY) {
+      console.warn("[Search] Serper returned 0 results, falling back to Brave");
+      return braveSearchFallback(query, count, BRAVE_API_KEY, retries);
+    }
+    return results;
   }
-  
+
   if (BRAVE_API_KEY) {
     return braveSearchFallback(query, count, BRAVE_API_KEY, retries);
   }
-  
+
   console.warn("Aucune API de recherche configurée");
   return [];
 }

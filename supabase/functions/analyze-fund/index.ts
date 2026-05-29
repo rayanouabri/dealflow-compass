@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { callDigitalOceanAgent, formatSourcingPrompt } from "../_shared/digitalocean-agent.ts";
 import { buildWeakSignalQueries, filterByStage } from "../_shared/weak-signals.ts";
+import { getCachedSearch, setCachedSearch } from "../_shared/search-cache.ts";
 
 const ALLOWED_ORIGINS = [
   "https://ai-vc-sourcing.vercel.app",
@@ -105,7 +106,20 @@ function validateAndCleanUrl(url: string): string | null {
 
 // Search using Serper.dev API (Google Search) - 2500 free searches/month
 // Falls back to Brave Search if Serper fails (out of credits, network error, etc.)
+// Results are cached (search_cache table, 14d TTL) to avoid paying for repeat queries.
 async function braveSearch(query: string, count: number = 10, retries: number = 2): Promise<BraveSearchResult[]> {
+  const cached = await getCachedSearch<BraveSearchResult>(query, count);
+  if (cached) {
+    console.log(`[Search] cache HIT (${cached.length}) for: ${query.substring(0, 50)}`);
+    return cached;
+  }
+
+  const results = await braveSearchUncached(query, count, retries);
+  if (results.length > 0) await setCachedSearch(query, count, results);
+  return results;
+}
+
+async function braveSearchUncached(query: string, count: number, retries: number): Promise<BraveSearchResult[]> {
   const SERPER_API_KEY = Deno.env.get("SERPER_API_KEY") || Deno.env.get("serper_api");
   const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY");
 
@@ -2084,15 +2098,24 @@ RÈGLES:
         startupSearchResults.push(...resultsFallback);
       }
 
-      const deepQueries = [
-        `${primarySector} news 2024 2025 trends ${geoTerm}`,
-        `${primarySector} competitors landscape 2024 ${geoTerm}`,
-        `${mainKeyword} LinkedIn Crunchbase company profile ${geoTerm}`,
-      ];
-      for (const q of deepQueries) {
-        const results = await braveSearch(q, 6);
-        startupSearchResults.push(...results);
-        await sleep(1100);
+      // Generic "deep" queries are the lowest-value layer (news/competitors/profiles) and
+      // overlap heavily with the base searches. Only run them when the base searches did
+      // NOT already yield abundant unique results — saves ~3 searches per analysis with no
+      // quality loss when data is already plentiful.
+      const uniqueSoFar = () => new Set(startupSearchResults.map(r => r.url).filter(Boolean)).size;
+      if (uniqueSoFar() < 40) {
+        const deepQueries = [
+          `${primarySector} news 2024 2025 trends ${geoTerm}`,
+          `${primarySector} competitors landscape 2024 ${geoTerm}`,
+          `${mainKeyword} LinkedIn Crunchbase company profile ${geoTerm}`,
+        ];
+        for (const q of deepQueries) {
+          const results = await braveSearch(q, 8);
+          startupSearchResults.push(...results);
+          await sleep(1100);
+        }
+      } else {
+        console.log(`[Brave] Deep queries skipped — ${uniqueSoFar()} unique results already collected`);
       }
 
       // === SIGNAUX PRÉCOCES : BREVETS, INCUBATEURS, SPIN-OFFS ===
@@ -2192,9 +2215,14 @@ RÈGLES:
 
         const weakSignalResults: BraveSearchResult[] = [];
 
-        // Limiter à 2 requêtes par catégorie pour rester dans le budget
+        // Weak signals are a core quality feature, so always cover all 6 categories.
+        // But the 2nd query per category mostly surfaces overlap — only run it when we
+        // still need more data. Abundant base data => 1 query/category (6 vs 12 searches).
+        const abundant = new Set(startupSearchResults.map(r => r.url).filter(Boolean)).size >= 60;
+        const queriesPerGroup = abundant ? 1 : 2;
+        if (abundant) console.log("[Weak Signals] Abundant base data — 1 query/category");
         for (const group of filteredWeakGroups.slice(0, 6)) {
-          const selectedQueries = group.queries.slice(0, 2);
+          const selectedQueries = group.queries.slice(0, queriesPerGroup);
           for (const query of selectedQueries) {
             const results = await braveSearch(query, group.resultsPerQuery);
             weakSignalResults.push(...results);
