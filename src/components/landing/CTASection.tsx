@@ -21,43 +21,47 @@ export function CTASection({ onStartTrial }: CTASectionProps) {
         >
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/20 border border-primary/40 mb-8 backdrop-blur-sm glow-ai-vc">
             <Sparkles className="w-4 h-4 text-primary" />
-            <span className="text-sm font-medium text-primary">Rejoignez-nous</span>
+            <span className="text-sm font-medium text-primary">Premier deal en 5 minutes</span>
           </div>
-          
+
           <h2 className="text-3xl md:text-5xl lg:text-6xl font-bold mb-6 text-foreground">
-            Prêt à automatiser votre
-            <span className="block text-gradient-ai-vc mt-2 drop-shadow-[0_0_20px_rgba(48,100%,55%,0.3)]">sourcing et due diligence ?</span>
+            Arrêtez de scroller LinkedIn.
+            <span className="block text-gradient-ai-vc mt-2 drop-shadow-[0_0_20px_rgba(48,100%,55%,0.3)]">Laissez l'IA vous trouver le deal.</span>
           </h2>
-          
+
           <p className="text-lg text-muted-foreground mb-10 max-w-xl mx-auto">
-            Faites votre première analyse de startup gratuite en quelques minutes. 
-            Sourcing IA et due diligence complète inclus.
+            Entrez le nom de votre fonds. Recevez une startup alignée à votre thèse + son rapport de due diligence sourcé.
+            <span className="block mt-1 text-primary font-medium">5 essais gratuits, sans carte bancaire.</span>
           </p>
-          
+
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Button 
-              size="lg" 
+            <Button
+              size="lg"
               onClick={onStartTrial}
               className="gap-2 px-10 h-14 text-lg bg-primary hover:bg-primary/90 text-primary-foreground glow-ai-vc shadow-[0_0_40px_rgba(48,100%,55%,0.5)] group"
             >
               <Zap className="w-5 h-5" />
-              Commencer maintenant
+              Lancer mon premier sourcing
               <ArrowRight className="w-5 h-5 transition-transform group-hover:translate-x-1" />
             </Button>
           </div>
-          
-          <div className="flex items-center justify-center gap-6 mt-8 text-sm text-muted-foreground">
+
+          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 mt-8 text-sm text-muted-foreground">
             <span className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-success" />
-              3 analyses de startups gratuites
+              5 analyses offertes
             </span>
             <span className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-success" />
-              Due diligence incluse
+              Due diligence sourcée incluse
             </span>
             <span className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-success" />
-              Résultats en quelques minutes
+              Données hébergées en EU
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-success" />
+              Pas d'entraînement sur vos deals
             </span>
           </div>
         </motion.div>

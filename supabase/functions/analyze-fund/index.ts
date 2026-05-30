@@ -998,7 +998,8 @@ serve((req) => {
           headers: { ...corsHeaders(req), "Content-Type": "application/json" },
         });
       }
-      const AI_PROVIDER_A = (Deno.env.get("AI_PROVIDER") || "gemini").toLowerCase();
+      // Hardcoded Gemini — Vertex disabled per user choice (AI_PROVIDER env var ignored)
+      const AI_PROVIDER_A = "gemini";
       const GEMINI_API_KEY_A = Deno.env.get("GEMINI_KEY_2") || Deno.env.get("GEMINI_API_KEY");
       const VERTEX_AI_PROJECT_A = Deno.env.get("VERTEX_AI_PROJECT_ID");
       const VERTEX_AI_CREDENTIALS_A = Deno.env.get("VERTEX_AI_CREDENTIALS");
@@ -1288,65 +1289,16 @@ ${extraContext2}`;
       if (!pickContext) {
         return new Response(JSON.stringify({ error: "Contexte de sourcing vide — relancer une analyse" }), { status: 400, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
       }
-      // Phase pick: respect AI_PROVIDER env; build both configs when possible to enable fallback on 429
+      // Phase pick: Gemini direct only (Vertex disabled per user choice).
+      // On Gemini failure we fall through to the heuristic extraction below — no Vertex fallback.
       const GEMINI_API_KEY_P = Deno.env.get("GEMINI_KEY_2") || Deno.env.get("GEMINI_API_KEY");
       const GEMINI_MODEL_P = Deno.env.get("GEMINI_MODEL") || "gemini-2.0-flash";
-      const VERTEX_AI_PROJECT_P = Deno.env.get("VERTEX_AI_PROJECT_ID");
-      const VERTEX_AI_CREDENTIALS_P = Deno.env.get("VERTEX_AI_CREDENTIALS");
-      const VERTEX_AI_MODEL_P = Deno.env.get("VERTEX_AI_MODEL") || "gemini-2.0-flash";
-      const VERTEX_AI_LOCATION_P = Deno.env.get("VERTEX_AI_LOCATION") || "us-central1";
-      const AI_PROVIDER_ENV = (Deno.env.get("AI_PROVIDER") || "gemini").toLowerCase();
-      // Prefer the env-configured provider; if it's not available, pick whichever is
-      let AI_PROVIDER_P: "gemini" | "vertex";
-      if (AI_PROVIDER_ENV === "vertex" && VERTEX_AI_PROJECT_P && VERTEX_AI_CREDENTIALS_P) {
-        AI_PROVIDER_P = "vertex";
-      } else if (GEMINI_API_KEY_P) {
-        AI_PROVIDER_P = "gemini";
-      } else if (VERTEX_AI_PROJECT_P && VERTEX_AI_CREDENTIALS_P) {
-        AI_PROVIDER_P = "vertex";
-      } else {
-        return new Response(JSON.stringify({ error: "Aucun provider IA configuré (phase pick)" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
+      if (!GEMINI_API_KEY_P) {
+        return new Response(JSON.stringify({ error: "GEMINI_API_KEY requis (phase pick)" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
       }
-      console.log(`[pick] AI_PROVIDER resolved to: ${AI_PROVIDER_P}, GEMINI_KEY present: ${!!GEMINI_API_KEY_P}, VERTEX creds present: ${!!VERTEX_AI_CREDENTIALS_P}`);
-
-      // Helper: build Vertex AI config (token + URL) on demand
-      const buildVertexConfig = async (): Promise<{ url: string; headers: Record<string, string> } | null> => {
-        if (!VERTEX_AI_PROJECT_P || !VERTEX_AI_CREDENTIALS_P) return null;
-        try {
-          const credsP = typeof VERTEX_AI_CREDENTIALS_P === "string" ? JSON.parse(VERTEX_AI_CREDENTIALS_P) : VERTEX_AI_CREDENTIALS_P;
-          const b64P = (d: Uint8Array | string) => { const b = typeof d === "string" ? new TextEncoder().encode(d) : d; return btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, ""); };
-          const nowP = Math.floor(Date.now() / 1000);
-          const msgP = `${b64P(JSON.stringify({ alg: "RS256", typ: "JWT" }))}.${b64P(JSON.stringify({ iss: credsP.client_email, sub: credsP.client_email, aud: "https://oauth2.googleapis.com/token", iat: nowP, exp: nowP + 3600, scope: "https://www.googleapis.com/auth/cloud-platform" }))}`;
-          const pemP = credsP.private_key.replace(/\\n/g, "\n").replace(/-----BEGIN PRIVATE KEY-----/, "").replace(/-----END PRIVATE KEY-----/, "").replace(/\s/g, "");
-          const keyBufP = Uint8Array.from(atob(pemP), (c: string) => c.charCodeAt(0));
-          const privKeyP = await crypto.subtle.importKey("pkcs8", keyBufP, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
-          const sigP = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", privKeyP, new TextEncoder().encode(msgP));
-          const jwtP = `${msgP}.${b64P(new Uint8Array(sigP))}`;
-          const trP = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: jwtP }) });
-          if (!trP.ok) return null;
-          const tokenP = (await trP.json()).access_token;
-          return {
-            url: `https://${VERTEX_AI_LOCATION_P}-aiplatform.googleapis.com/v1/projects/${VERTEX_AI_PROJECT_P}/locations/${VERTEX_AI_LOCATION_P}/publishers/google/models/${VERTEX_AI_MODEL_P}:generateContent`,
-            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${tokenP}` },
-          };
-        } catch (vErr) {
-          console.error("[pick] Vertex config build failed:", vErr);
-          return null;
-        }
-      };
-
-      let aiUrlP: string;
-      let aiHeadersP: Record<string, string>;
-      let currentProvider: "gemini" | "vertex" = AI_PROVIDER_P;
-      if (currentProvider === "vertex") {
-        const v = await buildVertexConfig();
-        if (!v) return new Response(JSON.stringify({ error: "Vertex AI non configuré (phase pick)" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
-        aiUrlP = v.url; aiHeadersP = v.headers;
-      } else {
-        if (!GEMINI_API_KEY_P) return new Response(JSON.stringify({ error: "GEMINI_API_KEY requis (phase pick)" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
-        aiUrlP = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL_P}:generateContent?key=${GEMINI_API_KEY_P}`;
-        aiHeadersP = { "Content-Type": "application/json" };
-      }
+      console.log(`[pick] Using Gemini (model: ${GEMINI_MODEL_P})`);
+      const aiUrlP = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL_P}:generateContent?key=${GEMINI_API_KEY_P}`;
+      const aiHeadersP: Record<string, string> = { "Content-Type": "application/json" };
 
       // Prompt court : choisir la meilleure startup parmi les résultats de sourcing
       // MAX_PICK_CONTEXT_LENGTH = 8000 : résultats Brave (titre + description + URL), suffisant pour identifier une startup
@@ -1382,33 +1334,20 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
 RÉSULTATS DE SOURCING :
 ${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
 
-      // Up to 3 attempts. On Gemini quota/rate errors (429/403), switch to Vertex AI if available.
+      // Up to 3 Gemini attempts (1st with responseMimeType, 2nd/3rd plain). On total failure, fall through to heuristic extraction.
       let pickText = "";
-      let switchedToVertex = currentProvider === "vertex";
       for (let attempt = 0; attempt < 3; attempt++) {
-        const pickBody = currentProvider === "vertex"
-          ? { contents: [{ role: "user", parts: [{ text: pickPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 300 } }
-          : attempt === 0
-            ? { contents: [{ parts: [{ text: pickPrompt }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 400, responseMimeType: "application/json" } }
-            : { contents: [{ parts: [{ text: pickPrompt }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 400 } };
+        const pickBody = attempt === 0
+          ? { contents: [{ parts: [{ text: pickPrompt }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 400, responseMimeType: "application/json" } }
+          : { contents: [{ parts: [{ text: pickPrompt }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 400 } };
         try {
-          console.log(`[pick] Appel IA attempt ${attempt + 1}, provider=${currentProvider}, context length=${pickContext.length}`);
+          console.log(`[pick] Gemini attempt ${attempt + 1}, context length=${pickContext.length}`);
           const pickRes = await fetch(aiUrlP, { method: "POST", headers: aiHeadersP, body: JSON.stringify(pickBody) });
           if (!pickRes.ok) {
             const errBody = await pickRes.text();
-            console.error(`[pick] IA HTTP ${pickRes.status}: ${errBody.substring(0, 300)}`);
-            // On quota/rate-limit from Gemini, switch to Vertex AI and retry
-            if ((pickRes.status === 429 || pickRes.status === 403) && currentProvider === "gemini" && !switchedToVertex) {
-              const v = await buildVertexConfig();
-              if (v) {
-                console.warn("[pick] Gemini quota exceeded — switching to Vertex AI");
-                aiUrlP = v.url; aiHeadersP = v.headers; currentProvider = "vertex"; switchedToVertex = true;
-                continue;
-              }
-            }
+            console.error(`[pick] Gemini HTTP ${pickRes.status}: ${errBody.substring(0, 300)}`);
             if (attempt < 2) { await new Promise(r => setTimeout(r, 2000)); continue; }
-            // All AI attempts failed (quota/billing) — fall through to manual extraction from search results
-            console.warn(`[pick] IA indisponible (${pickRes.status}) après tous les essais — bascule sur extraction manuelle`);
+            console.warn(`[pick] Gemini indisponible (${pickRes.status}) — bascule sur extraction heuristique`);
             break;
           }
           const pickData = await pickRes.json();
@@ -1618,7 +1557,8 @@ ${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
     const isSearchPhase = false;
 
     // Configuration AI : Gemini ou Vertex AI
-    const AI_PROVIDER = (Deno.env.get("AI_PROVIDER") || "gemini").toLowerCase(); // "gemini" ou "vertex"
+    // Hardcoded Gemini — Vertex disabled per user choice (AI_PROVIDER env var ignored)
+    const AI_PROVIDER = "gemini";
     const GEMINI_API_KEY = Deno.env.get("GEMINI_KEY_2") || Deno.env.get("GEMINI_API_KEY");
     const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-pro"; // gemini-2.5-pro, gemini-2.0-flash, gemini-pro, gemini-1.5-pro, gemini-1.5-flash (gemini-3.0-pro pas encore disponible)
     const VERTEX_AI_PROJECT = Deno.env.get("VERTEX_AI_PROJECT_ID");

@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowRight, Play, Sparkles, Zap } from "lucide-react";
+import { ArrowRight, Play, Sparkles, Zap, Radar, FileSearch, Building2 } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface HeroSectionProps {
@@ -49,41 +49,42 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
           >
-            <Badge 
-              variant="outline" 
+            <Badge
+              variant="outline"
               className="mb-6 px-4 py-2 text-sm border-primary/40 bg-primary/20 backdrop-blur-sm glow-ai-vc"
             >
               <Sparkles className="w-3.5 h-3.5 mr-2 text-primary animate-pulse" />
-              Outil de sourcing et d'analyse de startups • Due diligence automatisée
+              Sourcing pré-seed · Signaux faibles · Due diligence en 2 minutes
             </Badge>
           </motion.div>
-          
+
           {/* Main heading */}
-          <motion.h1 
+          <motion.h1
             className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-6 leading-[1.1] text-foreground"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.1 }}
           >
-            Sourcez les meilleures
+            Trouvez les startups
             <span className="block text-gradient-ai-vc mt-2 drop-shadow-[0_0_20px_rgba(48,100%,55%,0.3)]">
-              opportunités d'investissement
+              avant Crunchbase
             </span>
             <span className="block text-2xl md:text-3xl lg:text-4xl font-medium text-muted-foreground mt-4">
-              en quelques minutes
+              12 canaux de signaux faibles agrégés en un seul deck
             </span>
           </motion.h1>
-          
+
           {/* Subtitle - Benefit oriented */}
-          <motion.p 
+          <motion.p
             className="text-lg md:text-xl text-muted-foreground mb-10 max-w-2xl mx-auto leading-relaxed"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
           >
-            Notre IA analyse votre <span className="text-foreground font-medium">thèse d'investissement</span> et identifie 
-            des startups réelles qui correspondent parfaitement. Due diligence complète incluse.
-            <span className="block mt-2 text-primary font-medium">Automatisez votre sourcing. Investissez mieux.</span>
+            Entrez votre <span className="text-foreground font-medium">thèse</span> (ou juste le nom de votre fonds).
+            Notre moteur croise <span className="text-foreground font-medium">LinkedIn, brevets, GitHub, arXiv, ProductHunt</span> et
+            sort la startup la plus alignée — avec rapport de due diligence sourcé.
+            <span className="block mt-2 text-primary font-medium">2 jours de travail analyste → 5 minutes.</span>
           </motion.p>
 
           {/* CTAs */}
@@ -114,8 +115,8 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
           </motion.div>
 
           {/* Trial info */}
-          <motion.p 
-            className="text-sm text-muted-foreground"
+          <motion.p
+            className="text-sm text-muted-foreground mb-8"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.5, delay: 0.4 }}
@@ -123,14 +124,39 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
             {trialRemaining > 0 ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="status-dot" />
-                {trialRemaining} analyses de startups gratuites • Due diligence incluse
+                {trialRemaining} analyses gratuites restantes · Sans carte bancaire
               </span>
             ) : (
               <span className="flex items-center justify-center gap-2">
-                ✓ Sourcing automatisé • ✓ Due diligence complète • ✓ Rapports exportables
+                5 analyses gratuites · Sans carte bancaire · Annulation à tout moment
               </span>
             )}
           </motion.p>
+
+          {/* Concrete metric chips */}
+          <motion.div
+            className="flex flex-wrap items-center justify-center gap-3 md:gap-4 max-w-3xl mx-auto"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.5 }}
+          >
+            {[
+              { icon: Radar, label: "12 canaux de signaux", sub: "LinkedIn · Brevets · GitHub · arXiv …" },
+              { icon: Building2, label: "Détection pré-seed", sub: "Trouve avant Crunchbase / PitchBook" },
+              { icon: FileSearch, label: "DD sourcée ~2 min", sub: "Chaque affirmation a son URL" },
+            ].map((chip, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-3 px-4 py-2.5 rounded-full bg-card/50 border border-primary/20 backdrop-blur-sm"
+              >
+                <chip.icon className="w-4 h-4 text-primary flex-shrink-0" />
+                <div className="flex flex-col leading-tight text-left">
+                  <span className="text-xs font-semibold text-foreground">{chip.label}</span>
+                  <span className="text-[10px] text-muted-foreground">{chip.sub}</span>
+                </div>
+              </div>
+            ))}
+          </motion.div>
         </div>
       </div>
     </section>

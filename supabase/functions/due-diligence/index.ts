@@ -268,7 +268,8 @@ serve(async (req) => {
     }
 
     // Configuration AI
-    const AI_PROVIDER = (Deno.env.get("AI_PROVIDER") || "gemini").toLowerCase();
+    // Hardcoded Gemini — Vertex disabled per user choice (AI_PROVIDER env var ignored)
+    const AI_PROVIDER = "gemini";
     const GEMINI_API_KEY = Deno.env.get("GEMINI_KEY_2") || Deno.env.get("GEMINI_API_KEY");
     const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-pro";
     const VERTEX_AI_PROJECT = Deno.env.get("VERTEX_AI_PROJECT_ID");
