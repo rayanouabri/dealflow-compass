@@ -1084,8 +1084,8 @@ TÂCHE : Identifie 2 à 3 thèmes où les infos sont INSUFFISANTES (ex: équipe/
 Réponds UNIQUEMENT par un JSON valide : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 3 gaps, 2 queries par gap. Si suffisant : {"gaps":[]}.`;
 
         const gapBody = AI_PROVIDER_A === "vertex"
-          ? { contents: [{ role: "user", parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 800 } }
-          : { contents: [{ parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 800, responseMimeType: "application/json" as const } };
+          ? { contents: [{ role: "user", parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 2048, thinkingConfig: { thinkingBudget: 0 } } }
+          : { contents: [{ parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 2048, responseMimeType: "application/json" as const, thinkingConfig: { thinkingBudget: 0 } } };
         const gapRes = await fetch(aiEndpointA.url, { method: "POST", headers: aiEndpointA.headers, body: JSON.stringify(gapBody) });
         if (!gapRes.ok) {
           const errText = await gapRes.text();
@@ -1144,8 +1144,8 @@ Réponds UNIQUEMENT par un JSON valide : {"gaps":[{"label":"...","queries":["que
       const systemTrunc = systemPrompt.length > maxPromptSystem ? systemPrompt.slice(0, maxPromptSystem) + "\n\n[Contexte tronqué pour limite ressources.]" : systemPrompt;
       const userTrunc = enrichedUserPrompt.length > maxPromptUser ? enrichedUserPrompt.slice(0, maxPromptUser) + "\n\n[Contexte tronqué.]" : enrichedUserPrompt;
       const aiBodyA = AI_PROVIDER_A === "vertex"
-        ? { contents: [{ role: "user", parts: [{ text: `${systemTrunc}\n\n${userTrunc}${finalInstruction}` }] }], generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens: maxOutputTokensA } }
-        : { contents: [{ parts: [{ text: `${systemTrunc}\n\n${userTrunc}${finalInstruction}` }] }], generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens: maxOutputTokensA, responseMimeType: "application/json" as const } };
+        ? { contents: [{ role: "user", parts: [{ text: `${systemTrunc}\n\n${userTrunc}${finalInstruction}` }] }], generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens: maxOutputTokensA, thinkingConfig: { thinkingBudget: 0 } } }
+        : { contents: [{ parts: [{ text: `${systemTrunc}\n\n${userTrunc}${finalInstruction}` }] }], generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens: maxOutputTokensA, responseMimeType: "application/json" as const, thinkingConfig: { thinkingBudget: 0 } } };
       const responseA = await fetch(aiEndpointA.url, { method: "POST", headers: aiEndpointA.headers, body: JSON.stringify(aiBodyA) });
       const dataA = await responseA.json();
       const contentA: string = dataA.candidates?.[0]?.content?.parts?.[0]?.text || "";
@@ -1175,8 +1175,8 @@ TÂCHE : Identifie 1 à 2 thèmes où des infos manquent encore. Pour chaque th�
 Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 2 gaps, 1 query par gap. Si rien : {"gaps":[]}.`;
 
           const gapBody2 = AI_PROVIDER_A === "vertex"
-            ? { contents: [{ role: "user", parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 500 } }
-            : { contents: [{ parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 500, responseMimeType: "application/json" as const } };
+            ? { contents: [{ role: "user", parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 1500, thinkingConfig: { thinkingBudget: 0 } } }
+            : { contents: [{ parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 1500, responseMimeType: "application/json" as const, thinkingConfig: { thinkingBudget: 0 } } };
           const gapRes2 = await fetch(aiEndpointA.url, { method: "POST", headers: aiEndpointA.headers, body: JSON.stringify(gapBody2) });
           if (gapRes2.ok) {
             const gapData2 = await gapRes2.json();
@@ -1214,8 +1214,8 @@ ${JSON.stringify(analysisResultA).slice(0, 20000)}
 DONNÉES COMPLÉMENTAIRES :
 ${extraContext2}`;
                 const enrichBody = AI_PROVIDER_A === "vertex"
-                  ? { contents: [{ role: "user", parts: [{ text: enrichPrompt + "\n\nRéponds UNIQUEMENT avec le JSON complet." }] }], generationConfig: { temperature: 0.1, maxOutputTokens: maxOutputTokensA } }
-                  : { contents: [{ parts: [{ text: enrichPrompt + "\n\nRéponds UNIQUEMENT avec le JSON complet." }] }], generationConfig: { temperature: 0.1, maxOutputTokens: maxOutputTokensA, responseMimeType: "application/json" as const } };
+                  ? { contents: [{ role: "user", parts: [{ text: enrichPrompt + "\n\nRéponds UNIQUEMENT avec le JSON complet." }] }], generationConfig: { temperature: 0.1, maxOutputTokens: maxOutputTokensA, thinkingConfig: { thinkingBudget: 0 } } }
+                  : { contents: [{ parts: [{ text: enrichPrompt + "\n\nRéponds UNIQUEMENT avec le JSON complet." }] }], generationConfig: { temperature: 0.1, maxOutputTokens: maxOutputTokensA, responseMimeType: "application/json" as const, thinkingConfig: { thinkingBudget: 0 } } };
                 const enrichRes = await fetch(aiEndpointA.url, { method: "POST", headers: aiEndpointA.headers, body: JSON.stringify(enrichBody) });
                 if (enrichRes.ok) {
                   const enrichData = await enrichRes.json();
@@ -1335,11 +1335,12 @@ RÉSULTATS DE SOURCING :
 ${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
 
       // Up to 3 Gemini attempts (1st with responseMimeType, 2nd/3rd plain). On total failure, fall through to heuristic extraction.
+      // thinkingBudget=0 disables 2.5-flash reasoning tokens (which were eating the entire maxOutputTokens budget before any answer)
       let pickText = "";
       for (let attempt = 0; attempt < 3; attempt++) {
         const pickBody = attempt === 0
-          ? { contents: [{ parts: [{ text: pickPrompt }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 400, responseMimeType: "application/json" } }
-          : { contents: [{ parts: [{ text: pickPrompt }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 400 } };
+          ? { contents: [{ parts: [{ text: pickPrompt }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 2048, responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 0 } } }
+          : { contents: [{ parts: [{ text: pickPrompt }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 2048, thinkingConfig: { thinkingBudget: 0 } } };
         try {
           console.log(`[pick] Gemini attempt ${attempt + 1}, context length=${pickContext.length}`);
           const pickRes = await fetch(aiUrlP, { method: "POST", headers: aiHeadersP, body: JSON.stringify(pickBody) });
@@ -1855,8 +1856,8 @@ RÈGLES:
 - Si info non trouvée, utilise "unknown"`;
 
         const extractBody = AI_PROVIDER === "vertex"
-          ? { contents: [{ role: "user", parts: [{ text: extractPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 300 } }
-          : { contents: [{ parts: [{ text: extractPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 300, responseMimeType: "application/json" as const } };
+          ? { contents: [{ role: "user", parts: [{ text: extractPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } } }
+          : { contents: [{ parts: [{ text: extractPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 1024, responseMimeType: "application/json" as const, thinkingConfig: { thinkingBudget: 0 } } };
         const extractRes = await fetch(extractEndpoint.url, { method: "POST", headers: extractEndpoint.headers, body: JSON.stringify(extractBody) });
         if (extractRes.ok) {
           const extractData = await extractRes.json();
@@ -2199,8 +2200,8 @@ Contexte thèse (extrait):\n${fundThesisContext.slice(0, 600)}\n\nStartups trouv
 Propose EXACTEMENT 3 requêtes (en anglais, courtes) pour trouver d'autres startups ou données : au moins une ciblant brevets/propriété intellectuelle ou spin-offs recherche (ex: "patent [sector] startup", "university spin-off [sector]"). Réponds UNIQUEMENT avec un JSON: {"queries": ["q1", "q2", "q3"]}`;
         const refEndpoint = await getAIEndpoint();
         const refBody = AI_PROVIDER === "vertex"
-          ? { contents: [{ role: "user", parts: [{ text: refPrompt }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 400 } }
-          : { contents: [{ parts: [{ text: refPrompt }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 400, responseMimeType: "application/json" as const } };
+          ? { contents: [{ role: "user", parts: [{ text: refPrompt }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } } }
+          : { contents: [{ parts: [{ text: refPrompt }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 1024, responseMimeType: "application/json" as const, thinkingConfig: { thinkingBudget: 0 } } };
         const refRes = await fetch(refEndpoint.url, { method: "POST", headers: refEndpoint.headers, body: JSON.stringify(refBody) });
         if (refRes.ok) {
           const refData = await refRes.json();
@@ -2800,14 +2801,14 @@ IMPORTANT :
     
     // Format du corps différent pour Vertex AI (nécessite role: "user")
     const maxOutputTokens = 20480;
-    const aiBody = AI_PROVIDER === "vertex" 
+    const aiBody = AI_PROVIDER === "vertex"
       ? {
           contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\n${userPrompt}\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.` }] }],
-          generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens },
+          generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens, thinkingConfig: { thinkingBudget: 0 } },
         }
       : {
           contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}\n\nRéponds UNIQUEMENT avec du JSON valide, sans formatage markdown.` }] }],
-          generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens, responseMimeType: "application/json" as const },
+          generationConfig: { temperature: 0.15, topP: 0.9, topK: 40, maxOutputTokens, responseMimeType: "application/json" as const, thinkingConfig: { thinkingBudget: 0 } },
         };
 
     for (let attempt = 0; attempt < 3; attempt++) {

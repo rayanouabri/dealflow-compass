@@ -181,38 +181,88 @@ async function braveSearchFallback(query: string, count: number, apiKey: string,
 // Robust JSON parsing function
 function parseJSONResponse(content: string): any {
   let cleanContent = content.trim();
-  
-  if (cleanContent.startsWith("```json")) {
-    cleanContent = cleanContent.slice(7);
-  }
-  if (cleanContent.startsWith("```")) {
-    cleanContent = cleanContent.slice(3);
-  }
-  if (cleanContent.endsWith("```")) {
-    cleanContent = cleanContent.slice(0, -3);
-  }
+
+  if (cleanContent.startsWith("```json")) cleanContent = cleanContent.slice(7);
+  if (cleanContent.startsWith("```")) cleanContent = cleanContent.slice(3);
+  if (cleanContent.endsWith("```")) cleanContent = cleanContent.slice(0, -3);
   cleanContent = cleanContent.trim();
-  
+
   const firstBrace = cleanContent.indexOf('{');
   const lastBrace = cleanContent.lastIndexOf('}');
-  
   if (firstBrace > 0 || lastBrace < cleanContent.length - 1) {
     if (firstBrace >= 0 && lastBrace >= 0 && lastBrace > firstBrace) {
       cleanContent = cleanContent.substring(firstBrace, lastBrace + 1);
     }
   }
-  
+
+  // Pass 1: direct parse
+  try { return JSON.parse(cleanContent); } catch { /* try repairs */ }
+  // Pass 2: strip trailing commas
+  try { return JSON.parse(cleanContent.replace(/,(\s*[}\]])/g, '$1')); } catch { /* try harder */ }
+  // Pass 3: best-effort salvage — truncate to last balanced position then close open structures
   try {
-    return JSON.parse(cleanContent);
-  } catch (e) {
-    // Try fixing common issues
-    let fixedContent = cleanContent.replace(/,(\s*[}\]])/g, '$1');
-    try {
-      return JSON.parse(fixedContent);
-    } catch (e2) {
-      throw new Error(`Failed to parse JSON: ${e instanceof Error ? e.message : "Unknown error"}`);
+    const salvaged = salvageJSON(cleanContent);
+    if (salvaged) return JSON.parse(salvaged);
+  } catch { /* fall through */ }
+
+  throw new Error(`Failed to parse JSON (len=${cleanContent.length}): unrepairable malformation`);
+}
+
+// Salvage partial/malformed JSON: walks the string, tracks string state and bracket depth,
+// truncates at the last position where the document was structurally valid, then closes
+// any still-open arrays/objects so the result parses.
+function salvageJSON(s: string): string | null {
+  let depthCurly = 0;
+  let depthSquare = 0;
+  let inString = false;
+  let escape = false;
+  const stack: string[] = []; // tracks "{" and "["
+  let lastSafeEnd = -1;       // last char index where stack was empty (only at the very end of root)
+  let lastSafePostComma = -1; // index just after a comma at depth==1 (safe truncation inside root object)
+  let rootOpened = false;
+
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (escape) { escape = false; continue; }
+    if (c === '\\' && inString) { escape = true; continue; }
+    if (c === '"') { inString = !inString; continue; }
+    if (inString) continue;
+
+    if (c === '{') { stack.push('{'); depthCurly++; if (!rootOpened) rootOpened = true; }
+    else if (c === '[') { stack.push('['); depthSquare++; }
+    else if (c === '}') { if (stack[stack.length - 1] === '{') { stack.pop(); depthCurly--; } }
+    else if (c === ']') { if (stack[stack.length - 1] === '[') { stack.pop(); depthSquare--; } }
+    else if (c === ',' && stack.length === 1 && stack[0] === '{') {
+      // safe truncation point right after a comma inside the root object
+      lastSafePostComma = i;
     }
+
+    if (rootOpened && stack.length === 0) lastSafeEnd = i;
   }
+
+  if (lastSafeEnd >= 0) return s.slice(0, lastSafeEnd + 1);
+
+  // Truncate at last comma at root depth, then close all open structures
+  const cutoff = lastSafePostComma > 0 ? lastSafePostComma : s.length;
+  let truncated = s.slice(0, cutoff).replace(/,\s*$/, "");
+  // Re-walk to know the remaining open stack
+  const reStack: string[] = [];
+  let inStr = false, esc = false;
+  for (let i = 0; i < truncated.length; i++) {
+    const c = truncated[i];
+    if (esc) { esc = false; continue; }
+    if (c === '\\' && inStr) { esc = true; continue; }
+    if (c === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (c === '{') reStack.push('}');
+    else if (c === '[') reStack.push(']');
+    else if (c === '}' || c === ']') reStack.pop();
+  }
+  // If we're inside a string when truncated, close it first
+  if (inStr) truncated += '"';
+  // Close every remaining open structure
+  while (reStack.length) truncated += reStack.pop();
+  return truncated;
 }
 
 serve(async (req) => {
@@ -534,7 +584,8 @@ Tu dois produire un rapport de due diligence COMPLET et PROFESSIONNEL sur l'entr
 Réponds UNIQUEMENT avec du JSON valide.`;
 
       const sleepAnalyze = (ms: number) => new Promise((r) => setTimeout(r, ms));
-      const MAX_GAP_QUERIES_DD = 8;
+      // 4 gap queries (was 8) — keeps gap1 phase under ~10s so main AI has budget
+      const MAX_GAP_QUERIES_DD = 4;
       const GAP_QUERY_MIN_LEN = 8;
       const GAP_QUERY_MAX_LEN = 120;
       const extractJsonObject = (raw: string): string | null => {
@@ -562,8 +613,8 @@ TÂCHE : Identifie 2 à 4 thèmes où les infos sont INSUFFISANTES pour remplir 
 Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 4 gaps, 2 queries par gap. Si suffisant : {"gaps":[]}.`;
 
         const gapBody = AI_PROVIDER === "vertex"
-          ? { contents: [{ role: "user", parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 600 } }
-          : { contents: [{ parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 600, responseMimeType: "application/json" as const } };
+          ? { contents: [{ role: "user", parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 2048, thinkingConfig: { thinkingBudget: 0 } } }
+          : { contents: [{ parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 2048, responseMimeType: "application/json" as const, thinkingConfig: { thinkingBudget: 0 } } };
         const gapRes = await fetch(aiEndpointGap.url, { method: "POST", headers: aiEndpointGap.headers, body: JSON.stringify(gapBody) });
         if (gapRes.ok) {
           const gapData = await gapRes.json();
@@ -591,20 +642,18 @@ Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 4 gap
             return true;
           }).slice(0, MAX_GAP_QUERIES_DD);
           if (uniqueQueries.length > 0) {
+            // Parallel gap searches (cache makes most a no-op anyway). Was sequential with 1200ms delays.
             const extraLines: string[] = [];
             const seenUrl = new Set<string>();
-            for (const q of uniqueQueries) {
-              try {
-                const results = await braveSearch(q, 6);
-                for (const r of results) {
-                  if (r?.url && !seenUrl.has(r.url)) {
-                    seenUrl.add(r.url);
-                    const line = `${r.title || ""}: ${r.description || ""} | ${r.url}`.trim();
-                    if (line.length > 20) extraLines.push(line);
-                  }
+            const gapResults = await Promise.all(uniqueQueries.map(q => braveSearch(q, 6).catch(() => [])));
+            for (const results of gapResults) {
+              for (const r of results) {
+                if (r?.url && !seenUrl.has(r.url)) {
+                  seenUrl.add(r.url);
+                  const line = `${r.title || ""}: ${r.description || ""} | ${r.url}`.trim();
+                  if (line.length > 20) extraLines.push(line);
                 }
-                await sleepAnalyze(1200);
-              } catch (_) {}
+              }
             }
             const extraContext = extraLines.join("\n").slice(0, 4500);
             if (extraContext) {
@@ -637,14 +686,15 @@ ${enrichedAnalyzeContext !== analyzeContext ? "\n9. Utilise OBLIGATOIREMENT la s
 Réponds UNIQUEMENT avec du JSON valide.`;
 
       const aiEndpoint = await getAIEndpoint();
-      const aiBody = AI_PROVIDER === "vertex" 
+      // 16384 max output: enough for a complete DD report, fast enough to fit Supabase's 150s budget
+      const aiBody = AI_PROVIDER === "vertex"
         ? {
             contents: [{ role: "user", parts: [{ text: `${systemPromptAnalyze}\n\n${userPromptAnalyze}` }] }],
-            generationConfig: { temperature: 0.1, topP: 0.9, topK: 40, maxOutputTokens: 32768 },
+            generationConfig: { temperature: 0.1, topP: 0.9, topK: 40, maxOutputTokens: 16384, thinkingConfig: { thinkingBudget: 0 } },
           }
         : {
             contents: [{ parts: [{ text: `${systemPromptAnalyze}\n\n${userPromptAnalyze}` }] }],
-            generationConfig: { temperature: 0.1, topP: 0.9, topK: 40, maxOutputTokens: 32768, responseMimeType: "application/json" as const },
+            generationConfig: { temperature: 0.1, topP: 0.9, topK: 40, maxOutputTokens: 16384, responseMimeType: "application/json" as const, thinkingConfig: { thinkingBudget: 0 } },
           };
       let response = await fetch(aiEndpoint.url, { method: "POST", headers: aiEndpoint.headers, body: JSON.stringify(aiBody) });
       if (!response.ok) {
@@ -789,8 +839,8 @@ Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 3 gap
 
         const aiEndpointGap2 = await getAIEndpoint();
         const gapBody2 = AI_PROVIDER === "vertex"
-          ? { contents: [{ role: "user", parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 500 } }
-          : { contents: [{ parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 500, responseMimeType: "application/json" as const } };
+          ? { contents: [{ role: "user", parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 1500, thinkingConfig: { thinkingBudget: 0 } } }
+          : { contents: [{ parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 1500, responseMimeType: "application/json" as const, thinkingConfig: { thinkingBudget: 0 } } };
         const gapRes2 = await fetch(aiEndpointGap2.url, { method: "POST", headers: aiEndpointGap2.headers, body: JSON.stringify(gapBody2) });
         if (gapRes2.ok) {
           const gapData2 = await gapRes2.json();
@@ -845,8 +895,8 @@ ${extraContext2}
 
 Réponds UNIQUEMENT avec le JSON complet.`;
               const enrichBody = AI_PROVIDER === "vertex"
-                ? { contents: [{ role: "user", parts: [{ text: enrichPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 32768 } }
-                : { contents: [{ parts: [{ text: enrichPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 32768, responseMimeType: "application/json" as const } };
+                ? { contents: [{ role: "user", parts: [{ text: enrichPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 16384, thinkingConfig: { thinkingBudget: 0 } } }
+                : { contents: [{ parts: [{ text: enrichPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 16384, responseMimeType: "application/json" as const, thinkingConfig: { thinkingBudget: 0 } } };
               const enrichRes = await fetch(aiEndpointGap2.url, { method: "POST", headers: aiEndpointGap2.headers, body: JSON.stringify(enrichBody) });
               if (enrichRes.ok) {
                 const enrichData = await enrichRes.json();
