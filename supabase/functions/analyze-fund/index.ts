@@ -1311,25 +1311,36 @@ ${extraContext2}`;
         ? `\n🚫 ENTREPRISES DU PORTFOLIO (NE JAMAIS SÉLECTIONNER — ce sont des investissements EXISTANTS du fonds) :\n${portfolioCompaniesForPick.join(", ")}\nCes entreprises sont INTERDITES car le fonds y a déjà investi. Trouve une NOUVELLE startup.\n`
         : "";
 
-      const pickPrompt = `Tu es un analyste VC senior spécialisé en sourcing. À partir des résultats de sourcing ci-dessous, identifie la MEILLEURE startup RÉELLE à analyser en due diligence.
+      const pickPrompt = `Tu es un analyste VC senior. Trouve UNE startup opérationnelle (qui développe et vend un produit/service à de vrais clients) dans les résultats de recherche ci-dessous, qui matche la thèse du fonds "${fundNameForPick || "ciblé"}".
 
-⚠️ CRITÈRES DE SÉLECTION OBLIGATOIRES (par ordre de priorité) :
-1. NOUVELLE STARTUP UNIQUEMENT : La startup NE DOIT PAS faire partie du portfolio existant du fonds. Le but est de trouver une NOUVELLE opportunité d'investissement.
-2. CORRESPONDANCE THÈSE : La startup DOIT correspondre à la thèse d'investissement du fonds (secteurs, géographie, stade, ticket size). UNE STARTUP QUI NE CORRESPOND PAS À LA THÈSE EST ÉLIMINÉE, même si elle est connue.
-3. STADE PRÉCOCE : Privilégie les startups early-stage (Seed, Pre-Seed, Series A) sauf si la thèse du fonds cible un stade différent.
-4. GÉOGRAPHIE : La startup doit être dans la zone géographique ciblée par le fonds. Si le fonds est européen, NE PAS sélectionner de startups US/asiatiques.
-5. SIGNAUX POSITIFS : Funding récent, traction, équipe solide, marché en croissance, brevets déposés, sortie d'incubateur.
-6. URL OFFICIELLE : La startup doit avoir un site web trouvable dans les résultats.
+⚠️ DÉFINITION D'UNE STARTUP VALIDE :
+- Une société commerciale qui développe et vend un produit ou service à des clients (B2B ou B2C)
+- A un site web officiel (PAS une page Crunchbase/LinkedIn/Pappers/listicle)
+- Possède un nom propre identifiable et un domaine .com/.fr/.io/.ai/.co/.tech
 
-🚫 ÉLIMINER IMMÉDIATEMENT :
-- Les startups DÉJÀ dans le portfolio du fonds (voir liste noire ci-dessous)
-- Les grandes entreprises établies (>$100M de revenus, >500 employés, cotées en bourse)
-- Les startups hors zone géographique du fonds
-- Les startups dans un secteur différent de la thèse
-- Les entreprises qui ne sont pas des startups (médias, agences, cabinets de conseil)
+🚫 NE SÉLECTIONNE JAMAIS (RÉPONSE IMMÉDIATEMENT REJETÉE) :
+- Le fonds VC lui-même "${fundNameForPick || ""}", ni AUCUN autre fonds VC (Sequoia, a16z, Partech, Elaia, Breega, Index Ventures, Eurazeo, Bpifrance, etc.)
+- Aucune plateforme d'analyse/aggregator : Crunchbase, PitchBook, Dealroom, Tracxn, CB Insights, F6S, EU-Startups, Wellfound/AngelList, Pappers, Societe.com, France Deeptech, France Digitale, La French Tech, BPI…
+- Aucune page de liste/classement/article : "Top 100 startups", "Best startups in X", "2025 startups to watch", articles Maddyness/Sifted/TechCrunch/Forbes/LesEchos/BFM
+- Aucun incubateur/accélérateur (Y Combinator, Station F, Techstars, 500 Global, Agoranov, Wilco, Euratechnologies, French Tech Seed…)
+- Aucun média, blog, podcast, conférence, ni cabinet de conseil/expertise/audit
+- Aucune grande entreprise établie (>200 employés, cotée en bourse, ou plus de 50M€ de revenus annuels)
+- Aucune startup déjà dans le portfolio du fonds
+
+✅ CRITÈRES DE MATCH À LA THÈSE :
+1. Secteur DOIT correspondre à la thèse (si la thèse dit "biotech" et tu vois une startup SaaS RH → REJET)
+2. Géographie DOIT correspondre (thèse européenne + startup US → REJET)
+3. Stade : privilégie pre-seed/seed/Series A sauf si la thèse cible autre chose
+4. Au moins 1 signal positif récent dans les résultats : levée de fonds, embauche clé, sortie d'incubateur, brevet, lancement produit
 ${portfolioBlacklistForPick}${fundThesisSection}
+🎯 PROCESSUS DE DÉCISION (suis-le mentalement) :
+1. Parcours les résultats et liste 5 candidats qui SONT des vraies startups (pas dans la liste interdite ci-dessus)
+2. Pour chaque candidat, vérifie le match thèse (secteur ✓ géographie ✓ stade ✓)
+3. Garde celui avec le meilleur match + signaux positifs récents
+4. Si tu ne trouves AUCUNE startup valide, réponds {"name":"","website":"","description":"Aucune startup correspondant à la thèse trouvée dans les résultats"}
+
 Réponds UNIQUEMENT avec ce JSON (sans markdown) :
-{"name":"Nom exact de la startup","website":"https://... (URL officielle trouvée dans les résultats, sinon chaîne vide)","description":"1-2 phrases résumant ce que fait la startup et pourquoi elle correspond à la thèse du fonds"}
+{"name":"Nom exact de la startup","website":"https://... (URL officielle du site de la startup — PAS Crunchbase, PAS LinkedIn, PAS un article)","description":"1-2 phrases : ce que fait la startup + pourquoi elle matche la thèse du fonds (secteur, stade, géographie, signal positif récent)"}
 
 RÉSULTATS DE SOURCING :
 ${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
@@ -1382,12 +1393,18 @@ ${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
       // Scores candidates so we favour company homepages over blog posts / listicles.
       if (!startup.name && pickContext) {
         console.warn("[pick] Fallback: extraction manuelle (scoring) depuis pickContext");
-        const NEWS_DOMAINS = ["google.com","youtube.com","facebook.com","twitter.com","x.com","reddit.com","wikipedia.org","crunchbase.com","news.crunchbase.com","techcrunch.com","bloomberg.com","reuters.com","forbes.com","wsj.com","cnbc.com","maddyness.com","lesechos.fr","lemonde.fr","bfmtv.com","usine-digitale.fr","venturebeat.com","theverge.com","wired.com","sifted.eu","pitchbook.com","cbinsights.com","dealroom.co","linkedin.com","github.com","medium.com","substack.com","startup-book.com","welcometothejungle.com","glassdoor.com","indeed.com","wellfound.com","angel.co","producthunt.com","f6s.com","eu-startups.com","tracxn.com"];
+        const NEWS_DOMAINS = ["google.com","youtube.com","facebook.com","twitter.com","x.com","reddit.com","wikipedia.org","crunchbase.com","news.crunchbase.com","techcrunch.com","bloomberg.com","reuters.com","forbes.com","wsj.com","cnbc.com","maddyness.com","lesechos.fr","lemonde.fr","bfmtv.com","usine-digitale.fr","venturebeat.com","theverge.com","wired.com","sifted.eu","pitchbook.com","cbinsights.com","dealroom.co","linkedin.com","github.com","medium.com","substack.com","startup-book.com","welcometothejungle.com","glassdoor.com","indeed.com","wellfound.com","angel.co","producthunt.com","f6s.com","eu-startups.com","tracxn.com","societe.com","pappers.fr","infogreffe.fr","france-deeptech.org","francedigitale.org","lafrenchtech.com","bpifrance.fr","station-f.com"];
         const isNewsDomain = (url: string) => NEWS_DOMAINS.some(d => url.includes(d));
+        // Known VC fund and aggregator words — any title matching these is rejected
+        const FUND_KEYWORDS = ["ventures","capital","partners","invest","fund","accelerator","incubator","sequoia","a16z","accel","index","balderton","atomico","earlybird","partech","elaia","breega","eurazeo","bpi","seedcamp","kima","alven","serena","idinvest","white star","redalpine","cherry","point nine","creandum","speedinvest"];
+        const isFundLike = (title: string) => FUND_KEYWORDS.some(k => title.toLowerCase().includes(k));
+        // The fund being analyzed — never select it as the "startup"
+        const fundLowered = (fundNameForPick || "").toLowerCase().trim();
+        const isQueriedFund = (title: string, url: string) => fundLowered && (title.toLowerCase().includes(fundLowered) || url.toLowerCase().includes(fundLowered.replace(/\s+/g, "")));
         // URL paths that signal an article/listicle rather than a company homepage
-        const ARTICLE_PATH = /\/(blog|posts?|article|news|20\d{2}|guide|resources?|category|tag|wiki|search)\//i;
+        const ARTICLE_PATH = /\/(blog|posts?|article|news|20\d{2}|guide|resources?|category|tag|wiki|search|portfolio|companies|invest|fund)\//i;
         // Title phrases that signal editorial content, not a startup name
-        const ARTICLE_TITLE = /(continued|challenges|how to|guide|top \d+|best \d+|liste|classement|meilleur|ultimate|introduction|overview|what is|pourquoi|comment|\d+ startups?)/i;
+        const ARTICLE_TITLE = /(continued|challenges|how to|guide|top \d+|best \d+|liste|classement|meilleur|ultimate|introduction|overview|what is|pourquoi|comment|\d+ startups?|investment thesis|portfolio compan|funded by)/i;
         const lines = pickContext.split("\n").filter(l => l.includes("URL:") || l.includes("http"));
         let best: { name: string; website: string; description: string } | null = null;
         let bestScore = -Infinity;
@@ -1397,20 +1414,19 @@ ${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
           if (!title || title.length <= 3 || title.length >= 80 || !urlMatch) continue;
           const url = urlMatch[0].replace(/[.,;:!?)}\]]+$/, "");
           if (isNewsDomain(url)) continue;
+          if (isQueriedFund(title, url)) continue;        // never pick the fund itself
+          if (isFundLike(title)) continue;                // never pick a fund/VC
+          if (ARTICLE_TITLE.test(title)) continue;        // never pick listicles/articles
           let score = 0;
-          // Prefer homepage-like URLs (root or very short path)
           try {
             const u = new URL(url);
             const pathDepth = u.pathname.split("/").filter(Boolean).length;
             if (pathDepth === 0) score += 5;
             else if (pathDepth === 1) score += 2;
-            else score -= pathDepth; // deeper paths look like articles
+            else score -= pathDepth;
             if (ARTICLE_PATH.test(u.pathname)) score -= 6;
-            // .com/.io/.ai/.co company TLDs slight boost
             if (/\.(io|ai|co|tech|app)$/.test(u.hostname)) score += 1;
           } catch { /* ignore parse errors */ }
-          if (ARTICLE_TITLE.test(title)) score -= 6;
-          // Short, capitalized names look like company names
           if (/^[A-Z][A-Za-z0-9]+$/.test(title.split(/\s/)[0])) score += 1;
           if (score > bestScore) {
             bestScore = score;

@@ -672,16 +672,23 @@ Voici TOUTES les données collectées par nos recherches web. Utilise-les pour p
 
 ${enrichedAnalyzeContext}
 
+⚠️ MÉTHODE D'EXTRACTION (suis-la AVANT d'écrire le rapport) :
+1. Parcours TOUS les résultats ci-dessus, ligne par ligne. Chaque ligne a la forme "Titre: Description | URL".
+2. Pour CHAQUE fait à remplir dans le rapport (nom fondateur, date de levée, montant, employés, clients, partenaires…), CHERCHE d'abord dans les résultats. Si tu vois une info, UTILISE-LA. Si tu ne vois rien, alors seulement estime ou marque "Non disponible".
+3. AVANT d'écrire "Non disponible" pour un champ, fais une dernière passe : re-lis les résultats avec ce champ en tête. Les fondateurs sont souvent mentionnés dans les titres LinkedIn, Crunchbase, articles de presse. Les levées dans les articles "raises" / "secures" / "annonce". Les clients dans les case studies.
+4. NE T'AUTOCENSURE PAS : si un fait est mentionné UNE SEULE FOIS dans un seul résultat, c'est suffisant pour l'inclure (avec sa source).
+
 ⚠️ RAPPELS CRITIQUES :
 1. NE METS AUCUNE URL dans le texte. Toutes les URLs vont UNIQUEMENT dans "sources" et "allSources".
-2. allSources : 15–25 entrées minimum. N'invente AUCUNE URL.
-3. Pour toute donnée manquante : privilégier "Estimation (secteur / benchmarks) : ..." plutôt que "Non disponible" seul.
-4. MARCHÉ : fournis une analyse complète (TAM/SAM/SOM, évolution, CAGR, tendances, problèmes du secteur, régulation). Jamais une ligne vide.
-5. ÉQUIPE : chaque fondateur avec name, role, background détaillé (formation, parcours), linkedin. overview = complémentarité et capacité d'exécution.
-6. TRACTION : customers.count, notable, segments TOUJOURS remplis (données ou "Estimation d'après contexte : ..."). partnerships et awards en listes (ou ["Aucun identifié"] si rien trouvé).
-7. keyMilestones[].milestone, partnerships[], awards[] : chaînes uniquement. targetReturn, investmentHorizon, suggestedTicket toujours remplis.
-8. Sois EXHAUSTIF : aucune section ne doit rester superficielle ou vide.
-${enrichedAnalyzeContext !== analyzeContext ? "\n9. Utilise OBLIGATOIREMENT la section « RECHERCHES COMPLÉMENTAIRES » pour compléter les données manquantes." : ""}
+2. allSources : 15–25 entrées minimum. N'invente AUCUNE URL — elles DOIVENT venir des résultats fournis.
+3. INTERDIT D'HALLUCINER : ne dis JAMAIS un fait qui n'est PAS dans les résultats. Si une donnée n'apparaît pas dans les recherches et n'est pas une estimation explicitement marquée, NE LA MENTIONNE PAS.
+4. INTERDIT DE DIRE "NON DISPONIBLE" SI L'INFO EST DANS LES RÉSULTATS : avant de marquer un champ "Non disponible", grep mentalement le contenu pour le mot-clé correspondant (ex: "CEO", "founder", "raised", "Series", "employees", "customers").
+5. MARCHÉ : si TAM/SAM/SOM ne sont pas dans les résultats, fournis une estimation explicite "Estimation (benchmarks secteur X, géographie Y) : ..." avec source de l'estimation.
+6. ÉQUIPE : chaque fondateur avec name, role, background détaillé, linkedin (URL exacte trouvée). Si le résultat dit "founded by X and Y" → tu DOIS lister X et Y.
+7. TRACTION : customers/partnerships/awards en listes de chaînes. Si rien trouvé : ["Aucun identifié dans les recherches"] (pas vide, pas null).
+8. keyMilestones[].milestone, partnerships[], awards[] : chaînes uniquement. targetReturn, investmentHorizon, suggestedTicket toujours remplis.
+9. Sois EXHAUSTIF : aucune section ne doit rester superficielle ou vide.
+${enrichedAnalyzeContext !== analyzeContext ? "\n10. Utilise OBLIGATOIREMENT la section « RECHERCHES COMPLÉMENTAIRES » pour compléter les données manquantes." : ""}
 
 Réponds UNIQUEMENT avec du JSON valide.`;
 
