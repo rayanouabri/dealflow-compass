@@ -703,11 +703,29 @@ Réponds UNIQUEMENT avec du JSON valide.`;
             contents: [{ parts: [{ text: `${systemPromptAnalyze}\n\n${userPromptAnalyze}` }] }],
             generationConfig: { temperature: 0.1, topP: 0.9, topK: 40, maxOutputTokens: 16384, responseMimeType: "application/json" as const, thinkingConfig: { thinkingBudget: 0 } },
           };
-      let response = await fetch(aiEndpoint.url, { method: "POST", headers: aiEndpoint.headers, body: JSON.stringify(aiBody) });
-      if (!response.ok) {
-        const errText = await response.text();
-        return new Response(JSON.stringify({ error: `Erreur API IA: ${response.status} - ${errText.slice(0, 200)}` }), {
-          status: 500,
+
+      // Retry on transient Gemini errors (503 overload, 429 burst, 500/502/504).
+      // Total wait: 2s + 5s = 7s across 3 attempts; leaves the 150s budget intact.
+      const sleepMs = (ms: number) => new Promise((r) => setTimeout(r, ms));
+      const TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504]);
+      let response: Response | null = null;
+      let lastErrText = "";
+      let lastStatus = 0;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const r = await fetch(aiEndpoint.url, { method: "POST", headers: aiEndpoint.headers, body: JSON.stringify(aiBody) });
+        if (r.ok) { response = r; break; }
+        lastStatus = r.status;
+        lastErrText = await r.text();
+        console.warn(`[DD analyze] Gemini HTTP ${r.status} attempt ${attempt + 1}/3: ${lastErrText.slice(0, 150)}`);
+        if (!TRANSIENT_STATUSES.has(r.status)) break;                  // permanent error → don't retry
+        if (attempt < 2) await sleepMs(attempt === 0 ? 2000 : 5000);   // 2s, then 5s
+      }
+      if (!response) {
+        const hint = lastStatus === 503
+          ? "Le modèle IA est temporairement surchargé. Réessayez dans 1-2 minutes."
+          : "Erreur API IA temporaire. Réessayez dans quelques instants.";
+        return new Response(JSON.stringify({ error: `${hint} (HTTP ${lastStatus})`, detail: lastErrText.slice(0, 200) }), {
+          status: 503,
           headers: { ...corsHeaders(req), "Content-Type": "application/json" },
         });
       }

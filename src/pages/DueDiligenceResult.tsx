@@ -278,15 +278,30 @@ export default function DueDiligenceResult() {
       setStatusMessage("Analyse IA en cours (génération du rapport)…");
 
       // ——— Phase 2 : analyse IA ———
-      const controller2 = new AbortController();
-      const timeout2 = setTimeout(() => controller2.abort(), 200_000);
-      const resAnalyze = await fetch(`${supabaseUrl}/functions/v1/due-diligence`, {
-        method: "POST",
-        signal: controller2.signal,
-        headers,
-        body: JSON.stringify({ phase: "analyze", jobId }),
-      });
-      clearTimeout(timeout2);
+      // Wrap the analyze fetch in a retry loop for Gemini transient 503 ("model overloaded").
+      // Backend already retries 3x with backoff; this gives one more attempt after a longer wait.
+      let resAnalyze: Response;
+      let analyzeAttempt = 0;
+      const MAX_ANALYZE_ATTEMPTS = 2;
+      while (true) {
+        analyzeAttempt++;
+        const controller2 = new AbortController();
+        const timeout2 = setTimeout(() => controller2.abort(), 200_000);
+        resAnalyze = await fetch(`${supabaseUrl}/functions/v1/due-diligence`, {
+          method: "POST",
+          signal: controller2.signal,
+          headers,
+          body: JSON.stringify({ phase: "analyze", jobId }),
+        });
+        clearTimeout(timeout2);
+        // Retry on 503 (model overloaded) — Gemini spikes are usually short-lived
+        if (resAnalyze.status === 503 && analyzeAttempt < MAX_ANALYZE_ATTEMPTS) {
+          setStatusMessage(`Modèle IA surchargé — nouvelle tentative dans 20s (essai ${analyzeAttempt + 1}/${MAX_ANALYZE_ATTEMPTS})…`);
+          await new Promise((r) => setTimeout(r, 20_000));
+          continue;
+        }
+        break;
+      }
       clearInterval(progressInterval);
 
       const text = await resAnalyze.text();
