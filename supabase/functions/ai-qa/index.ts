@@ -296,8 +296,8 @@ serve(async (req) => {
           throw new Error("GEMINI_API_KEY requis pour Gemini");
         }
         return {
-          url: `https://generativelanguage.googleapis.com/v1beta/models/${useModel}:generateContent?key=${GEMINI_API_KEY}`,
-          headers: { "Content-Type": "application/json" },
+          url: `https://generativelanguage.googleapis.com/v1beta/models/${useModel}:generateContent`,
+          headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY },
         };
       }
     };

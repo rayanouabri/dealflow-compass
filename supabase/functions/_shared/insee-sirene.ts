@@ -178,8 +178,10 @@ export async function searchNewCompanies(
   const sinceDays = opts.sinceDays ?? 120;
   const postalPrefixes = opts.postalPrefixes ?? [];
   const maxResults = Math.min(opts.maxResults ?? 30, 1000);
+  // Tokens générés par l'IA, concaténés dans le q Lucene de Sirene : on ne
+  // garde que [a-z0-9] pour qu'un guillemet/parenthèse ne casse pas la requête.
   const nameTokens = (opts.nameTokens ?? [])
-    .map((t) => t.trim())
+    .map((t) => t.normalize("NFD").replace(/[^a-zA-Z0-9]/g, "").toLowerCase())
     .filter((t) => t.length >= 3)
     .slice(0, 4);
 

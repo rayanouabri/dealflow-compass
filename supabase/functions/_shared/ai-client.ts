@@ -86,13 +86,15 @@ async function callGemini(
   };
 
   let lastTxt = "";
+  // Clé en header (pas en query string) : les URLs finissent dans les logs
+  // d'erreurs fetch et les proxies, pas les headers.
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   for (const key of uniqueKeys) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
     // Retry sur 503 (transitoire) ; sur 429 (quota) on passe à la clé suivante.
     for (let attempt = 0; attempt < 3; attempt++) {
       const resp = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
         body: JSON.stringify(body),
       });
 
