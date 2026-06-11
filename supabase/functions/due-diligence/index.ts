@@ -372,6 +372,7 @@ serve(async (req) => {
 
     // ========== PHASE ANALYZE : charger le job et lancer l'IA uniquement ==========
     if (phase === "analyze" && jobId) {
+      const phaseStart = Date.now();
       const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
       const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
       if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -759,6 +760,14 @@ Réponds UNIQUEMENT avec du JSON valide.`;
       dueDiligenceResult.metadata = { companyName, generatedAt: new Date().toISOString(), searchResultsCount: analyzeSearchCount, aiProvider: "gemini", aiModel: GEMINI_MODEL };
 
       // ——— 2e itération : lacunes sur le rapport → recherches → enrichissement ———
+      // Garde-fou wall-time : l'enrichissement refait une génération 16k (~50s).
+      // Si le rapport principal a déjà consommé trop de budget (150s max),
+      // on rend le rapport tel quel plutôt que de risquer un kill 546.
+      const ROUND2_BUDGET_MS = 85_000;
+      const elapsedMs = Date.now() - phaseStart;
+      if (elapsedMs > ROUND2_BUDGET_MS) {
+        console.warn(`[DueDiligence] 2e itération sautée (budget temps: ${Math.round(elapsedMs / 1000)}s écoulées)`);
+      } else
       try {
         const reportSummary = JSON.stringify(dueDiligenceResult).slice(0, 4000);
         const gapPrompt2 = `Rapport de due diligence (brouillon) sur "${companyName}". Extrait : ${reportSummary}
