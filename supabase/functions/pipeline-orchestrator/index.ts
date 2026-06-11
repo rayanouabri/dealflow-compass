@@ -9,9 +9,14 @@ import { logger } from "../_shared/logger.ts";
 import { callAI } from "../_shared/ai-client.ts";
 import { searchAll } from "../_shared/search-client.ts";
 import { buildFrenchBiasedQueries } from "../_shared/sourcing-queries-fr.ts";
-import { deduplicateAndRank } from "../_shared/dedup-ranker.ts";
+import { deduplicateAndRank, filterByICP } from "../_shared/dedup-ranker.ts";
+import { searchNewCompanies, inseeToSearchResults } from "../_shared/insee-sirene.ts";
+import { searchHackerNews, hnToSearchResults } from "../_shared/hn-algolia.ts";
+import { searchGitHub, githubToSearchResults } from "../_shared/github-search.ts";
+import { resolveEntities } from "../_shared/entity-cleanup.ts";
 import {
   buildScoringPrompt,
+  buildBatchScoringPrompt,
   computeWeightedScore,
   DEFAULT_WEIGHTS,
 } from "../_shared/scoring-engine.ts";
@@ -65,11 +70,15 @@ function getSupabaseAdmin() {
 }
 
 // --- Self-invocation pour chaîner les étapes ---
+// Appelle l'étape suivante dans une nouvelle invocation (pour ne pas dépasser
+// le wall-time). CLÉ : on garde l'isolate en vie avec EdgeRuntime.waitUntil
+// jusqu'à ce que la requête soit réellement envoyée — sinon l'isolate est
+// détruit avant l'envoi et l'invocation suivante ne part jamais (jobs figés).
 async function fireContinue(pipelineId: string): Promise<void> {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  // Fire-and-forget : appelle soi-même pour continuer le pipeline
-  const fireAndForgetPromise = fetch(
+
+  const post = fetch(
     `${SUPABASE_URL}/functions/v1/pipeline-orchestrator`,
     {
       method: "POST",
@@ -79,11 +88,19 @@ async function fireContinue(pipelineId: string): Promise<void> {
       },
       body: JSON.stringify({ action: "continue", pipelineId }),
     },
-  ).catch((err) =>
-    logger.error("Self-invocation échouée", { error: String(err), pipelineId })
-  );
-  // fire-and-forget
-  void fireAndForgetPromise;
+  )
+    .then((r) => r.text())
+    .catch((err) =>
+      logger.error("Self-invocation échouée", { error: String(err), pipelineId })
+    );
+
+  // @ts-ignore EdgeRuntime est fourni par le runtime Supabase
+  if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) {
+    // @ts-ignore
+    EdgeRuntime.waitUntil(post);
+  } else {
+    await post; // fallback local
+  }
 }
 
 // --- Helpers DB ---
@@ -173,8 +190,56 @@ async function handleSourcingStart(
   const stage: string = thesis?.stage?.min ?? "seed";
   const geography: string = thesis?.geography?.primary ?? "France";
 
-  // Génère les queries FR biaisées
-  const queryGroups = buildFrenchBiasedQueries(sectors, stage, geography);
+  // Profil d'entreprise idéal (ICP) — sert à cibler et filtrer strictement
+  const icp = thesis?.idealCompanyProfile ?? {};
+  const precisionTerms: string[] = [
+    ...(icp.mustHaveKeywords ?? []),
+    ...(thesis?.techKeywords ?? []),
+    ...(thesis?.subSectors ?? []),
+  ];
+  const exclusionTerms: string[] = icp.exclusionKeywords ?? [];
+
+  // Sources structurées GRATUITES (sans coût Serper), lancées en parallèle
+  // de la recherche web → aucune latence ajoutée.
+  const isFrench =
+    thesis?.geography?.frenchBias === true ||
+    /fr|france|paris|île-de-france|ile-de-france|europe/i.test(geography);
+
+  // Termes pour HN / GitHub : secteur + techKeywords (anglais). On n'utilise PAS
+  // les mustHaveKeywords (souvent en français) car ces plateformes sont anglophones.
+  const freeApiTerms = [sectors[0], ...(thesis?.techKeywords ?? [])]
+    .filter(Boolean)
+    .slice(0, 3);
+
+  // INSEE : registre FR (immatriculations récentes). FR/Europe uniquement.
+  const inseePromise = isFrench
+    ? searchNewCompanies({
+        nafCodes: icp.nafCodes,
+        nameTokens: icp.inseeNameTokens,
+        postalPrefixes: /paris|île-de-france|ile-de-france/i.test(geography)
+          ? ["75", "77", "78", "91", "92", "93", "94", "95"]
+          : [],
+        sinceDays: 120,
+        maxResults: 25,
+      })
+    : Promise.resolve([]);
+  // Hacker News (Show HN) : signal produit global.
+  const hnPromise = searchHackerNews({ terms: freeApiTerms, maxResults: 20 });
+  // GitHub : pertinent uniquement pour les thèses tech/logicielles.
+  const isTechThesis =
+    /saas|software|logiciel|\bai\b|\bml\b|\bdata\b|dev|cloud|\bapi\b|crypto|web3|cyber|infra|platform|plateforme|fintech|deeptech|hardware|robot|iot/i
+      .test(
+        JSON.stringify([sectors, thesis?.techKeywords, thesis?.subSectors]),
+      );
+  const githubPromise = isTechThesis
+    ? searchGitHub({ terms: freeApiTerms, maxResults: 20 })
+    : Promise.resolve([]);
+
+  // Génère les queries FR biaisées, ciblées sur le type d'entreprise visé
+  const queryGroups = buildFrenchBiasedQueries(sectors, stage, geography, {
+    precisionTerms,
+    exclusionTerms,
+  });
 
   // Ajoute les queries prioritaires de l'analyse IA
   const priorityQueries: string[] =
@@ -213,7 +278,33 @@ async function handleSourcingStart(
     }
   }
 
-  const candidates = deduplicateAndRank(allResults);
+  // Fusionne les candidats des sources structurées (noms fiables) avec le web
+  const [inseeCompanies, hnStartups, githubOrgs] = await Promise.all([
+    inseePromise,
+    hnPromise,
+    githubPromise,
+  ]);
+  allResults.push(...inseeToSearchResults(inseeCompanies));
+  allResults.push(...hnToSearchResults(hnStartups));
+  allResults.push(...githubToSearchResults(githubOrgs));
+  logger.info("Sources structurées", {
+    insee: inseeCompanies.length,
+    hn: hnStartups.length,
+    github: githubOrgs.length,
+  });
+
+  const ranked = deduplicateAndRank(allResults);
+  // Filtre strict on-thesis : écarte les acteurs hors-profil, priorise l'ICP
+  const filtered = filterByICP(ranked, {
+    mustHave: precisionTerms,
+    exclude: exclusionTerms,
+  });
+  // Garde-fou : si le filtre est trop agressif, on retombe sur le ranking brut
+  const prefiltered = filtered.length >= 5 ? filtered : ranked;
+
+  // Résolution d'entités IA : nettoie noms, filtre le bruit (comptes perso,
+  // labos, repos sans société), priorise les vraies startups on-thesis.
+  const candidates = await resolveEntities(prefiltered, thesis, 30);
 
   await updateJob(supabase, job.id, {
     sourcing_results: candidates.map((c) => ({
@@ -241,8 +332,9 @@ async function handlePicking(
   const sourcingResults: any[] = job.sourcing_results ?? [];
   const thesis = job.thesis_analysis;
 
-  // Top 10 candidats
-  const top10 = sourcingResults.slice(0, 10).map((c) => ({
+  // Top candidats. La couche de résolution d'entités a déjà pré-classé par
+  // pertinence à la thèse → scorer le top 6 suffit.
+  const top10 = sourcingResults.slice(0, 6).map((c) => ({
     ...c,
     categories: new Set(c.categories ?? []),
   }));
@@ -251,41 +343,59 @@ async function handlePicking(
     throw new Error("Aucun candidat trouvé lors du sourcing");
   }
 
-  // Score chaque candidat
+  const toScored = (candidate: any, result: any) => ({
+    name: candidate.name,
+    url: candidate.url,
+    descriptions: candidate.descriptions?.slice(0, 3) ?? [],
+    mentionCount: candidate.mentionCount,
+    categories: Array.from(candidate.categories),
+    sources: candidate.sources,
+    scores: result?.scores ?? {},
+    totalWeighted: computeWeightedScore(result?.scores ?? {}, DEFAULT_WEIGHTS),
+    redFlags: result?.redFlags ?? [],
+    whyNow: result?.whyNow ?? "",
+    whyThisStartup: result?.whyThisStartup ?? "",
+    comparables: result?.comparables ?? [],
+    riskLevel: result?.riskLevel ?? "medium",
+  });
+
   const scoredCandidates: any[] = [];
 
-  for (const candidate of top10) {
-    try {
-      const scoringPrompt = buildScoringPrompt(candidate, thesis);
-      const result = await callAI(
-        "Tu es un analyste VC. Réponds uniquement en JSON valide.",
-        scoringPrompt,
-        { temperature: 0.1, maxTokens: 1024 },
-      ) as any;
+  // BATCH : un seul appel IA pour scorer tout le top (économise le quota Gemini).
+  try {
+    const batch = (await callAI(
+      "Tu es un analyste VC. Réponds uniquement en JSON valide.",
+      buildBatchScoringPrompt(top10, thesis),
+      { temperature: 0.1, maxTokens: 4096 },
+    )) as any;
+    for (const r of batch?.rankings ?? []) {
+      const idx = r?.index;
+      if (typeof idx === "number" && idx >= 0 && idx < top10.length) {
+        scoredCandidates.push(toScored(top10[idx], r));
+      }
+    }
+  } catch (err) {
+    logger.warn("Scoring batché échoué — fallback unitaire", {
+      error: String(err),
+    });
+  }
 
-      const scores = result?.scores ?? {};
-      const totalWeighted = computeWeightedScore(scores, DEFAULT_WEIGHTS);
-
-      scoredCandidates.push({
-        name: candidate.name,
-        url: candidate.url,
-        descriptions: candidate.descriptions?.slice(0, 3) ?? [],
-        mentionCount: candidate.mentionCount,
-        categories: Array.from(candidate.categories),
-        sources: candidate.sources,
-        scores,
-        totalWeighted,
-        redFlags: result?.redFlags ?? [],
-        whyNow: result?.whyNow ?? "",
-        whyThisStartup: result?.whyThisStartup ?? "",
-        comparables: result?.comparables ?? [],
-        riskLevel: result?.riskLevel ?? "medium",
-      });
-    } catch (err) {
-      logger.warn("Scoring échoué pour candidat", {
-        name: candidate.name,
-        error: String(err),
-      });
+  // Fallback : si le batch n'a rien donné, score unitairement le top 3.
+  if (scoredCandidates.length === 0) {
+    for (const candidate of top10.slice(0, 3)) {
+      try {
+        const result = (await callAI(
+          "Tu es un analyste VC. Réponds uniquement en JSON valide.",
+          buildScoringPrompt(candidate, thesis),
+          { temperature: 0.1, maxTokens: 1024 },
+        )) as any;
+        scoredCandidates.push(toScored(candidate, result));
+      } catch (err) {
+        logger.warn("Scoring unitaire échoué", {
+          name: candidate.name,
+          error: String(err),
+        });
+      }
     }
   }
 
@@ -532,6 +642,88 @@ async function handleContinue(
 }
 
 // ============================================================
+// WATCHDOG : auto-réparation des jobs figés
+// ============================================================
+// Seuils > durée normale de chaque étape. Les états "_done" sont des handoffs
+// (le fireContinue suivant peut mourir) → seuil court. dd_done/error = terminaux.
+const STUCK_THRESHOLDS_MS: Record<string, number> = {
+  thesis_analyzing: 45_000,
+  thesis_done: 20_000,
+  sourcing_running: 200_000,
+  sourcing_done: 20_000,
+  picking: 120_000,
+  pick_done: 20_000,
+  dd_search_running: 150_000,
+  dd_search_done: 20_000,
+  dd_analyze_running: 300_000,
+};
+
+async function selfHealIfStuck(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  job: any,
+): Promise<void> {
+  const threshold = STUCK_THRESHOLDS_MS[job.status];
+  if (!threshold) return; // état terminal ou inconnu
+
+  const updatedAt = job.updated_at ? new Date(job.updated_at).getTime() : 0;
+  if (Date.now() - updatedAt < threshold) return;
+
+  const retry = job.retry_count ?? 0;
+  const maxRetries = job.max_retries ?? 3;
+  if (retry >= maxRetries) {
+    await updateJob(supabase, job.id, {
+      status: "error",
+      error_message: `Job figé au stade ${job.status} (watchdog)`,
+      error_step: job.status,
+    });
+    return;
+  }
+
+  logger.warn("Watchdog : job figé, relance auto", {
+    pipelineId: job.id,
+    status: job.status,
+    ageMs: Date.now() - updatedAt,
+  });
+  // Incrémente retry_count ET touche updated_at → évite une rafale de relances
+  // entre deux polls (3s) avant que l'étape relancée ne mette à jour le status.
+  await updateJob(supabase, job.id, { retry_count: retry + 1 });
+  await fireContinue(job.id);
+}
+
+// ============================================================
+// ACTION: sweep — balayage des jobs figés (appelé par un cron pg_cron).
+// Rend la reprise indépendante du polling frontend.
+// ============================================================
+async function handleSweep(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  req: Request,
+): Promise<Response> {
+  // Jobs non terminaux, pas mis à jour depuis au moins 20s (plus petit seuil).
+  const cutoff = new Date(Date.now() - 20_000).toISOString();
+  const { data: jobs, error } = await supabase
+    .from("pipeline_jobs")
+    .select("id, status, updated_at, retry_count, max_retries")
+    .not("status", "in", "(dd_done,error)")
+    .lt("updated_at", cutoff)
+    .limit(50);
+
+  if (error) {
+    logger.error("Sweep : lecture échouée", { error: error.message });
+    return jsonResp({ error: error.message }, 500, req);
+  }
+
+  let candidates = 0;
+  for (const job of jobs ?? []) {
+    candidates++;
+    // selfHealIfStuck applique le seuil par état et relance si vraiment figé.
+    await selfHealIfStuck(supabase, job);
+  }
+
+  logger.info("Sweep terminé", { scanned: jobs?.length ?? 0 });
+  return jsonResp({ scanned: candidates }, 200, req);
+}
+
+// ============================================================
 // ACTION: status
 // ============================================================
 async function handleStatus(
@@ -548,7 +740,7 @@ async function handleStatus(
   const { data: job, error } = await supabase
     .from("pipeline_jobs")
     .select(
-      "id, status, current_step, total_steps, picked_startup, error_message, dd_job_id, completed_at, thesis_analysis, created_at, started_at",
+      "id, status, current_step, total_steps, picked_startup, error_message, dd_job_id, completed_at, thesis_analysis, created_at, started_at, updated_at, retry_count, max_retries",
     )
     .eq("id", pipelineId)
     .single();
@@ -556,6 +748,11 @@ async function handleStatus(
   if (error || !job) {
     return jsonResp({ error: "Job introuvable" }, 404, req);
   }
+
+  // Watchdog : auto-répare un job figé (instance async tuée sans throw → status
+  // bloqué sans erreur). Seuils > durée normale de l'étape pour ne pas relancer
+  // une étape simplement lente. Déclenché par le polling du frontend.
+  await selfHealIfStuck(supabase, job);
 
   // Résumé de la thèse (pas le JSON complet)
   const thesisSummary = job.thesis_analysis
@@ -616,6 +813,8 @@ serve(async (req: Request) => {
       return handleContinue(supabase, body, req);
     case "status":
       return handleStatus(supabase, body, req);
+    case "sweep":
+      return handleSweep(supabase, req);
     default:
       return jsonResp({ error: `Action inconnue: ${action}` }, 400, req);
   }

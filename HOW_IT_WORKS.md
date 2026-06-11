@@ -51,7 +51,46 @@ L'outil est un SaaS pour fonds VC qui automatise deux choses :
 
 ---
 
-## 3. Sourcing : pipeline `analyze-fund` (4 phases)
+## 2-bis. Sourcing v2 : `pipeline-orchestrator` (ACTIF)
+
+C'est le moteur de sourcing **réellement utilisé** par `/analyse` ([Analyser.tsx](src/pages/Analyser.tsx) + [PipelineProgress.tsx](src/pages/PipelineProgress.tsx)). Le pipeline `analyze-fund` (section 3) est l'ancien path. Tout l'état est dans la table `pipeline_jobs`.
+
+### Orchestration : machine à états auto-chaînée
+Une seule Edge Function ([pipeline-orchestrator](supabase/functions/pipeline-orchestrator/index.ts)) gère 5 étapes. Chaque étape, en fin de traitement, se ré-appelle elle-même (`action:"continue"`) pour lancer la suivante — découpage nécessaire pour ne pas dépasser le wall-time Supabase.
+
+Actions : `start` (crée le job) · `continue` (exécute l'étape courante selon `status`) · `status` (lecture + watchdog) · `sweep` (balayage cron).
+
+**Robustesse (3 niveaux)** :
+1. `EdgeRuntime.waitUntil()` garde l'isolate vivant le temps que la requête de chaînage parte réellement (sinon l'isolate est tué avant l'envoi → job figé). C'est le correctif racine.
+2. **Watchdog** (`selfHealIfStuck`) : sur chaque poll `status`, si un job dépasse le seuil de son étape sans bouger, il est relancé (`retry_count++`), borné par `max_retries` puis passé en `error`.
+3. **Cron** (`pg_cron` + `pg_net`, toutes les minutes) appelle `sweep` → relance les jobs figés même si personne ne regarde la page.
+
+### Étape 1 — Analyse de thèse → ICP
+1 appel IA ([thesis-analysis.ts](supabase/functions/_shared/prompts/thesis-analysis.ts)) transforme le nom de fonds / la thèse en JSON structuré, dont un **Ideal Company Profile** : `definition`, `businessModel`, `mustHaveKeywords`, `exclusionKeywords`, `nafCodes`, `inseeNameTokens`. C'est ce qui rend le sourcing strict.
+
+### Étape 2 — Sourcing multi-source (gratuit, parallèle)
+| Source | Fichier | Nature |
+|--------|---------|--------|
+| Web FR-biaisé, ciblé ICP + exclusions | [sourcing-queries-fr.ts](supabase/functions/_shared/sourcing-queries-fr.ts) | Serper/Brave (~63 req) |
+| INSEE Sirene (browse NAF + **nom-ciblé** sur tokens thèse) | [insee-sirene.ts](supabase/functions/_shared/insee-sirene.ts) | registre FR, gratuit |
+| Hacker News (Show HN) | [hn-algolia.ts](supabase/functions/_shared/hn-algolia.ts) | gratuit, sans clé |
+| GitHub (si thèse tech) | [github-search.ts](supabase/functions/_shared/github-search.ts) | `GITHUB_TOKEN` |
+
+Puis **dedup + ranking** ([dedup-ranker.ts](supabase/functions/_shared/dedup-ranker.ts)) : regroupement par chemin complet pour les agrégateurs, blocklist d'annuaires/presse, filtre anti-titre-d'article, filtre ICP strict (exclut les acteurs hors-profil, boost on-thesis).
+
+Enfin **résolution d'entités IA** ([entity-cleanup.ts](supabase/functions/_shared/entity-cleanup.ts)) : 1 appel qui filtre le bruit (comptes perso, repos sans société, labos), normalise les noms, dédoublonne, note la pertinence. Fallback = candidats bruts.
+
+### Étape 3 — Picking
+1 appel IA **batché** ([scoring-engine.ts](supabase/functions/_shared/scoring-engine.ts) `buildBatchScoringPrompt`) score les 6 meilleurs candidats d'un coup (8 dimensions pondérées) au lieu d'un appel par candidat. Fallback unitaire sur le top 3 si le batch échoue.
+
+### Étapes 4-5 — Due Diligence
+Délègue à la fonction `due-diligence` (phases `search` puis `analyze`, cf. section 4).
+
+**Coût IA par run** : 1 (thèse) + 1 (cleanup) + 1 (picking batché) + DD. **Sources structurées = 0 crédit Serper.**
+
+---
+
+## 3. Sourcing : pipeline `analyze-fund` (4 phases) — LEGACY
 
 Tout l'état est stocké dans la table `sourcing_jobs`. Chaque phase lit le job, écrit son résultat dans `search_context` (JSONB), met à jour `status`.
 
