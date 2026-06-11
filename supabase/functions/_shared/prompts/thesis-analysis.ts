@@ -10,6 +10,15 @@ Réponds UNIQUEMENT en JSON valide, sans texte autour, avec le schéma suivant :
   "sectors": ["<secteur1>", ...],
   "subSectors": ["<sous-secteur1>", ...],
   "techKeywords": ["<mot-clé tech1>", ...],
+  "idealCompanyProfile": {
+    "definition": "<1 phrase : le type EXACT d'entreprise visé (ce qu'elle fait, pour qui, comment)>",
+    "businessModel": "<ex: B2B SaaS, deeptech hardware, marketplace, plateforme API, D2C...>",
+    "mustHaveKeywords": ["<terme produit/techno que l'entreprise DOIT concerner>", ...],
+    "niceToHaveKeywords": ["<terme bonus>", ...],
+    "exclusionKeywords": ["<type d'acteur à EXCLURE: agence, ESN, cabinet de conseil, holding, fonds, média, intégrateur, distributeur, franchise...>", ...],
+    "nafCodes": ["<code NAF/APE français pertinent, format 62.01Z>", ...],
+    "inseeNameTokens": ["<fragment court (3-7 lettres) qu'une startup du domaine met dans sa raison sociale, ex pour cyber: cyber, secur, crypto>", ...]
+  },
   "stage": {
     "min": "<pre-seed|seed|serie-a|serie-b|serie-c+>",
     "max": "<pre-seed|seed|serie-a|serie-b|serie-c+>"
@@ -40,6 +49,11 @@ Réponds UNIQUEMENT en JSON valide, sans texte autour, avec le schéma suivant :
     "negativeFilters": ["<filtre négatif1>", ...]
   }
 }
+
+RÈGLES POUR idealCompanyProfile (le plus important) :
+- "definition" doit décrire le type d'entreprise de façon assez stricte pour rejeter un acteur du même secteur mais du mauvais type (ex: thèse "infra cloud B2B" → exclure une agence web qui fait du cloud).
+- "mustHaveKeywords" : 4 à 8 termes concrets décrivant le PRODUIT ou la TECHNO (pas le secteur générique). Ce sont ces termes qui serviront à filtrer.
+- "exclusionKeywords" : déduis les acteurs à écarter à partir de la thèse (sociétés de service, conseil, ESN, agences, holdings, fonds, médias, distributeurs) sauf si la thèse les vise explicitement.
 
 Sois précis et actionnable. Les queries doivent être des requêtes de recherche web efficaces.`;
 

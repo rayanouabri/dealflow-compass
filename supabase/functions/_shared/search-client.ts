@@ -6,7 +6,7 @@ export interface SearchResult {
   url: string;
   description: string;
   extra_snippets?: string[];
-  source?: "brave" | "serper";
+  source?: "brave" | "serper" | "insee" | "hn" | "github";
 }
 
 async function sleep(ms: number): Promise<void> {

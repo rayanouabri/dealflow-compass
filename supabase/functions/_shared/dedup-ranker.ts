@@ -15,6 +15,8 @@ export interface SourcingCandidate {
 }
 
 const SIGNAL_WEIGHTS: Record<string, number> = {
+  insee: 2, // signal faible seul (juste "société immatriculée") — corrobore, ne domine pas
+  insee_named: 5, // raison sociale qui évoque la thèse — signal fort
   ip: 4,
   spinoff: 3,
   university: 3,
@@ -35,11 +37,120 @@ const SIGNAL_WEIGHTS: Record<string, number> = {
 export function normalizeUrl(url: string): string {
   try {
     const u = new URL(url.toLowerCase());
-    // Retire www. et le slash final
-    return (u.hostname.replace(/^www\./, "") + u.pathname).replace(/\/$/, "");
+    // Retire www. et le slash final ; garde la query (utile pour HN ?id=)
+    return (u.hostname.replace(/^www\./, "") + u.pathname + u.search).replace(
+      /\/$/,
+      "",
+    );
   } catch {
     return url.toLowerCase().replace(/^www\./, "").replace(/\/$/, "");
   }
+}
+
+// Domaines agrégateurs : un même hôte héberge des milliers d'entreprises
+// distinctes. On regroupe alors par chemin complet, pas par hostname.
+const AGGREGATOR_HOSTS = new Set([
+  "github.com",
+  "news.ycombinator.com",
+  "ycombinator.com",
+  "annuaire-entreprises.data.gouv.fr",
+  "linkedin.com",
+  "producthunt.com",
+  "wellfound.com",
+  "angel.co",
+  "pappers.fr",
+  "societe.com",
+  "crunchbase.com",
+  "medium.com",
+  "twitter.com",
+  "x.com",
+  "youtube.com",
+  "reddit.com",
+]);
+
+function groupingKey(normUrl: string): string {
+  const host = normUrl.split("/")[0];
+  return AGGREGATOR_HOSTS.has(host) ? normUrl : host;
+}
+
+// Annuaires, listicles, presse, institutions : une page = un article listant
+// plusieurs entreprises, PAS une entreprise. On ne les retient jamais comme
+// candidat (sinon on source "seedtable", "usine digitale"...).
+const DIRECTORY_HOSTS = new Set([
+  "seedtable.com",
+  "forinov.fr",
+  "welcometothejungle.com",
+  "lesassisesdelacybersecurite.com",
+  "deepstrike.io",
+  "crunchbase.com",
+  "dealroom.co",
+  "eu-startups.com",
+  "sifted.eu",
+  "maddyness.com",
+  "frenchweb.fr",
+  "journaldunet.com",
+  "usine-digitale.fr",
+  "lesechos.fr",
+  "bigmedia.bpifrance.fr",
+  "bpifrance.fr",
+  "lafrenchtech.gouv.fr",
+  "lafrenchtech.com",
+  "inria.fr",
+  "cnrs.fr",
+  "techcrunch.com",
+  "producthunt.com",
+  "ycombinator.com",
+  "news.ycombinator.com",
+  "wikipedia.org",
+  "youtube.com",
+  "medium.com",
+  "lemondeinformatique.fr",
+  "fundraiseinsider.com",
+  "frenchtechjournal.com",
+  "substack.com",
+  "ec.europa.eu",
+  "reddit.com",
+  "glassdoor.com",
+  "indeed.com",
+  "bpifrance.com",
+  "usinenouvelle.com",
+  "challenges.fr",
+  "forbes.com",
+  "lespepitestech.com",
+  "jedha.co",
+  "growthlist.co",
+  "eu-startups.com",
+  "tracxn.com",
+  "f6s.com",
+  "glass.ai",
+  "cybernews.com",
+  "g2.com",
+  "capterra.com",
+]);
+
+// Match par suffixe : alexandre.substack.com → substack.com
+function isDirectoryHost(normUrl: string): boolean {
+  const host = normUrl.split("/")[0];
+  for (const d of DIRECTORY_HOSTS) {
+    if (host === d || host.endsWith("." + d)) return true;
+  }
+  return false;
+}
+
+// Un nom qui ressemble à un titre d'article/listicle n'est pas une entreprise.
+// Les vraies raisons sociales sont courtes et sans marqueurs éditoriaux.
+const ARTICLE_NAME =
+  /\b(top|best|meilleur|meilleures|liste|list of|funded|guide|startups?|entreprises?|companies|classement|palmarès|annuaire|ranking|directory)\b/i;
+
+function looksLikeArticle(name: string): boolean {
+  if (name.length > 40) return true; // raison sociale trop longue
+  if (/^[\p{Emoji_Presentation}\p{Extended_Pictographic}]/u.test(name.trim())) {
+    return true; // commence par un emoji/drapeau
+  }
+  if (/\b\d[\d.,]*\+?\b/.test(name) && ARTICLE_NAME.test(name)) return true; // "15 meilleures", "1,600+ funded"
+  const wordCount = name.trim().split(/\s+/).length;
+  if (wordCount >= 4 && ARTICLE_NAME.test(name)) return true;
+  return false;
 }
 
 export function extractCompanyName(title: string, url: string): string {
@@ -88,7 +199,7 @@ function computeRecencyScore(descriptions: string[]): { score: number; year: num
 }
 
 function computeCrossSignalBonus(categories: Set<string>): number {
-  const highValueSignals = ["github", "arxiv_hal", "pappers", "show_hn", "ip", "spinoff", "producthunt", "wellfound", "university", "talent"];
+  const highValueSignals = ["insee", "insee_named", "github", "arxiv_hal", "pappers", "show_hn", "ip", "spinoff", "producthunt", "wellfound", "university", "talent"];
   const highValueCount = Array.from(categories).filter(cat => highValueSignals.includes(cat)).length;
 
   if (highValueCount >= 4) return 25;
@@ -107,12 +218,20 @@ export function deduplicateAndRank(
     if (!r.url) continue;
 
     const normUrl = normalizeUrl(r.url);
-    // Domaine racine pour regrouper (ex: acme.com/team et acme.com/blog)
-    const hostname = normUrl.split("/")[0];
+    // Ignore les pages d'annuaires/presse (ne sont pas des entreprises)
+    if (isDirectoryHost(normUrl)) continue;
 
-    if (!byUrl.has(hostname)) {
-      byUrl.set(hostname, {
-        name: extractCompanyName(r.title, r.url),
+    const candidateName = extractCompanyName(r.title, r.url);
+    // Ignore les titres d'articles/listicles capturés comme faux candidats
+    if (looksLikeArticle(candidateName)) continue;
+
+    // Clé de regroupement : hostname pour un site d'entreprise (acme.com/team
+    // et acme.com/blog → même candidat), chemin complet pour un agrégateur.
+    const key = groupingKey(normUrl);
+
+    if (!byUrl.has(key)) {
+      byUrl.set(key, {
+        name: candidateName,
         url: r.url,
         descriptions: [],
         mentionCount: 0,
@@ -125,7 +244,7 @@ export function deduplicateAndRank(
       });
     }
 
-    const candidate = byUrl.get(hostname)!;
+    const candidate = byUrl.get(key)!;
     candidate.mentionCount += 1;
 
     if (r.description) candidate.descriptions.push(r.description);
@@ -148,7 +267,7 @@ export function deduplicateAndRank(
 
     // Filter noise with relaxed rules for high-value signals
     const hasHighValueSignal = Array.from(c.categories).some(cat =>
-      ["github", "arxiv_hal", "pappers", "show_hn"].includes(cat)
+      ["insee", "insee_named", "github", "arxiv_hal", "pappers", "show_hn"].includes(cat)
     );
     if (c.mentionCount < 2 && c.categories.size < 2 && !hasHighValueSignal) {
       continue;
@@ -165,4 +284,44 @@ export function deduplicateAndRank(
   }
 
   return candidates.sort((a, b) => b.score - a.score);
+}
+
+// Filtre strict on-thesis (gratuit, basé texte).
+// Élimine les candidats qui matchent un terme d'exclusion sans aucun terme
+// obligatoire de l'ICP. Boost ceux qui matchent les termes obligatoires.
+export function filterByICP(
+  candidates: SourcingCandidate[],
+  opts: { mustHave?: string[]; exclude?: string[] },
+): SourcingCandidate[] {
+  const mustHave = (opts.mustHave ?? []).map((t) => t.toLowerCase()).filter(Boolean);
+  const exclude = (opts.exclude ?? []).map((t) => t.toLowerCase()).filter(Boolean);
+
+  if (mustHave.length === 0 && exclude.length === 0) return candidates;
+
+  const matchesWord = (text: string, term: string): boolean => {
+    // match mot entier pour éviter les faux positifs (ex: "fonds" dans "profonds")
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`\\b${escaped}\\b`, "i").test(text);
+  };
+
+  const result: SourcingCandidate[] = [];
+  for (const c of candidates) {
+    const text = `${c.name} ${c.descriptions.join(" ")}`.toLowerCase();
+    const hasMust = mustHave.length === 0 || mustHave.some((t) => matchesWord(text, t));
+    const hasExclusion = exclude.some((t) => matchesWord(text, t));
+    // Les candidats du registre INSEE sont déjà pré-qualifiés par leur code NAF :
+    // on ne les rejette pas sur un mot du libellé NAF (ex: "conseil en logiciels").
+    const fromRegistry = c.categories.has("insee") || c.categories.has("insee_named");
+
+    // Rejet strict : ressemble à un acteur exclu et ne matche aucun terme produit
+    if (hasExclusion && !hasMust && !fromRegistry) continue;
+
+    // Boost les candidats qui matchent explicitement le type d'entreprise visé
+    if (mustHave.length > 0 && hasMust) {
+      c.score += 10;
+    }
+    result.push(c);
+  }
+
+  return result.sort((a, b) => b.score - a.score);
 }

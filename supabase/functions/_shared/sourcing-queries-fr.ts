@@ -6,14 +6,34 @@ export interface QueryGroup {
   queries: string[];
 }
 
+export interface PrecisionOptions {
+  // Termes produit/techno précis (techKeywords + mustHaveKeywords de l'ICP)
+  precisionTerms?: string[];
+  // Types d'acteurs à exclure du sourcing (exclusionKeywords de l'ICP)
+  exclusionTerms?: string[];
+}
+
 export function buildFrenchBiasedQueries(
   sectors: string[],
   stage: string,
   geography: string,
+  opts: PrecisionOptions = {},
 ): QueryGroup[] {
   const year = new Date().getFullYear();
   const sectorStr = sectors.length > 0 ? sectors.join(" OR ") : "deeptech startup";
   const isGlobalGeo = /global|monde|world|us|usa/i.test(geography);
+
+  // Termes précis (type d'entreprise) et opérateurs d'exclusion
+  const precisionTerms = (opts.precisionTerms ?? []).filter(Boolean).slice(0, 6);
+  const precisionStr = precisionTerms.length > 0
+    ? precisionTerms.map((t) => `"${t}"`).join(" OR ")
+    : "";
+  // Opérateurs d'exclusion appliqués aux requêtes web larges (pas aux site: officiels)
+  const negStr = (opts.exclusionTerms ?? [])
+    .filter(Boolean)
+    .slice(0, 6)
+    .map((t) => `-"${t}"`)
+    .join(" ");
 
   const groups: QueryGroup[] = [
     // 1. Écosystème French Tech
@@ -85,19 +105,7 @@ export function buildFrenchBiasedQueries(
       ],
     },
 
-    // 7. Presse tech FR
-    {
-      category: "presse_fr",
-      queries: [
-        `site:maddyness.com ${sectorStr} ${year}`,
-        `site:frenchweb.fr ${sectorStr} startup ${year}`,
-        `site:journaldunet.com ${sectorStr} startup levée ${year}`,
-        `site:usine-digitale.fr ${sectorStr} startup ${year}`,
-        `site:lesechos.fr ${sectorStr} startup ${stage} ${year}`,
-      ],
-    },
-
-    // 8. Brevets FR
+    // 7. Brevets FR
     {
       category: "brevets_fr",
       queries: [
@@ -127,16 +135,48 @@ export function buildFrenchBiasedQueries(
   }
 
   // 10. Global outliers (si géographie non exclusivement FR)
+  // Note : ProductHunt/YC/HN sont couverts par les connecteurs structurés
+  // (hn-algolia, github) — inutile de les requêter via Serper ici.
   if (isGlobalGeo || !geography || !/fr|france/i.test(geography)) {
     groups.push({
       category: "global_outliers",
       queries: [
-        `site:ycombinator.com ${sectorStr} ${year}`,
-        `site:techstars.com ${sectorStr} ${year}`,
-        `site:producthunt.com ${sectorStr} ${year}`,
-        `"YC" OR "Y Combinator" ${sectorStr} France OR French ${year}`,
+        `${sectorStr} startup "raised seed" OR "pre-seed round" ${year}`,
+        `${sectorStr} startup "we are building" OR "launching" founder ${year}`,
       ],
     });
+  }
+
+  // 0. Requêtes haute précision sur le TYPE d'entreprise (ICP)
+  // Placées en tête pour prioriser les candidats strictement on-thesis.
+  if (precisionStr) {
+    const geoTerm = isGlobalGeo ? geography : "France OR Paris";
+    groups.unshift({
+      category: "icp_precision",
+      queries: [
+        `${precisionStr} startup ${geoTerm} ${year} ${negStr}`.trim(),
+        `${precisionStr} (${sectorStr}) startup "${stage}" ${year} ${negStr}`.trim(),
+        `${precisionStr} startup "levée de fonds" OR "seed" France ${year} ${negStr}`.trim(),
+        `site:linkedin.com/company ${precisionStr} startup ${geoTerm} ${year}`,
+      ],
+    });
+  }
+
+  // Applique les exclusions aux requêtes web larges (réduit le bruit sans coût)
+  if (negStr) {
+    const noisyCategories = new Set([
+      "french_tech",
+      "talent_signals",
+      "presse_fr",
+      "global_outliers",
+    ]);
+    for (const g of groups) {
+      if (noisyCategories.has(g.category)) {
+        g.queries = g.queries.map((q) =>
+          q.includes("site:") ? q : `${q} ${negStr}`.trim()
+        );
+      }
+    }
   }
 
   return groups;

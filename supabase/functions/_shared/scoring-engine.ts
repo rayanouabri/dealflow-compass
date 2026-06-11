@@ -110,5 +110,56 @@ Réponds UNIQUEMENT en JSON valide avec ce schéma :
   "riskLevel": "low" | "medium" | "high"
 }
 
-Sois strict, sceptique, et basé sur les données disponibles. Utilise la dimension "recency" pour évaluer la fraîcheur et l'actualité des signaux détectés.`;
+Sois strict, sceptique, et basé sur les données disponibles. Utilise la dimension "recency" pour évaluer la fraîcheur et l'actualité des signaux détectés.
+
+IMPORTANT — adéquation au profil : si la startup correspond à un "exclusionKeywords" de la thèse (agence, ESN, conseil, holding, fonds, média, distributeur...) ou ne correspond PAS à "idealCompanyProfile.definition", mets "thesisFit" <= 20 et ajoute un redFlag "hors-profil". Ne récompense un thesisFit élevé que si l'entreprise matche le type d'entreprise visé.`;
+}
+
+// Variante BATCHÉE : score N candidats en UN SEUL appel IA (économise le quota).
+// Retour attendu : { "rankings": [ { "index": <i>, "scores": {...}, ... } ] }
+export function buildBatchScoringPrompt(
+  candidates: SourcingCandidate[],
+  thesis: unknown,
+): string {
+  const list = candidates
+    .map((c, i) => {
+      const cats = Array.from(c.categories).join(", ") || "standard";
+      const desc = c.descriptions.slice(0, 3).join(" | ").slice(0, 300);
+      return `### [${i}] ${c.name}
+- URL : ${c.url}
+- Sources : ${c.sources.join(", ")}
+- Signaux : ${cats} (mentions: ${c.mentionCount}, année: ${c.signalYear || "?"})
+- Descriptions : ${desc}`;
+    })
+    .join("\n\n");
+
+  return `Tu es un analyste VC senior. Évalue CHAQUE startup ci-dessous par rapport à la thèse du fonds, en un seul passage.
+
+## Thèse du fonds
+${JSON.stringify(thesis, null, 2)}
+
+## Candidats (${candidates.length})
+${list}
+
+## Instructions
+Réponds UNIQUEMENT en JSON valide :
+{
+  "rankings": [
+    {
+      "index": <numéro entre crochets du candidat>,
+      "scores": {
+        "thesisFit": <0-100>, "signalDiversity": <0-100>, "sourceCorroboration": <0-100>,
+        "frenchEcosystem": <0-100>, "timing": <0-100>, "teamQuality": <0-100>,
+        "competitivePosition": <0-100>, "recency": <0-100>
+      },
+      "redFlags": ["<flag>", ...],
+      "whyNow": "<court>",
+      "whyThisStartup": "<3 raisons clés>",
+      "comparables": ["<comparable>", ...],
+      "riskLevel": "low" | "medium" | "high"
+    }
+  ]
+}
+Inclus TOUS les candidats. Sois strict et sceptique.
+RÈGLE STRICTE : si un candidat matche un "exclusionKeywords" (agence, ESN, conseil, holding, fonds, média, distributeur) ou ne correspond PAS à "idealCompanyProfile.definition", "thesisFit" <= 20 + redFlag "hors-profil". Récompense un thesisFit élevé seulement si le type d'entreprise correspond vraiment.`;
 }
