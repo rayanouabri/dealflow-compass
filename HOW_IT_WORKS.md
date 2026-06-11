@@ -83,7 +83,11 @@ Enfin **résolution d'entités IA** ([entity-cleanup.ts](supabase/functions/_sha
 ### Étape 3 — Picking
 1 appel IA **batché** ([scoring-engine.ts](supabase/functions/_shared/scoring-engine.ts) `buildBatchScoringPrompt`) score les 6 meilleurs candidats d'un coup (8 dimensions pondérées) au lieu d'un appel par candidat. Fallback unitaire qui complète à ≥3 si le batch tronque. Le résultat est stocké en **shortlist** (toutes les startups scorées + analyse qualitative), pas seulement la n°1.
 
-> **Quota IA** : `ai-client.ts` fait une rotation sur `GEMINI_API_KEY` / `GEMINI_KEY_2` / `GEMINI_KEY_3` (bascule sur 429) pour cumuler les quotas free-tier journaliers.
+> **Quota IA (free tier strict)** : l'app ne peut PAS dépasser le quota gratuit Gemini.
+> 1. Garde-fou dur : chaque appel IA réserve un slot dans `ai_usage_daily` (RPC `increment_ai_usage`) ; au-delà de `AI_DAILY_LIMIT` (240/j) → refus propre.
+> 2. Rotation de clés `GEMINI_API_KEY`/`GEMINI_KEY_2`/`GEMINI_KEY_3` sur 429 quota ; un 429 de rythme (RPM) attend le `retryDelay` de Google.
+> 3. Caches IA (`search_cache`, préfixe `ai|`) : thèse par fonds (7 j), rapport DD par société (3 j) — re-sourcer le même fonds ≈ 0 appel.
+> 4. Modèle : `gemini-2.5-flash` (250 req/j gratuites). Coût par run à froid : ~5-7 appels ; à chaud : 0-2.
 
 ### Étapes 4-5 — Due Diligence
 Délègue à la fonction `due-diligence` (phases `search` puis `analyze`, cf. section 4).
