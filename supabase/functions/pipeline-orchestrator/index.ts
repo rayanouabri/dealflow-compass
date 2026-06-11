@@ -17,6 +17,11 @@ import { resolveEntities } from "../_shared/entity-cleanup.ts";
 import { buildLinkedInQueries } from "../_shared/linkedin-signals.ts";
 import { buildIPPatentQueries } from "../_shared/ip-patent-signals.ts";
 import {
+  loadSourcedSet,
+  isAlreadySourced,
+  saveSourcedCompanies,
+} from "../_shared/user-memory.ts";
+import {
   buildScoringPrompt,
   buildBatchScoringPrompt,
   computeWeightedScore,
@@ -356,7 +361,25 @@ async function handleSourcingStart(
 
   // Résolution d'entités IA : nettoie noms, filtre le bruit (comptes perso,
   // labos, repos sans société), priorise les vraies startups on-thesis.
-  const candidates = await resolveEntities(prefiltered, thesis, 30);
+  const resolved = await resolveEntities(prefiltered, thesis, 30);
+
+  // Mémoire utilisateur : écarte les sociétés déjà proposées à cet utilisateur
+  // lors de runs précédents (pour ne pas re-sourcer la même chose).
+  let candidates = resolved;
+  if (job.user_id) {
+    const sourcedSet = await loadSourcedSet(supabase, job.user_id);
+    if (sourcedSet.names.size > 0 || sourcedSet.domains.size > 0) {
+      const fresh = resolved.filter(
+        (c) => !isAlreadySourced(sourcedSet, c.name, c.url),
+      );
+      // Garde-fou : ne pas tout vider si l'utilisateur a déjà beaucoup sourcé
+      candidates = fresh.length >= 3 ? fresh : resolved;
+      logger.info("Mémoire utilisateur", {
+        connus: resolved.length - fresh.length,
+        gardes: candidates.length,
+      });
+    }
+  }
 
   await updateJob(supabase, job.id, {
     sourcing_results: candidates.map((c) => ({
@@ -472,6 +495,17 @@ async function handlePicking(
     current_step: 5,
   });
 
+  // Mémoire utilisateur : mémorise les sociétés proposées pour ne pas les
+  // re-sourcer lors des prochains runs de cet utilisateur.
+  if (job.user_id) {
+    await saveSourcedCompanies(
+      supabase,
+      job.user_id,
+      job.id,
+      scoredCandidates.map((c: any) => ({ name: c.name, url: c.url })),
+    );
+  }
+
   await fireContinue(job.id);
 }
 
@@ -580,16 +614,34 @@ async function handleDDAnalyze(
 // ============================================================
 // ACTION: start
 // ============================================================
+// Extrait l'user_id du JWT (si le front a envoyé le token user, pas l'anon).
+async function getUserId(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  req: Request,
+): Promise<string | null> {
+  try {
+    const auth = req.headers.get("Authorization");
+    if (!auth?.startsWith("Bearer ")) return null;
+    const token = auth.slice(7);
+    const { data } = await supabase.auth.getUser(token);
+    return data.user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function handleStart(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   body: any,
   req: Request,
 ): Promise<Response> {
   const { fundName, customThesis } = body;
+  const userId = await getUserId(supabase, req);
 
   const { data: job, error } = await supabase
     .from("pipeline_jobs")
     .insert({
+      user_id: userId,
       fund_name: fundName ?? null,
       custom_thesis: customThesis ?? null,
       status: "thesis_analyzing",
