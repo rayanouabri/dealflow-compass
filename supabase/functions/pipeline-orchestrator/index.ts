@@ -573,6 +573,21 @@ async function handlePicking(
     (s) => !(s.redFlags ?? []).some((f: string) => /pas une entreprise/i.test(String(f))),
   );
   const finalShortlist = realCompanies.length > 0 ? realCompanies : scoredCandidates;
+
+  // Seuil de viabilité : si le meilleur candidat score < 35, le sourcing a
+  // échoué à trouver des entreprises pertinentes (résultats retail, bruit).
+  // On lève une erreur pour que le watchdog retry plutôt que de lancer une DD
+  // inutile sur un score de 13.
+  // Seuil bas : les startups deeptech hard-science ont naturellement peu de signal web
+  // → scores plus faibles que le SaaS B2B. On bloque seulement les < 20 (bruit pur).
+  const VIABLE_SCORE = 20;
+  if (finalShortlist[0]?.totalWeighted < VIABLE_SCORE) {
+    throw new Error(
+      `Sourcing insuffisant : meilleur score ${finalShortlist[0]?.totalWeighted ?? 0}/100 ` +
+      `(seuil ${VIABLE_SCORE}). Candidats : ${finalShortlist.slice(0, 3).map((c) => c.name).join(", ")}`,
+    );
+  }
+
   const pickedStartup = finalShortlist[0];
 
   if (!pickedStartup) {

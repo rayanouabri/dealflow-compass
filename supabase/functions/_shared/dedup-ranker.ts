@@ -157,6 +157,8 @@ const DIRECTORY_HOSTS = new Set([
   "deeptechalliance.org",
   "innoenergy.com",
   "eitdigital.eu",
+  // Marques grand public / retail B2C confirmées comme faux positifs deeptech
+  "signet.watch",
 ]);
 
 // Match par suffixe : alexandre.substack.com → substack.com
