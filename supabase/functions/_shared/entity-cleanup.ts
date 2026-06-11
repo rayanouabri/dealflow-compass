@@ -37,7 +37,8 @@ RÈGLE isCompany=false (exclure) :
 - Programmes de formation (masters, MS, MBA, bootcamps)
 - Réseaux institutionnels (SATT, incubateurs, pôles de compétitivité, agences publiques)
 - Pages d'articles, classements, agrégateurs, annuaires
-- Grandes entreprises cotées en bourse (>500M€ de valeur) — trop matures pour le VC
+- Grandes entreprises cotées en bourse ou avec >500 employés — trop matures pour le VC early
+- Sous-pages de grands groupes : si l'URL suit le pattern autreentreprise.com/nom-candidat (ex: wso2.com/bijira, microsoft.com/azure, sap.com/products/...), c'est une FONCTIONNALITÉ ou filiale, pas une startup autonome → isCompany: false
 
 RÈGLE relevance (crucial) :
 - relevance 70-100 : startup/scale-up avec technologie propre clairement dans le profil cible
