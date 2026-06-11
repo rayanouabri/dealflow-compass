@@ -195,7 +195,10 @@ export async function callAI(
     ? [callVertex, callGemini, callGroq]
     : [callGemini, callGroq, callVertex]; // gemini par défaut
 
-  let lastError: Error | null = null;
+  // On agrège les erreurs de chaque provider : ne remonter que la dernière
+  // masquait la cause racine (ex: quota Gemini caché derrière "GROQ_API_KEY
+  // manquant" parce que Groq était le dernier maillon de la chaîne).
+  const errors: string[] = [];
 
   for (const fn of providers) {
     try {
@@ -210,10 +213,13 @@ export async function callAI(
         return extractJson(raw2);
       }
     } catch (err) {
-      lastError = err as Error;
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`${fn.name}: ${msg.slice(0, 300)}`);
       logger.warn(`Provider ${fn.name} échoué — fallback`, { error: String(err) });
     }
   }
 
-  throw lastError ?? new Error("Tous les providers IA ont échoué");
+  throw new Error(
+    `Tous les providers IA ont échoué — ${errors.join(" | ") || "aucune réponse exploitable"}`,
+  );
 }
