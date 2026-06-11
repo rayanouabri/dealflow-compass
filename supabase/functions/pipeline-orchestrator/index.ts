@@ -565,7 +565,15 @@ async function handlePicking(
   }
 
   scoredCandidates.sort((a, b) => b.totalWeighted - a.totalWeighted);
-  const pickedStartup = scoredCandidates[0];
+
+  // Défense en profondeur : si le scoring a identifié du bruit (article,
+  // programme, réseau — redFlag "pas une entreprise"), on l'écarte de la
+  // shortlist tant qu'il reste au moins un vrai candidat.
+  const realCompanies = scoredCandidates.filter(
+    (s) => !(s.redFlags ?? []).some((f: string) => /pas une entreprise/i.test(String(f))),
+  );
+  const finalShortlist = realCompanies.length > 0 ? realCompanies : scoredCandidates;
+  const pickedStartup = finalShortlist[0];
 
   if (!pickedStartup) {
     throw new Error("Impossible de scorer les candidats");
@@ -575,7 +583,7 @@ async function handlePicking(
   // avec leur analyse qualitative — pour un affichage multi-startup.
   await updateJob(supabase, job.id, {
     picked_startup: pickedStartup,
-    shortlist: scoredCandidates,
+    shortlist: finalShortlist,
     status: "pick_done",
     current_step: 5,
   });
@@ -587,7 +595,7 @@ async function handlePicking(
       supabase,
       job.user_id,
       job.id,
-      scoredCandidates.map((c: any) => ({ name: c.name, url: c.url })),
+      finalShortlist.map((c: any) => ({ name: c.name, url: c.url })),
     );
   }
 

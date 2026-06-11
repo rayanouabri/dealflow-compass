@@ -153,6 +153,10 @@ const DIRECTORY_HOSTS = new Set([
   "cea.fr",
   "anr.fr",
   "horizon-europe.gouv.fr",
+  "europa.eu",
+  "deeptechalliance.org",
+  "innoenergy.com",
+  "eitdigital.eu",
 ]);
 
 // Match par suffixe : alexandre.substack.com → substack.com
@@ -169,8 +173,13 @@ function isDirectoryHost(normUrl: string): boolean {
 const ARTICLE_NAME =
   /\b(top|best|meilleur|meilleures|liste|list of|funded|guide|startups?|entreprises?|companies|classement|palmarès|annuaire|ranking|directory|research|papers?|report|forecast|forsights|topics|resources|trends?|overview|state of|i built|i made|we built|how (i|to|we)|built a|tutorial|introducing|summary|review)\b/i;
 
+// Mots seuls trop génériques pour être une raison sociale (pages de rubrique).
+const GENERIC_SINGLE_NAME =
+  /^(startups?|entreprises?|compan(y|ies)|news|actualit[ée]s?|accueil|home|blog|articles?|portfolio|about|contact|innovation|technologies?|deeptech|solutions?)$/i;
+
 function looksLikeArticle(name: string): boolean {
   if (name.length > 40) return true; // raison sociale trop longue
+  if (GENERIC_SINGLE_NAME.test(name.trim())) return true; // "Startups", "News"…
   if (/^[\p{Emoji_Presentation}\p{Extended_Pictographic}]/u.test(name.trim())) {
     return true; // commence par un emoji/drapeau
   }
@@ -181,12 +190,14 @@ function looksLikeArticle(name: string): boolean {
 }
 
 export function extractCompanyName(title: string, url: string): string {
-  // Supprime les suffixes courants de titres
+  // Supprime les suffixes courants de titres.
+  // Le séparateur doit être PRÉCÉDÉ d'un espace : couper au tiret d'un mot
+  // composé fabriquait de faux noms ("Two InnoEnergy-backed companies…" →
+  // "Two InnoEnergy" qui passait les filtres anti-article).
   let name = title
-    .replace(/\s*[|\-–—]\s*.+$/, "")  // "Acme - Homepage" → "Acme"
+    .replace(/\s+[|\-–—]\s*.+$/, "")  // "Acme - Homepage" → "Acme"
     .replace(/\s*:.*$/, "")            // "Acme: About" → "Acme"
     .replace(/,.*$/, "")               // "Acme, the open-source X" → "Acme"
-    .replace(/\s+\|\s+.*$/, "")
     .replace(/["«»]/g, "")             // Guillemets français
     .trim();
 
