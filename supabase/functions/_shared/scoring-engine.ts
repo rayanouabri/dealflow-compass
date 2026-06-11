@@ -161,5 +161,6 @@ Réponds UNIQUEMENT en JSON valide :
   ]
 }
 Inclus TOUS les candidats. Sois strict et sceptique.
-RÈGLE STRICTE : si un candidat matche un "exclusionKeywords" (agence, ESN, conseil, holding, fonds, média, distributeur) ou ne correspond PAS à "idealCompanyProfile.definition", "thesisFit" <= 20 + redFlag "hors-profil". Récompense un thesisFit élevé seulement si le type d'entreprise correspond vraiment.`;
+RÈGLE STRICTE : si un candidat matche un "exclusionKeywords" (agence, ESN, conseil, holding, fonds, média, distributeur) ou ne correspond PAS à "idealCompanyProfile.definition", "thesisFit" <= 20 + redFlag "hors-profil". Récompense un thesisFit élevé seulement si le type d'entreprise correspond vraiment.
+DIFFÉRENCIE les candidats : les scores doivent refléter les écarts de preuves entre eux (traction publique, équipe identifiée, produit décrit, simple immatriculation...). Ne donne JAMAIS la même grille de scores à plusieurs candidats — départage-les.`;
 }

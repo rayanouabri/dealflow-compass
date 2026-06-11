@@ -430,7 +430,35 @@ async function handlePicking(
 
   // Top candidats. La couche de résolution d'entités a déjà pré-classé par
   // pertinence à la thèse → scorer le top 6 suffit.
-  const top10 = sourcingResults.slice(0, 6).map((c) => ({
+  // Quota de diversité : les immatriculations INSEE (nom + code NAF, zéro
+  // empreinte web) sont un signal précoce fort mais une shortlist 100 %
+  // registre n'est pas actionnable → max 3, complété par les meilleurs
+  // candidats web/HN/GitHub.
+  const isRegistryOnly = (c: any) =>
+    (c.categories ?? []).length > 0 &&
+    (c.categories ?? []).every((k: string) => String(k).startsWith("insee"));
+  const TOP_N = 6;
+  const MAX_REGISTRY = 3;
+  const selected: any[] = [];
+  const overflowRegistry: any[] = [];
+  let registryCount = 0;
+  for (const c of sourcingResults) {
+    if (selected.length >= TOP_N) break;
+    if (isRegistryOnly(c)) {
+      if (registryCount >= MAX_REGISTRY) {
+        overflowRegistry.push(c);
+        continue;
+      }
+      registryCount++;
+    }
+    selected.push(c);
+  }
+  // S'il n'y a pas assez de candidats web, on recomplète avec le registre.
+  while (selected.length < TOP_N && overflowRegistry.length > 0) {
+    selected.push(overflowRegistry.shift());
+  }
+
+  const top10 = selected.map((c) => ({
     ...c,
     categories: new Set(c.categories ?? []),
   }));
@@ -439,9 +467,45 @@ async function handlePicking(
     throw new Error("Aucun candidat trouvé lors du sourcing");
   }
 
+  // Enrichissement web des candidats registre : 1 recherche (cachée) par
+  // candidat sans empreinte web → le scoring et la DD reçoivent du signal
+  // réel (site, produit, équipe) au lieu d'une simple ligne d'immatriculation.
+  await Promise.all(
+    top10
+      .filter((c) => c.categories.has("insee") || c.categories.has("insee_named"))
+      .map(async (c) => {
+        try {
+          const web = await searchAll(`"${c.name}" startup OR société France`, 4);
+          for (const r of web.slice(0, 3)) {
+            c.descriptions.push(`${r.title}: ${r.description}`.slice(0, 250));
+          }
+          // Si un site propre émerge (hors annuaires/réseaux), on le retient
+          // comme site officiel probable pour la DD.
+          const own = web.find((r) => {
+            try {
+              const host = new URL(r.url).hostname.replace(/^www\./, "");
+              const blocked = /annuaire-entreprises|societe\.com|pappers\.fr|linkedin\.com|facebook\.com|crunchbase|wikipedia/i;
+              const nameToken = c.name.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8);
+              return !blocked.test(host) && nameToken.length >= 4 &&
+                host.replace(/[^a-z0-9]/g, "").includes(nameToken);
+            } catch {
+              return false;
+            }
+          });
+          if (own) (c as any).website = own.url;
+        } catch (err) {
+          logger.warn("Enrichissement web candidat échoué", {
+            name: c.name,
+            error: String(err),
+          });
+        }
+      }),
+  );
+
   const toScored = (candidate: any, result: any) => ({
     name: candidate.name,
     url: candidate.url,
+    website: candidate.website ?? null,
     descriptions: candidate.descriptions?.slice(0, 3) ?? [],
     mentionCount: candidate.mentionCount,
     categories: Array.from(candidate.categories),
@@ -556,7 +620,15 @@ async function handleDDSearch(
       body: JSON.stringify({
         phase: "search",
         companyName: pickedStartup.name,
-        companyWebsite: pickedStartup.url,
+        // Site officiel détecté à l'enrichissement si dispo ; jamais une page
+        // d'agrégateur (les requêtes site: y seraient gâchées).
+        companyWebsite: (() => {
+          const site = pickedStartup.website || pickedStartup.url;
+          return /annuaire-entreprises|github\.com|linkedin\.com|news\.ycombinator|pappers\.fr|societe\.com/i
+            .test(site)
+            ? undefined
+            : site;
+        })(),
       }),
     },
   );
