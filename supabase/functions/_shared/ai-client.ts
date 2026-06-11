@@ -57,8 +57,21 @@ async function callGemini(
     Deno.env.get("GEMINI_API_KEY") ?? Deno.env.get("GEMINI_KEY_2");
   if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY manquant");
 
-  const model = "gemini-1.5-flash";
+  // Lit le modèle configuré (cohérent avec le reste du projet) — gemini-1.5
+  // est retiré par Google. Défaut sur 2.5-flash.
+  const model = Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+
+  const generationConfig: any = {
+    temperature: opts.temperature ?? 0.3,
+    maxOutputTokens: opts.maxTokens ?? 4096,
+    ...(opts.jsonMode ? { responseMimeType: "application/json" } : {}),
+  };
+  // Sur les modèles flash 2.5, le "thinking" peut consommer tout le budget de
+  // sortie et renvoyer une réponse vide. On le désactive pour garantir le JSON.
+  if (/2\.5-flash/.test(model)) {
+    generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  }
 
   const body: any = {
     contents: [
@@ -67,29 +80,31 @@ async function callGemini(
         parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
       },
     ],
-    generationConfig: {
-      temperature: opts.temperature ?? 0.3,
-      maxOutputTokens: opts.maxTokens ?? 4096,
-      ...(opts.jsonMode
-        ? { responseMimeType: "application/json" }
-        : {}),
-    },
+    generationConfig,
   };
 
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  // Retry sur erreurs transitoires (503 "high demand", 429 quota court)
+  let lastTxt = "";
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
 
-  if (!resp.ok) {
-    const txt = await resp.text();
-    throw new Error(`Gemini ${resp.status}: ${txt}`);
+    if (resp.ok) {
+      const data = await resp.json();
+      return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    }
+
+    lastTxt = await resp.text();
+    if ((resp.status === 503 || resp.status === 429) && attempt < 2) {
+      await sleep(800 * Math.pow(2, attempt)); // 0.8s, 1.6s
+      continue;
+    }
+    throw new Error(`Gemini ${resp.status}: ${lastTxt}`);
   }
-  const data = await resp.json();
-  return (
-    data.candidates?.[0]?.content?.parts?.[0]?.text ?? ""
-  );
+  throw new Error(`Gemini échec après retries: ${lastTxt}`);
 }
 
 // --- Vertex AI ---
