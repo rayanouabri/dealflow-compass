@@ -66,7 +66,7 @@ Actions : `start` (crée le job) · `continue` (exécute l'étape courante selon
 3. **Cron** (`pg_cron` + `pg_net`, toutes les minutes) appelle `sweep` → relance les jobs figés même si personne ne regarde la page.
 
 ### Étape 1 — Analyse de thèse → ICP
-1 appel IA ([thesis-analysis.ts](supabase/functions/_shared/prompts/thesis-analysis.ts)) transforme le nom de fonds / la thèse en JSON structuré, dont un **Ideal Company Profile** : `definition`, `businessModel`, `mustHaveKeywords`, `exclusionKeywords`, `nafCodes`, `inseeNameTokens`. C'est ce qui rend le sourcing strict.
+Si un nom de fonds est fourni, on **recherche d'abord sur le web sa thèse réelle** (secteurs, portfolio, stade) — anti-générique : on ne se fie pas à ce que le LLM croit savoir. Puis 1 appel IA ([thesis-analysis.ts](supabase/functions/_shared/prompts/thesis-analysis.ts)) produit un JSON structuré, dont un **Ideal Company Profile** : `definition`, `businessModel`, `mustHaveKeywords`, `exclusionKeywords`, `nafCodes`, `inseeNameTokens`. Exemple vérifié : "Supernova Invest" → ICP deeptech (photonique/quantique/biotech/capteurs) qui EXCLUT le SaaS B2B générique.
 
 ### Étape 2 — Sourcing multi-source (gratuit, parallèle)
 | Source | Fichier | Nature |
@@ -81,7 +81,9 @@ Puis **dedup + ranking** ([dedup-ranker.ts](supabase/functions/_shared/dedup-ran
 Enfin **résolution d'entités IA** ([entity-cleanup.ts](supabase/functions/_shared/entity-cleanup.ts)) : 1 appel qui filtre le bruit (comptes perso, repos sans société, labos), normalise les noms, dédoublonne, note la pertinence. Fallback = candidats bruts.
 
 ### Étape 3 — Picking
-1 appel IA **batché** ([scoring-engine.ts](supabase/functions/_shared/scoring-engine.ts) `buildBatchScoringPrompt`) score les 6 meilleurs candidats d'un coup (8 dimensions pondérées) au lieu d'un appel par candidat. Fallback unitaire sur le top 3 si le batch échoue.
+1 appel IA **batché** ([scoring-engine.ts](supabase/functions/_shared/scoring-engine.ts) `buildBatchScoringPrompt`) score les 6 meilleurs candidats d'un coup (8 dimensions pondérées) au lieu d'un appel par candidat. Fallback unitaire qui complète à ≥3 si le batch tronque. Le résultat est stocké en **shortlist** (toutes les startups scorées + analyse qualitative), pas seulement la n°1.
+
+> **Quota IA** : `ai-client.ts` fait une rotation sur `GEMINI_API_KEY` / `GEMINI_KEY_2` / `GEMINI_KEY_3` (bascule sur 429) pour cumuler les quotas free-tier journaliers.
 
 ### Étapes 4-5 — Due Diligence
 Délègue à la fonction `due-diligence` (phases `search` puis `analyze`, cf. section 4).
