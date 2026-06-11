@@ -278,7 +278,10 @@ RLS activé partout. `search_cache` n'a pas de policies publiques (accès via se
 
 ## 8. Sécurité
 
-- **Auth** : JWT Supabase, vérifié sur la plupart des Edge Functions (sauf `due-diligence` et `advanced-sourcing` qui ont `verify_jwt: false` pour des raisons historiques — à corriger).
+- **Auth** : JWT Supabase, `verify_jwt: true` sur TOUTES les fonctions actives (analyze-fund,
+  due-diligence, pipeline-orchestrator, ai-qa) — figé dans `supabase/config.toml`. L'action
+  `continue` de l'orchestrateur est en plus réservée au service-role, et `start` est plafonné
+  (3 jobs actifs/utilisateur, 10 anonymes). Audit complet : [AUDIT_DURCISSEMENT.md](./AUDIT_DURCISSEMENT.md).
 - **Anon key seulement côté client** (jamais le service role).
 - **CORS** : whitelist explicite (`ai-vc-sourcing.vercel.app` + localhost dev).
 - **Secrets** : tous dans Supabase Functions Secrets, jamais dans le code.
@@ -354,9 +357,9 @@ Sans IA, la phase `pick` retombe sur l'heuristique qui peut sélectionner des pa
 ### 🔧 Améliorations recommandées (par ordre d'impact)
 1. **Consolider les requêtes quasi-dupliquées** dans search_startups (results1-6 se chevauchent fortement) → −5 recherches/analyse sans perte.
 2. **Cacher aussi les réponses IA stables** (extraction critères, analyse marché identiques pour mêmes inputs).
-3. **Mutualiser le code dupliqué** : `braveSearch()` existe en deux copies (analyze-fund + due-diligence). Utiliser `_shared/search-api-client.ts` (déjà utilisé par advanced-sourcing).
+3. ~~Activer `verify_jwt` sur `due-diligence`~~ ✅ fait (2026-06-11, voir AUDIT_DURCISSEMENT.md) ; `advanced-sourcing`/`ninja-sourcing` supprimés du repo (orphelins — à supprimer aussi au dashboard avec `analyze-company` et `quick-worker`).
 4. **Job cron de purge** : supprimer `search_cache WHERE expires_at < now()`.
-5. **Activer `verify_jwt` sur `due-diligence` et `advanced-sourcing`** (actuellement public).
+5. **Afficher `final_result` du pipeline** au lieu de rejouer une DD complète quand l'utilisateur clique "Due diligence" sur la startup déjà analysée (PipelineProgress.goToDD).
 6. **Webhook Stripe** (`stripe-webhook` function pas encore implémentée — décrit dans `PRODUCT_ROADMAP.md v2.1`).
 7. **Pagination/pré-fetch** dans `AnalysisHistory.tsx` pour gros volumes.
 
