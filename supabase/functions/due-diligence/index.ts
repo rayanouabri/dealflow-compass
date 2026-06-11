@@ -776,6 +776,43 @@ Réponds UNIQUEMENT avec du JSON valide.`;
         if (!ir.investmentHorizon || typeof ir.investmentHorizon !== "string") ir.investmentHorizon = "Non disponible";
         if (!ir.suggestedTicket || typeof ir.suggestedTicket !== "string") ir.suggestedTicket = "Non disponible";
       }
+      // L'IA remplit parfois les "sources" de section mais laisse allSources
+      // vide : on agrège déterministiquement (dédup par URL), le front affiche
+      // allSources dans l'onglet Sources.
+      const aggregateSectionSources = (root: any): void => {
+        const all: any[] = Array.isArray(root.allSources) ? root.allSources : [];
+        const seen = new Set(all.map((s: any) => s?.url).filter(Boolean));
+        const visit = (node: any): void => {
+          if (!node || typeof node !== "object") return;
+          if (Array.isArray(node)) { node.forEach(visit); return; }
+          for (const k of Object.keys(node)) {
+            if (k === "allSources") continue;
+            if (k === "sources" && Array.isArray(node[k])) {
+              for (const src of node[k]) {
+                const u = src?.url;
+                if (typeof u === "string" && u.startsWith("http") && !seen.has(u)) {
+                  seen.add(u);
+                  all.push({
+                    name: typeof src?.name === "string" ? src.name : u,
+                    url: u,
+                    type: typeof src?.type === "string" ? src.type : "other",
+                    relevance: typeof src?.relevance === "string" ? src.relevance : "",
+                  });
+                }
+              }
+            } else {
+              visit(node[k]);
+            }
+          }
+        };
+        visit(root);
+        root.allSources = all;
+        if (root.dataQuality && (root.dataQuality.sourcesCount == null || root.dataQuality.sourcesCount === "")) {
+          root.dataQuality.sourcesCount = String(all.length);
+        }
+      };
+      aggregateSectionSources(dueDiligenceResult);
+
       dueDiligenceResult.metadata = { companyName, generatedAt: new Date().toISOString(), searchResultsCount: analyzeSearchCount, aiProvider: "gemini", aiModel: GEMINI_MODEL };
 
       // ——— 2e itération : lacunes sur le rapport → recherches → enrichissement ———
