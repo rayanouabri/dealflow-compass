@@ -1,5 +1,8 @@
-// Client IA unifié : Groq, Gemini REST, Vertex AI
-// Lit les clés depuis Deno.env — jamais hardcodé
+// Client IA : Gemini REST uniquement.
+// Les fallbacks Vertex (VERTEX_AI_TOKEN jamais configuré, modèle retiré) et
+// Groq (modèle décommissionné) étaient des maillons morts : ils ne faisaient
+// qu'ajouter de la latence et masquer la cause racine des erreurs.
+// Lit les clés depuis Deno.env — jamais hardcodé.
 import { logger } from "./logger.ts";
 
 export interface AIOptions {
@@ -12,48 +15,13 @@ async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// --- Groq ---
-async function callGroq(
-  systemPrompt: string,
-  userPrompt: string,
-  opts: AIOptions,
-): Promise<string> {
-  const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
-  if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY manquant");
-
-  const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${GROQ_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: "llama-3.1-70b-versatile",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: opts.temperature ?? 0.3,
-      max_tokens: opts.maxTokens ?? 4096,
-      ...(opts.jsonMode ? { response_format: { type: "json_object" } } : {}),
-    }),
-  });
-
-  if (!resp.ok) {
-    const txt = await resp.text();
-    throw new Error(`Groq ${resp.status}: ${txt}`);
-  }
-  const data = await resp.json();
-  return data.choices?.[0]?.message?.content ?? "";
-}
-
 // --- Gemini REST ---
 async function callGemini(
   systemPrompt: string,
   userPrompt: string,
   opts: AIOptions,
 ): Promise<string> {
-  // Rotation de clés : on cumule le quota journalier de plusieurs clés gratuites.
+  // Rotation de clés : on cumule le quota journalier de plusieurs clés.
   // Sur 429 (quota épuisé sur une clé) → on bascule sur la clé suivante.
   const keys = [
     Deno.env.get("GEMINI_API_KEY"),
@@ -63,8 +31,6 @@ async function callGemini(
   const uniqueKeys = [...new Set(keys)];
   if (uniqueKeys.length === 0) throw new Error("GEMINI_API_KEY manquant");
 
-  // Lit le modèle configuré (cohérent avec le reste du projet) — gemini-1.5
-  // est retiré par Google. Défaut sur 2.5-flash.
   const model = Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash";
 
   const generationConfig: any = {
@@ -74,6 +40,7 @@ async function callGemini(
   };
   // Sur les modèles flash 2.5, le "thinking" peut consommer tout le budget de
   // sortie et renvoyer une réponse vide. On le désactive pour garantir le JSON.
+  // (Les modèles 3.x gèrent leur thinking séparément — ne pas forcer.)
   if (/2\.5-flash/.test(model)) {
     generationConfig.thinkingConfig = { thinkingBudget: 0 };
   }
@@ -90,7 +57,7 @@ async function callGemini(
   // d'erreurs fetch et les proxies, pas les headers.
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   for (const key of uniqueKeys) {
-    // Retry sur 503 (transitoire) ; sur 429 (quota) on passe à la clé suivante.
+    // Retry sur 5xx (transitoire) ; sur 429 (quota) on passe à la clé suivante.
     for (let attempt = 0; attempt < 3; attempt++) {
       const resp = await fetch(url, {
         method: "POST",
@@ -100,63 +67,25 @@ async function callGemini(
 
       if (resp.ok) {
         const data = await resp.json();
-        return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+        // parts[-1] : les modèles "thinking" peuvent renvoyer plusieurs parts,
+        // le texte final est toujours la dernière.
+        const parts = data.candidates?.[0]?.content?.parts ?? [];
+        const textParts = parts
+          .filter((p: any) => typeof p?.text === "string" && !p?.thought)
+          .map((p: any) => p.text);
+        return textParts.join("") || "";
       }
 
       lastTxt = await resp.text();
-      if (resp.status === 503 && attempt < 2) {
+      if ((resp.status === 503 || resp.status >= 500) && attempt < 2) {
         await sleep(800 * Math.pow(2, attempt)); // 0.8s, 1.6s
         continue;
       }
       if (resp.status === 429) break; // quota épuisé sur cette clé → clé suivante
-      throw new Error(`Gemini ${resp.status}: ${lastTxt}`);
+      throw new Error(`Gemini ${resp.status}: ${lastTxt.slice(0, 400)}`);
     }
   }
-  throw new Error(`Gemini échec (toutes clés en quota): ${lastTxt}`);
-}
-
-// --- Vertex AI ---
-async function callVertex(
-  systemPrompt: string,
-  userPrompt: string,
-  opts: AIOptions,
-): Promise<string> {
-  const projectId = Deno.env.get("VERTEX_AI_PROJECT_ID");
-  const location = Deno.env.get("VERTEX_AI_LOCATION") ?? "us-central1";
-  const token = Deno.env.get("VERTEX_AI_TOKEN");
-  if (!projectId || !token) throw new Error("VERTEX_AI_PROJECT_ID ou VERTEX_AI_TOKEN manquant");
-
-  const model = "gemini-1.5-flash";
-  const url = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:generateContent`;
-
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
-        },
-      ],
-      generationConfig: {
-        temperature: opts.temperature ?? 0.3,
-        maxOutputTokens: opts.maxTokens ?? 4096,
-      },
-    }),
-  });
-
-  if (!resp.ok) {
-    const txt = await resp.text();
-    throw new Error(`Vertex ${resp.status}: ${txt}`);
-  }
-  const data = await resp.json();
-  return (
-    data.candidates?.[0]?.content?.parts?.[0]?.text ?? ""
-  );
+  throw new Error(`Gemini: toutes les clés en quota (429) — ${lastTxt.slice(0, 400)}`);
 }
 
 // Extrait le JSON d'une réponse texte (gère les blocs ```json```)
@@ -180,46 +109,23 @@ function extractJson(raw: string): unknown {
   throw new Error("Aucun JSON détecté dans la réponse IA");
 }
 
-// Point d'entrée unifié avec fallback automatique
+// Point d'entrée unifié. Un seul provider (Gemini) avec rotation de clés ;
+// un retry après JSON mal formé.
 export async function callAI(
   systemPrompt: string,
   userPrompt: string,
   opts: AIOptions = {},
 ): Promise<unknown> {
-  const provider =
-    (Deno.env.get("AI_PROVIDER") ?? "gemini").toLowerCase();
-
-  const providers = provider === "groq"
-    ? [callGroq, callGemini, callVertex]
-    : provider === "vertex"
-    ? [callVertex, callGemini, callGroq]
-    : [callGemini, callGroq, callVertex]; // gemini par défaut
-
-  // On agrège les erreurs de chaque provider : ne remonter que la dernière
-  // masquait la cause racine (ex: quota Gemini caché derrière "GROQ_API_KEY
-  // manquant" parce que Groq était le dernier maillon de la chaîne).
-  const errors: string[] = [];
-
-  for (const fn of providers) {
+  const raw = await callGemini(systemPrompt, userPrompt, { ...opts, jsonMode: true });
+  if (raw.trim()) {
     try {
-      const raw = await fn(systemPrompt, userPrompt, { ...opts, jsonMode: true });
-      if (!raw.trim()) continue;
-      try {
-        return extractJson(raw);
-      } catch {
-        // Retry avec le même provider (JSON mal formé)
-        await sleep(500);
-        const raw2 = await fn(systemPrompt, userPrompt, { ...opts, jsonMode: true });
-        return extractJson(raw2);
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      errors.push(`${fn.name}: ${msg.slice(0, 300)}`);
-      logger.warn(`Provider ${fn.name} échoué — fallback`, { error: String(err) });
+      return extractJson(raw);
+    } catch {
+      logger.warn("Réponse IA non-JSON — retry", { preview: raw.slice(0, 120) });
     }
   }
-
-  throw new Error(
-    `Tous les providers IA ont échoué — ${errors.join(" | ") || "aucune réponse exploitable"}`,
-  );
+  // Retry unique (réponse vide ou JSON mal formé)
+  await sleep(500);
+  const raw2 = await callGemini(systemPrompt, userPrompt, { ...opts, jsonMode: true });
+  return extractJson(raw2);
 }
