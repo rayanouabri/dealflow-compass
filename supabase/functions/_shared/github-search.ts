@@ -65,6 +65,9 @@ export async function searchGitHub(
       for (const item of data.items ?? []) {
         const owner = item.owner?.login;
         if (!owner || seen.has(owner)) continue;
+        // Comptes personnels = projets perso/hobby, pas des startups. Les
+        // vraies sociétés publient sous une organisation GitHub.
+        if (item.owner?.type !== "Organization") continue;
         // Écarte le bruit pédagogique (listes, cours, roadmaps) — pas des startups.
         const haystack = `${item.full_name ?? ""} ${item.description ?? ""}`;
         if (

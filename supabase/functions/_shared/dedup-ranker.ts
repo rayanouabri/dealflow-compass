@@ -147,6 +147,12 @@ const DIRECTORY_HOSTS = new Set([
   "bloomberg.com",
   "cybersecurity-excellence-awards.com",
   "chooseparisregion.org",
+  "satt.fr",
+  "polytechnique.edu",
+  "universite-paris-saclay.fr",
+  "cea.fr",
+  "anr.fr",
+  "horizon-europe.gouv.fr",
 ]);
 
 // Match par suffixe : alexandre.substack.com → substack.com
@@ -161,7 +167,7 @@ function isDirectoryHost(normUrl: string): boolean {
 // Un nom qui ressemble à un titre d'article/listicle n'est pas une entreprise.
 // Les vraies raisons sociales sont courtes et sans marqueurs éditoriaux.
 const ARTICLE_NAME =
-  /\b(top|best|meilleur|meilleures|liste|list of|funded|guide|startups?|entreprises?|companies|classement|palmarès|annuaire|ranking|directory|research|papers?|report|forecast|forsights|topics|resources|trends?|overview|state of)\b/i;
+  /\b(top|best|meilleur|meilleures|liste|list of|funded|guide|startups?|entreprises?|companies|classement|palmarès|annuaire|ranking|directory|research|papers?|report|forecast|forsights|topics|resources|trends?|overview|state of|i built|i made|we built|how (i|to|we)|built a|tutorial|introducing|summary|review)\b/i;
 
 function looksLikeArticle(name: string): boolean {
   if (name.length > 40) return true; // raison sociale trop longue
@@ -179,6 +185,7 @@ export function extractCompanyName(title: string, url: string): string {
   let name = title
     .replace(/\s*[|\-–—]\s*.+$/, "")  // "Acme - Homepage" → "Acme"
     .replace(/\s*:.*$/, "")            // "Acme: About" → "Acme"
+    .replace(/,.*$/, "")               // "Acme, the open-source X" → "Acme"
     .replace(/\s+\|\s+.*$/, "")
     .replace(/["«»]/g, "")             // Guillemets français
     .trim();

@@ -192,8 +192,21 @@ async function handleThesisAnalysis(
   const thesisAnalysis = await callAI(
     THESIS_ANALYSIS_SYSTEM_PROMPT,
     userPrompt,
-    { temperature: 0.2, maxTokens: 2048 },
+    { temperature: 0.2, maxTokens: 4096 },
   );
+
+  // Validation de forme : une réponse tronquée/fragmentaire (ex: juste le
+  // tableau sectors) corromprait TOUT le pipeline aval (queries génériques,
+  // pas d'ICP, pas d'exclusions). On échoue → markError → retry.
+  const ta = thesisAnalysis as any;
+  if (
+    !ta || typeof ta !== "object" || Array.isArray(ta) ||
+    !Array.isArray(ta.sectors) || !ta.idealCompanyProfile
+  ) {
+    throw new Error(
+      `Analyse de thèse invalide (JSON incomplet: ${JSON.stringify(ta).slice(0, 120)})`,
+    );
+  }
 
   await updateJob(supabase, job.id, {
     thesis_analysis: thesisAnalysis,

@@ -20,9 +20,11 @@ export async function resolveEntities(
     `Tu es analyste VC. On te donne des candidats issus d'un sourcing automatique ` +
     `(recherche web, registre d'entreprises, GitHub, Hacker News). Beaucoup sont du BRUIT : ` +
     `comptes GitHub personnels, dépôts open-source sans société, laboratoires/universités, ` +
-    `pages d'articles ou de classements, agrégateurs, simples outils sans entreprise derrière.
+    `programmes de formation (masters, MS, MBA), réseaux/structures institutionnels (SATT, ` +
+    `incubateurs, pôles de compétitivité, agences publiques), pages d'articles ou de ` +
+    `classements, agrégateurs, simples outils sans entreprise derrière.
 
-Tâche : ne garder QUE les vraies entreprises/startups, normaliser leur nom commercial, ` +
+Tâche : ne garder QUE les vraies entreprises/startups COMMERCIALES, normaliser leur nom commercial, ` +
     `et noter leur adéquation au profil cible. Si deux entrées désignent la même société, n'en garder qu'une.
 
 Profil cible : ${JSON.stringify({
@@ -34,7 +36,7 @@ Profil cible : ${JSON.stringify({
 
 Réponds UNIQUEMENT en JSON :
 {"entities":[{"idx":<index d'origine fourni>,"name":"<nom commercial propre>","isCompany":<true|false>,"relevance":<0-100>,"reason":"<raison courte>"}]}
-Mets isCompany:false (ou n'inclus pas) pour : comptes/personnes, repos sans société, labos, articles/listicles, agrégateurs.`;
+Mets isCompany:false (ou n'inclus pas) pour : comptes/personnes, repos sans société, labos, formations/masters, réseaux institutionnels, incubateurs, articles/listicles, agrégateurs.`;
 
   const userPrompt = `Candidats :\n${
     subset
@@ -50,7 +52,7 @@ Mets isCompany:false (ou n'inclus pas) pour : comptes/personnes, repos sans soci
   try {
     const res = (await callAI(systemPrompt, userPrompt, {
       temperature: 0.1,
-      maxTokens: 2048,
+      maxTokens: 3072,
     })) as any;
     const ents = res?.entities;
     if (!Array.isArray(ents) || ents.length === 0) return candidates;
