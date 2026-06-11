@@ -320,7 +320,18 @@ serve(async (req) => {
     // Configuration AI
     // Hardcoded Gemini — Vertex disabled per user choice (AI_PROVIDER env var ignored)
     const AI_PROVIDER = "gemini";
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_KEY_2") || Deno.env.get("GEMINI_API_KEY");
+    // Rotation de clés (même logique qu'ai-client.ts) : sur 429 on bascule sur
+    // la clé suivante pour cumuler les quotas free-tier journaliers.
+    const GEMINI_KEYS = [
+      ...new Set(
+        [
+          Deno.env.get("GEMINI_KEY_2"),
+          Deno.env.get("GEMINI_API_KEY"),
+          Deno.env.get("GEMINI_KEY_3"),
+        ].filter((k): k is string => !!k),
+      ),
+    ];
+    const GEMINI_API_KEY = GEMINI_KEYS[0];
     const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-pro";
     const VERTEX_AI_PROJECT = Deno.env.get("VERTEX_AI_PROJECT_ID");
     const VERTEX_AI_LOCATION = Deno.env.get("VERTEX_AI_LOCATION") || "us-central1";
@@ -705,21 +716,34 @@ Réponds UNIQUEMENT avec du JSON valide.`;
             generationConfig: { temperature: 0.1, topP: 0.9, topK: 40, maxOutputTokens: 16384, responseMimeType: "application/json" as const, thinkingConfig: { thinkingBudget: 0 } },
           };
 
-      // Retry on transient Gemini errors (503 overload, 429 burst, 500/502/504).
-      // Total wait: 2s + 5s = 7s across 3 attempts; leaves the 150s budget intact.
+      // Retry on transient Gemini errors (503 overload, 500/502/504) + rotation
+      // de clés sur 429 (quota épuisé sur une clé → clé suivante, sans attente).
+      // Total wait: 2s + 5s sur les transitoires; leaves the 150s budget intact.
       const sleepMs = (ms: number) => new Promise((r) => setTimeout(r, ms));
-      const TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504]);
+      const TRANSIENT_STATUSES = new Set([500, 502, 503, 504]);
       let response: Response | null = null;
       let lastErrText = "";
       let lastStatus = 0;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const r = await fetch(aiEndpoint.url, { method: "POST", headers: aiEndpoint.headers, body: JSON.stringify(aiBody) });
+      let keyIdx = 0;
+      let transientWaits = 0;
+      const maxAttempts = 3 + GEMINI_KEYS.length;
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const headers = AI_PROVIDER === "vertex"
+          ? aiEndpoint.headers
+          : { ...aiEndpoint.headers, "x-goog-api-key": GEMINI_KEYS[keyIdx] };
+        const r = await fetch(aiEndpoint.url, { method: "POST", headers, body: JSON.stringify(aiBody) });
         if (r.ok) { response = r; break; }
         lastStatus = r.status;
         lastErrText = await r.text();
-        console.warn(`[DD analyze] Gemini HTTP ${r.status} attempt ${attempt + 1}/3: ${lastErrText.slice(0, 150)}`);
+        console.warn(`[DD analyze] Gemini HTTP ${r.status} key#${keyIdx} attempt ${attempt + 1}/${maxAttempts}: ${lastErrText.slice(0, 150)}`);
+        if (r.status === 429) {
+          if (keyIdx < GEMINI_KEYS.length - 1) { keyIdx++; continue; } // quota → clé suivante
+          break; // toutes les clés en quota
+        }
         if (!TRANSIENT_STATUSES.has(r.status)) break;                  // permanent error → don't retry
-        if (attempt < 2) await sleepMs(attempt === 0 ? 2000 : 5000);   // 2s, then 5s
+        if (transientWaits >= 2) break;
+        await sleepMs(transientWaits === 0 ? 2000 : 5000);             // 2s, then 5s
+        transientWaits++;
       }
       if (!response) {
         const hint = lastStatus === 503
