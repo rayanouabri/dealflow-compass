@@ -630,6 +630,29 @@ async function getUserId(
   }
 }
 
+// Plafond de jobs actifs : borne le coût (Serper/Gemini) en cas d'abus de
+// l'anon key (publique par design). Un job dure ~2-4 min — un utilisateur
+// légitime n'atteint jamais ces seuils.
+const MAX_ACTIVE_JOBS_PER_USER = 3;
+const MAX_ACTIVE_ANONYMOUS_JOBS = 10;
+
+async function countActiveJobs(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  userId: string | null,
+): Promise<number> {
+  let q = supabase
+    .from("pipeline_jobs")
+    .select("id", { count: "exact", head: true })
+    .not("status", "in", "(dd_done,error)");
+  q = userId === null ? q.is("user_id", null) : q.eq("user_id", userId);
+  const { count, error } = await q;
+  if (error) {
+    logger.warn("countActiveJobs erreur — plafond ignoré", { error: error.message });
+    return 0;
+  }
+  return count ?? 0;
+}
+
 async function handleStart(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   body: any,
@@ -637,6 +660,16 @@ async function handleStart(
 ): Promise<Response> {
   const { fundName, customThesis } = body;
   const userId = await getUserId(supabase, req);
+
+  const active = await countActiveJobs(supabase, userId);
+  const cap = userId ? MAX_ACTIVE_JOBS_PER_USER : MAX_ACTIVE_ANONYMOUS_JOBS;
+  if (active >= cap) {
+    return jsonResp(
+      { error: "Trop d'analyses en cours. Attendez la fin d'un pipeline avant d'en relancer un." },
+      429,
+      req,
+    );
+  }
 
   const { data: job, error } = await supabase
     .from("pipeline_jobs")
@@ -692,6 +725,31 @@ async function handleContinue(
   const { status, retry_count, max_retries } = job;
 
   logger.info("handleContinue", { pipelineId, status });
+
+  // Claim optimiste : deux invocations concurrentes (watchdog poll + cron sweep,
+  // ou double fireContinue) lisent le même snapshot — seule celle qui réussit
+  // cette mise à jour conditionnelle exécute l'étape, l'autre s'arrête là.
+  if (!["dd_done", "error"].includes(status)) {
+    const { data: claimed, error: claimError } = await supabase
+      .from("pipeline_jobs")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", pipelineId)
+      .eq("status", status)
+      .eq("updated_at", job.updated_at)
+      .select("id");
+    if (claimError) {
+      logger.warn("Claim échoué — on continue sans verrou", {
+        pipelineId,
+        error: claimError.message,
+      });
+    } else if (!claimed || claimed.length === 0) {
+      logger.info("Étape déjà prise en charge par une autre invocation — skip", {
+        pipelineId,
+        status,
+      });
+      return jsonResp({ ok: true, skipped: "already_claimed" }, 200, req);
+    }
+  }
 
   try {
     switch (status) {
@@ -798,7 +856,21 @@ async function selfHealIfStuck(
   });
   // Incrémente retry_count ET touche updated_at → évite une rafale de relances
   // entre deux polls (3s) avant que l'étape relancée ne mette à jour le status.
-  await updateJob(supabase, job.id, { retry_count: retry + 1 });
+  // Bump CONDITIONNEL (eq retry_count) : si le poll status et le cron sweep
+  // détectent le même job figé au même moment, un seul des deux relance.
+  const { data: bumped, error: bumpError } = await supabase
+    .from("pipeline_jobs")
+    .update({ retry_count: retry + 1, updated_at: new Date().toISOString() })
+    .eq("id", job.id)
+    .eq("retry_count", retry)
+    .select("id");
+  if (bumpError) throw new Error(`DB update error: ${bumpError.message}`);
+  if (!bumped || bumped.length === 0) {
+    logger.info("Watchdog : relance déjà déclenchée ailleurs — skip", {
+      pipelineId: job.id,
+    });
+    return;
+  }
   await fireContinue(job.id);
 }
 
@@ -918,6 +990,16 @@ serve(async (req: Request) => {
   const { action } = body;
 
   logger.info("pipeline-orchestrator appelé", { action });
+
+  // "continue" est une action interne (self-invocation fireContinue) : seul le
+  // service-role peut la déclencher. Sinon, tout porteur de l'anon key (publique)
+  // pourrait rejouer une étape en boucle (coût Serper/Gemini ×N, races).
+  if (action === "continue") {
+    const bearer = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+    if (bearer !== Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) {
+      return jsonResp({ error: "Action réservée" }, 403, req);
+    }
+  }
 
   switch (action) {
     case "start":
