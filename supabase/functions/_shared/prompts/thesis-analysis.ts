@@ -55,11 +55,14 @@ RÈGLES POUR idealCompanyProfile (le plus important) :
 - "mustHaveKeywords" : 4 à 8 termes concrets décrivant le PRODUIT ou la TECHNO (pas le secteur générique). Ce sont ces termes qui serviront à filtrer.
 - "exclusionKeywords" : déduis les acteurs à écarter à partir de la thèse (sociétés de service, conseil, ESN, agences, holdings, fonds, médias, distributeurs) sauf si la thèse les vise explicitement.
 
-Sois précis et actionnable. Les queries doivent être des requêtes de recherche web efficaces.`;
+Sois précis et actionnable. Les queries doivent être des requêtes de recherche web efficaces.
+
+SPÉCIFICITÉ (critique) : base-toi sur la THÈSE RÉELLE du fonds fournie ci-dessous (résultats web : secteurs, portfolio, stade). N'invente pas une thèse générique "tech/SaaS". Si le fonds est deeptech/hardware/santé/énergie, l'ICP doit l'être aussi (et exclure le SaaS B2B générique). Les mustHaveKeywords doivent refléter les technologies PRÉCISES du fonds, pas des termes passe-partout.`;
 
 export function buildThesisAnalysisPrompt(
   fundName?: string,
   customThesis?: unknown,
+  fundContext?: string,
 ): string {
   const parts: string[] = [];
 
@@ -67,9 +70,15 @@ export function buildThesisAnalysisPrompt(
     parts.push(`Nom du fonds : ${fundName}`);
   }
 
+  if (fundContext && fundContext.trim()) {
+    parts.push(
+      `Données web sur la thèse réelle du fonds (secteurs, portfolio, stade) — sers-t'en en priorité :\n${fundContext}`,
+    );
+  }
+
   if (customThesis && typeof customThesis === "object") {
     parts.push(
-      `Thèse personnalisée :\n${JSON.stringify(customThesis, null, 2)}`,
+      `Thèse personnalisée fournie par l'utilisateur :\n${JSON.stringify(customThesis, null, 2)}`,
     );
   }
 

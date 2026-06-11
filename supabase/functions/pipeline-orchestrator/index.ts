@@ -156,9 +156,32 @@ async function handleThesisAnalysis(
 ): Promise<void> {
   logger.info("handleThesisAnalysis", { pipelineId: job.id });
 
+  // Recherche web de la thèse RÉELLE du fonds (anti-générique) : on ne se fie
+  // pas à ce que le LLM croit savoir du fonds, on lui donne les faits.
+  let fundContext = "";
+  if (job.fund_name) {
+    try {
+      const fundQueries = [
+        `${job.fund_name} fonds VC thèse investissement secteurs stade ticket`,
+        `${job.fund_name} portfolio startups participations`,
+        `${job.fund_name} investment thesis focus sectors`,
+      ];
+      const fundResults = (
+        await Promise.all(fundQueries.map((q) => searchAll(q, 4)))
+      ).flat();
+      fundContext = fundResults
+        .slice(0, 10)
+        .map((r) => `- ${r.title}: ${r.description}`)
+        .join("\n");
+    } catch (err) {
+      logger.warn("Recherche thèse fonds échouée", { error: String(err) });
+    }
+  }
+
   const userPrompt = buildThesisAnalysisPrompt(
     job.fund_name,
     job.custom_thesis,
+    fundContext,
   );
 
   const thesisAnalysis = await callAI(
@@ -395,7 +418,7 @@ async function handlePicking(
     const batch = (await callAI(
       "Tu es un analyste VC. Réponds uniquement en JSON valide.",
       buildBatchScoringPrompt(top10, thesis),
-      { temperature: 0.1, maxTokens: 4096 },
+      { temperature: 0.1, maxTokens: 8192 },
     )) as any;
     for (const r of batch?.rankings ?? []) {
       const idx = r?.index;
@@ -409,9 +432,14 @@ async function handlePicking(
     });
   }
 
-  // Fallback : si le batch n'a rien donné, score unitairement le top 3.
-  if (scoredCandidates.length === 0) {
-    for (const candidate of top10.slice(0, 3)) {
+  // Complète unitairement si le batch a renvoyé trop peu (troncature/quota) —
+  // garantit une shortlist exploitable d'au moins 3 startups.
+  const minShortlist = Math.min(3, top10.length);
+  if (scoredCandidates.length < minShortlist) {
+    const already = new Set(scoredCandidates.map((s) => s.name));
+    for (const candidate of top10) {
+      if (scoredCandidates.length >= minShortlist) break;
+      if (already.has(candidate.name)) continue;
       try {
         const result = (await callAI(
           "Tu es un analyste VC. Réponds uniquement en JSON valide.",
@@ -435,8 +463,11 @@ async function handlePicking(
     throw new Error("Impossible de scorer les candidats");
   }
 
+  // Shortlist : on conserve TOUTES les startups scorées (pas seulement la n°1)
+  // avec leur analyse qualitative — pour un affichage multi-startup.
   await updateJob(supabase, job.id, {
     picked_startup: pickedStartup,
+    shortlist: scoredCandidates,
     status: "pick_done",
     current_step: 5,
   });
@@ -769,7 +800,7 @@ async function handleStatus(
   const { data: job, error } = await supabase
     .from("pipeline_jobs")
     .select(
-      "id, status, current_step, total_steps, picked_startup, error_message, dd_job_id, completed_at, thesis_analysis, created_at, started_at, updated_at, retry_count, max_retries",
+      "id, status, current_step, total_steps, picked_startup, shortlist, error_message, dd_job_id, completed_at, thesis_analysis, created_at, started_at, updated_at, retry_count, max_retries",
     )
     .eq("id", pipelineId)
     .single();
@@ -799,6 +830,7 @@ async function handleStatus(
       currentStep: job.current_step,
       totalSteps: job.total_steps,
       pickedStartup: job.picked_startup,
+      shortlist: job.shortlist,
       errorMessage: job.error_message,
       ddJobId: job.dd_job_id,
       completedAt: job.completed_at,
