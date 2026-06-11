@@ -14,6 +14,8 @@ import { searchNewCompanies, inseeToSearchResults } from "../_shared/insee-siren
 import { searchHackerNews, hnToSearchResults } from "../_shared/hn-algolia.ts";
 import { searchGitHub, githubToSearchResults } from "../_shared/github-search.ts";
 import { resolveEntities } from "../_shared/entity-cleanup.ts";
+import { buildLinkedInQueries } from "../_shared/linkedin-signals.ts";
+import { buildIPPatentQueries } from "../_shared/ip-patent-signals.ts";
 import {
   buildScoringPrompt,
   buildBatchScoringPrompt,
@@ -258,7 +260,34 @@ async function handleSourcingStart(
     allQueries.push({ category: "ai_priority", query: q });
   }
 
-  const limited = allQueries.slice(0, 70);
+  // Signaux LinkedIn (pages société, founders ex-GAFAM, hiring, exits) et
+  // IP/brevets (Google Patents, INPI/EPO, inventeur→fondateur). Additif : ces
+  // requêtes web (site:) ne remplacent rien, elles enrichissent les signaux.
+  const signalYear = new Date().getFullYear();
+  const sectorSeed = sectors[0] || "tech";
+  // LinkedIn : on privilégie les requêtes qui ciblent des PAGES SOCIÉTÉ
+  // (site:linkedin.com/company) plutôt que des profils de personnes (/in/),
+  // car le pipeline source des ENTREPRISES.
+  const companyLinkedIn = ["hiring_burst", "investor_connection", "department_head", "advisor_network"];
+  const linkedinQueries = buildLinkedInQueries(sectorSeed, geography, signalYear)
+    .filter((q) => companyLinkedIn.includes(q.signalType))
+    .slice(0, 8);
+  for (const { query } of linkedinQueries) {
+    allQueries.push({ category: "linkedin", query });
+  }
+  // IP : signaux qui ramènent un NOM d'entreprise/fondateur (inventeur→fondateur,
+  // citations de brevets, github). On EXCLUT tech_journal (ramène des publis /
+  // pages de recherche, pas des entreprises) et les bases de brevets brutes.
+  const usefulIp = ["inventor_movement", "patent_citation", "github_innovation"];
+  const ipQueries = buildIPPatentQueries(sectorSeed, geography, signalYear)
+    .filter((q) => usefulIp.includes(q.signalType))
+    .slice(0, 8);
+  for (const { query } of ipQueries) {
+    allQueries.push({ category: "ip", query });
+  }
+
+  // Cap relevé de 70 → 88 pour absorber LinkedIn+IP sans tronquer le reste.
+  const limited = allQueries.slice(0, 88);
   const BATCH_SIZE = 5;
   const allResults: any[] = [];
 

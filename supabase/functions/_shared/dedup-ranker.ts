@@ -18,6 +18,7 @@ const SIGNAL_WEIGHTS: Record<string, number> = {
   insee: 2, // signal faible seul (juste "société immatriculée") — corrobore, ne domine pas
   insee_named: 5, // raison sociale qui évoque la thèse — signal fort
   ip: 4,
+  linkedin: 4, // page société LinkedIn = entité réelle + signal RH/founders
   spinoff: 3,
   university: 3,
   talent: 3,
@@ -126,6 +127,26 @@ const DIRECTORY_HOSTS = new Set([
   "cybernews.com",
   "g2.com",
   "capterra.com",
+  "patents.google.com",
+  "espacenet.com",
+  "scholar.google.com",
+  "arxiv.org",
+  "researchgate.net",
+  "semanticscholar.org",
+  "rand.org",
+  "sans.edu",
+  "sans.org",
+  "slogix.in",
+  "gartner.com",
+  "statista.com",
+  "cloud.google.com",
+  "microsoft.com",
+  "ibm.com",
+  "businessinsider.com",
+  "cnbc.com",
+  "bloomberg.com",
+  "cybersecurity-excellence-awards.com",
+  "chooseparisregion.org",
 ]);
 
 // Match par suffixe : alexandre.substack.com → substack.com
@@ -140,7 +161,7 @@ function isDirectoryHost(normUrl: string): boolean {
 // Un nom qui ressemble à un titre d'article/listicle n'est pas une entreprise.
 // Les vraies raisons sociales sont courtes et sans marqueurs éditoriaux.
 const ARTICLE_NAME =
-  /\b(top|best|meilleur|meilleures|liste|list of|funded|guide|startups?|entreprises?|companies|classement|palmarès|annuaire|ranking|directory)\b/i;
+  /\b(top|best|meilleur|meilleures|liste|list of|funded|guide|startups?|entreprises?|companies|classement|palmarès|annuaire|ranking|directory|research|papers?|report|forecast|forsights|topics|resources|trends?|overview|state of)\b/i;
 
 function looksLikeArticle(name: string): boolean {
   if (name.length > 40) return true; // raison sociale trop longue
@@ -199,7 +220,7 @@ function computeRecencyScore(descriptions: string[]): { score: number; year: num
 }
 
 function computeCrossSignalBonus(categories: Set<string>): number {
-  const highValueSignals = ["insee", "insee_named", "github", "arxiv_hal", "pappers", "show_hn", "ip", "spinoff", "producthunt", "wellfound", "university", "talent"];
+  const highValueSignals = ["insee", "insee_named", "github", "arxiv_hal", "pappers", "show_hn", "ip", "linkedin", "spinoff", "producthunt", "wellfound", "university", "talent"];
   const highValueCount = Array.from(categories).filter(cat => highValueSignals.includes(cat)).length;
 
   if (highValueCount >= 4) return 25;
@@ -267,7 +288,7 @@ export function deduplicateAndRank(
 
     // Filter noise with relaxed rules for high-value signals
     const hasHighValueSignal = Array.from(c.categories).some(cat =>
-      ["insee", "insee_named", "github", "arxiv_hal", "pappers", "show_hn"].includes(cat)
+      ["insee", "insee_named", "github", "arxiv_hal", "pappers", "show_hn", "linkedin", "ip"].includes(cat)
     );
     if (c.mentionCount < 2 && c.categories.size < 2 && !hasHighValueSignal) {
       continue;
