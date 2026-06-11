@@ -53,14 +53,19 @@ async function callGemini(
   userPrompt: string,
   opts: AIOptions,
 ): Promise<string> {
-  const GEMINI_API_KEY =
-    Deno.env.get("GEMINI_API_KEY") ?? Deno.env.get("GEMINI_KEY_2");
-  if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY manquant");
+  // Rotation de clés : on cumule le quota journalier de plusieurs clés gratuites.
+  // Sur 429 (quota épuisé sur une clé) → on bascule sur la clé suivante.
+  const keys = [
+    Deno.env.get("GEMINI_API_KEY"),
+    Deno.env.get("GEMINI_KEY_2"),
+    Deno.env.get("GEMINI_KEY_3"),
+  ].filter((k): k is string => !!k);
+  const uniqueKeys = [...new Set(keys)];
+  if (uniqueKeys.length === 0) throw new Error("GEMINI_API_KEY manquant");
 
   // Lit le modèle configuré (cohérent avec le reste du projet) — gemini-1.5
   // est retiré par Google. Défaut sur 2.5-flash.
   const model = Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
 
   const generationConfig: any = {
     temperature: opts.temperature ?? 0.3,
@@ -75,36 +80,37 @@ async function callGemini(
 
   const body: any = {
     contents: [
-      {
-        role: "user",
-        parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
-      },
+      { role: "user", parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] },
     ],
     generationConfig,
   };
 
-  // Retry sur erreurs transitoires (503 "high demand", 429 quota court)
   let lastTxt = "";
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+  for (const key of uniqueKeys) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+    // Retry sur 503 (transitoire) ; sur 429 (quota) on passe à la clé suivante.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
 
-    if (resp.ok) {
-      const data = await resp.json();
-      return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    }
+      if (resp.ok) {
+        const data = await resp.json();
+        return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+      }
 
-    lastTxt = await resp.text();
-    if ((resp.status === 503 || resp.status === 429) && attempt < 2) {
-      await sleep(800 * Math.pow(2, attempt)); // 0.8s, 1.6s
-      continue;
+      lastTxt = await resp.text();
+      if (resp.status === 503 && attempt < 2) {
+        await sleep(800 * Math.pow(2, attempt)); // 0.8s, 1.6s
+        continue;
+      }
+      if (resp.status === 429) break; // quota épuisé sur cette clé → clé suivante
+      throw new Error(`Gemini ${resp.status}: ${lastTxt}`);
     }
-    throw new Error(`Gemini ${resp.status}: ${lastTxt}`);
   }
-  throw new Error(`Gemini échec après retries: ${lastTxt}`);
+  throw new Error(`Gemini échec (toutes clés en quota): ${lastTxt}`);
 }
 
 // --- Vertex AI ---
