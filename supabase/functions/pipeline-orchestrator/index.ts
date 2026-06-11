@@ -189,22 +189,30 @@ async function handleThesisAnalysis(
     fundContext,
   );
 
+  // Validation de forme : une réponse tronquée/fragmentaire (ex: juste le
+  // tableau sectors) corromprait TOUT le pipeline aval (queries génériques,
+  // pas d'ICP, pas d'exclusions).
+  const isValidThesis = (t: unknown): boolean => {
+    const x = t as any;
+    return !!x && typeof x === "object" && !Array.isArray(x) &&
+      Array.isArray(x.sectors) && !!x.idealCompanyProfile;
+  };
+
+  // Cache 7 j : la thèse d'un fonds est stable — re-sourcer le même fonds ne
+  // reconsomme ni quota IA ni crédits de recherche.
+  const cacheKey = job.fund_name
+    ? `thesis|fund|${job.fund_name.toLowerCase().trim()}`
+    : `thesis|custom|${JSON.stringify(job.custom_thesis)}`;
+
   const thesisAnalysis = await callAI(
     THESIS_ANALYSIS_SYSTEM_PROMPT,
     userPrompt,
-    { temperature: 0.2, maxTokens: 4096 },
+    { temperature: 0.2, maxTokens: 4096, cacheKey, validate: isValidThesis },
   );
 
-  // Validation de forme : une réponse tronquée/fragmentaire (ex: juste le
-  // tableau sectors) corromprait TOUT le pipeline aval (queries génériques,
-  // pas d'ICP, pas d'exclusions). On échoue → markError → retry.
-  const ta = thesisAnalysis as any;
-  if (
-    !ta || typeof ta !== "object" || Array.isArray(ta) ||
-    !Array.isArray(ta.sectors) || !ta.idealCompanyProfile
-  ) {
+  if (!isValidThesis(thesisAnalysis)) {
     throw new Error(
-      `Analyse de thèse invalide (JSON incomplet: ${JSON.stringify(ta).slice(0, 120)})`,
+      `Analyse de thèse invalide (JSON incomplet: ${JSON.stringify(thesisAnalysis).slice(0, 120)})`,
     );
   }
 

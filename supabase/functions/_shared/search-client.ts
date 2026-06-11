@@ -133,8 +133,11 @@ export async function searchAll(
   const cached = await getCachedSearch<SearchResult>(cacheQuery, count);
   if (cached) return cached;
 
-  const braveResults = await braveSearch(query, count);
-  const serperResults = await serperSearch(query, count);
+  // Les deux providers en parallèle : divise la latence par requête par 2.
+  const [braveResults, serperResults] = await Promise.all([
+    braveSearch(query, count),
+    serperSearch(query, count),
+  ]);
 
   const seen = new Set<string>();
   const merged: SearchResult[] = [];

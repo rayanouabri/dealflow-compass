@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { getCachedSearch, setCachedSearch } from "../_shared/search-cache.ts";
+import { reserveAiCall } from "../_shared/ai-client.ts";
 
 const ALLOWED_ORIGINS = [
   "https://ai-vc-sourcing.vercel.app",
@@ -419,6 +420,22 @@ serve(async (req) => {
       const analyzeContext = job.search_context || `ENTREPRISE À ANALYSER: ${companyName}`;
       const analyzeSearchCount = job.search_results_count || 0;
 
+      // Cache rapport (3 j) : re-générer la DD de la même société brûlerait
+      // 3-4 appels IA free-tier pour un résultat quasi identique.
+      const reportCacheKey = `ddreport|${companyName.toLowerCase().trim()}`;
+      const cachedReport = await getCachedSearch<any>(`ai|${reportCacheKey}`, 1);
+      if (cachedReport && cachedReport.length > 0 && cachedReport[0]?.company) {
+        console.log(`[DD] Rapport servi depuis le cache pour: ${companyName}`);
+        await fetch(`${SUPABASE_URL}/rest/v1/due_diligence_jobs?id=eq.${encodeURIComponent(jobId)}`, {
+          method: "PATCH",
+          headers: { "apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ result: cachedReport[0], status: "analyze_done", updated_at: new Date().toISOString() }),
+        });
+        return new Response(JSON.stringify(cachedReport[0]), {
+          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+        });
+      }
+
       const systemPromptAnalyze = `Tu es un analyste VC senior spécialisé en due diligence avec 20 ans d'expérience. 
 Tu dois produire un rapport de due diligence COMPLET et PROFESSIONNEL sur l'entreprise "${companyName}".
 
@@ -513,6 +530,7 @@ TÂCHE : Identifie 2 à 4 thèmes où les infos sont INSUFFISANTES pour remplir 
 Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 4 gaps, 2 queries par gap. Si suffisant : {"gaps":[]}.`;
 
         const gapBody = { contents: [{ parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 2048, responseMimeType: "application/json" as const, ...GEMINI_THINKING } };
+        await reserveAiCall();
         const gapRes = await fetch(aiEndpointGap.url, { method: "POST", headers: aiEndpointGap.headers, body: JSON.stringify(gapBody) });
         if (gapRes.ok) {
           const gapData = await gapRes.json();
@@ -608,6 +626,7 @@ Réponds UNIQUEMENT avec du JSON valide.`;
       let keyIdx = 0;
       let transientWaits = 0;
       const maxAttempts = 3 + GEMINI_KEYS.length;
+      await reserveAiCall();
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
         const headers = { ...aiEndpoint.headers, "x-goog-api-key": GEMINI_KEYS[keyIdx] };
         const r = await fetch(aiEndpoint.url, { method: "POST", headers, body: JSON.stringify(aiBody) });
@@ -760,13 +779,27 @@ Réponds UNIQUEMENT avec du JSON valide.`;
       dueDiligenceResult.metadata = { companyName, generatedAt: new Date().toISOString(), searchResultsCount: analyzeSearchCount, aiProvider: "gemini", aiModel: GEMINI_MODEL };
 
       // ——— 2e itération : lacunes sur le rapport → recherches → enrichissement ———
-      // Garde-fou wall-time : l'enrichissement refait une génération 16k (~50s).
-      // Si le rapport principal a déjà consommé trop de budget (150s max),
-      // on rend le rapport tel quel plutôt que de risquer un kill 546.
+      // Conditionnelle : (a) budget wall-time — l'enrichissement refait une
+      // génération 16k (~50s), risque de kill 546 près du plafond 150s ;
+      // (b) complétude — si les sections clés sont déjà remplies, ces 2 appels
+      // IA free-tier n'apportent rien.
       const ROUND2_BUDGET_MS = 85_000;
       const elapsedMs = Date.now() - phaseStart;
+      const reportIncomplete = (() => {
+        const r = dueDiligenceResult;
+        const nd = (v: unknown) => !v || /non disponible|non identifié/i.test(String(v));
+        const founders = r?.team?.founders;
+        const foundersWeak = !Array.isArray(founders) || founders.length === 0 ||
+          founders.every((f: any) => nd(f?.name));
+        const tamWeak = nd(r?.market?.tam);
+        const fundingWeak = nd(r?.financials?.totalFunding);
+        const sourcesWeak = !Array.isArray(r?.allSources) || r.allSources.length < 8;
+        return foundersWeak || tamWeak || fundingWeak || sourcesWeak;
+      })();
       if (elapsedMs > ROUND2_BUDGET_MS) {
         console.warn(`[DueDiligence] 2e itération sautée (budget temps: ${Math.round(elapsedMs / 1000)}s écoulées)`);
+      } else if (!reportIncomplete) {
+        console.log("[DueDiligence] 2e itération sautée (rapport déjà complet — économie de 2 appels IA)");
       } else
       try {
         const reportSummary = JSON.stringify(dueDiligenceResult).slice(0, 4000);
@@ -776,6 +809,7 @@ Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 3 gap
 
         const aiEndpointGap2 = await getAIEndpoint();
         const gapBody2 = { contents: [{ parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 1500, responseMimeType: "application/json" as const, ...GEMINI_THINKING } };
+        await reserveAiCall();
         const gapRes2 = await fetch(aiEndpointGap2.url, { method: "POST", headers: aiEndpointGap2.headers, body: JSON.stringify(gapBody2) });
         if (gapRes2.ok) {
           const gapData2 = await gapRes2.json();
@@ -830,6 +864,7 @@ ${extraContext2}
 
 Réponds UNIQUEMENT avec le JSON complet.`;
               const enrichBody = { contents: [{ parts: [{ text: enrichPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 16384, responseMimeType: "application/json" as const, ...GEMINI_THINKING } };
+              await reserveAiCall();
               const enrichRes = await fetch(aiEndpointGap2.url, { method: "POST", headers: aiEndpointGap2.headers, body: JSON.stringify(enrichBody) });
               if (enrichRes.ok) {
                 const enrichData = await enrichRes.json();
@@ -858,6 +893,11 @@ Réponds UNIQUEMENT avec le JSON complet.`;
         }
       } catch (round2Err) {
         console.warn("[DueDiligence] 2e itération ignorée:", round2Err);
+      }
+
+      // Cache 3 j : une nouvelle DD de la même société est servie sans IA.
+      if (dueDiligenceResult?.company) {
+        await setCachedSearch(`ai|${reportCacheKey}`, 1, [dueDiligenceResult], 3);
       }
 
       const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/due_diligence_jobs?id=eq.${encodeURIComponent(jobId)}`, {

@@ -4,15 +4,66 @@
 // qu'ajouter de la latence et masquer la cause racine des erreurs.
 // Lit les clés depuis Deno.env — jamais hardcodé.
 import { logger } from "./logger.ts";
+import { getCachedSearch, setCachedSearch } from "./search-cache.ts";
 
 export interface AIOptions {
   temperature?: number;
   maxTokens?: number;
   jsonMode?: boolean;
+  // Si fourni : la réponse est servie/mise en cache (search_cache, préfixe
+  // "ai|") — les inputs identiques ne consomment plus de quota free-tier.
+  cacheKey?: string;
+  cacheTtlDays?: number;
+  // Garde de forme : un résultat qui ne passe pas n'est ni mis en cache ni
+  // servi depuis le cache (évite d'empoisonner le cache avec un JSON tronqué).
+  validate?: (result: unknown) => boolean;
 }
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// --- Garde-fou free tier ---------------------------------------------------
+// Réserve un appel IA dans le compteur journalier (RPC service-role). Au-delà
+// du plafond (AI_DAILY_LIMIT, défaut 240 — free tier 2.5-flash = 250/jour),
+// on refuse AVANT de contacter Gemini : le quota Google n'est jamais dépassé.
+export async function reserveAiCall(): Promise<void> {
+  const url = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key) return; // env locale incomplète : ne pas bloquer
+  const limit = Number(Deno.env.get("AI_DAILY_LIMIT") ?? "240");
+  try {
+    const res = await fetch(`${url}/rest/v1/rpc/increment_ai_usage`, {
+      method: "POST",
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+    });
+    if (!res.ok) return; // le compteur ne doit jamais casser l'app
+    const calls = await res.json();
+    if (typeof calls === "number" && calls > limit) {
+      throw new Error(
+        `Budget IA journalier épuisé (${calls}/${limit}, free tier). Réessayez demain ou ajoutez une clé GEMINI_KEY_2.`,
+      );
+    }
+    if (typeof calls === "number" && calls % 25 === 0) {
+      logger.info("Budget IA journalier", { calls, limit });
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith("Budget IA")) throw err;
+    // Erreur réseau du compteur : non bloquant
+  }
+}
+
+// Extrait le retryDelay (secondes) d'un corps d'erreur 429 Gemini.
+// Présent sur les 429 de rythme (RPM) — absent/énorme sur les 429 de quota
+// journalier ou de facturation.
+function parseRetryDelaySec(body: string): number | null {
+  const m = body.match(/retryDelay["']?\s*:\s*["']?(\d+)/);
+  return m ? Number(m[1]) : null;
 }
 
 // --- Gemini REST ---
@@ -56,13 +107,17 @@ async function callGemini(
     generationConfig,
   };
 
+  await reserveAiCall();
+
   let lastTxt = "";
   // Clé en header (pas en query string) : les URLs finissent dans les logs
   // d'erreurs fetch et les proxies, pas les headers.
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   for (const key of uniqueKeys) {
-    // Retry sur 5xx (transitoire) ; sur 429 (quota) on passe à la clé suivante.
-    for (let attempt = 0; attempt < 3; attempt++) {
+    let rateWaits = 0;
+    // Retry sur 5xx (transitoire) et 429 de rythme (RPM, avec retryDelay) ;
+    // sur 429 de quota journalier → clé suivante.
+    for (let attempt = 0; attempt < 4; attempt++) {
       const resp = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": key },
@@ -85,11 +140,21 @@ async function callGemini(
       }
 
       lastTxt = await resp.text();
-      if ((resp.status === 503 || resp.status >= 500) && attempt < 2) {
-        await sleep(800 * Math.pow(2, attempt)); // 0.8s, 1.6s
+      if ((resp.status === 503 || resp.status >= 500) && attempt < 3) {
+        await sleep(800 * Math.pow(2, attempt)); // 0.8s, 1.6s, 3.2s
         continue;
       }
-      if (resp.status === 429) break; // quota épuisé sur cette clé → clé suivante
+      if (resp.status === 429) {
+        // 429 de rythme (free tier RPM) : Google indique quand réessayer.
+        const delaySec = parseRetryDelaySec(lastTxt);
+        if (delaySec !== null && delaySec <= 40 && rateWaits < 2) {
+          rateWaits++;
+          logger.info("Gemini 429 RPM — attente retryDelay", { delaySec });
+          await sleep((delaySec + 1) * 1000);
+          continue;
+        }
+        break; // quota journalier/facturation sur cette clé → clé suivante
+      }
       throw new Error(`Gemini ${resp.status}: ${lastTxt.slice(0, 400)}`);
     }
   }
@@ -164,21 +229,42 @@ export async function callAI(
   userPrompt: string,
   opts: AIOptions = {},
 ): Promise<unknown> {
+  // Cache : un input identique (même thèse de fonds, mêmes candidats) ne
+  // reconsomme pas de quota free-tier.
+  if (opts.cacheKey) {
+    const cached = await getCachedSearch<unknown>(`ai|${opts.cacheKey}`, 1);
+    if (cached && cached.length > 0 && (!opts.validate || opts.validate(cached[0]))) {
+      logger.info("Cache IA hit", { cacheKey: opts.cacheKey });
+      return cached[0];
+    }
+  }
+
+  let result: unknown;
   const raw = await callGemini(systemPrompt, userPrompt, { ...opts, jsonMode: true });
   if (raw.trim()) {
     try {
-      return extractJson(raw);
+      result = extractJson(raw);
     } catch {
       logger.warn("Réponse IA non-JSON — retry budget doublé", { preview: raw.slice(0, 120) });
     }
   }
-  // Retry unique (réponse vide ou JSON irrécupérable) avec budget doublé :
-  // la cause la plus fréquente est la troncature MAX_TOKENS.
-  await sleep(500);
-  const raw2 = await callGemini(systemPrompt, userPrompt, {
-    ...opts,
-    maxTokens: (opts.maxTokens ?? 4096) * 2,
-    jsonMode: true,
-  });
-  return extractJson(raw2);
+  if (result === undefined) {
+    // Retry unique (réponse vide ou JSON irrécupérable) avec budget doublé :
+    // la cause la plus fréquente est la troncature MAX_TOKENS.
+    await sleep(500);
+    const raw2 = await callGemini(systemPrompt, userPrompt, {
+      ...opts,
+      maxTokens: (opts.maxTokens ?? 4096) * 2,
+      jsonMode: true,
+    });
+    result = extractJson(raw2);
+  }
+
+  if (
+    opts.cacheKey && result !== undefined && result !== null &&
+    (!opts.validate || opts.validate(result))
+  ) {
+    await setCachedSearch(`ai|${opts.cacheKey}`, 1, [result], opts.cacheTtlDays ?? 7);
+  }
+  return result;
 }
