@@ -39,7 +39,8 @@ export default function Index() {
     setShowAuthDialog(true);
   };
 
-  if (authLoading) return null;
+  // Never return null — a blank page is worse than showing the landing page
+  // while auth resolves (loading stays true if getSession() hangs on some browsers)
 
   return (
     <>

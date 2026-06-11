@@ -57,7 +57,11 @@ RÈGLES POUR idealCompanyProfile (le plus important) :
 
 Sois précis et actionnable. Les queries doivent être des requêtes de recherche web efficaces.
 
-SPÉCIFICITÉ (critique) : base-toi sur la THÈSE RÉELLE du fonds fournie ci-dessous (résultats web : secteurs, portfolio, stade). N'invente pas une thèse générique "tech/SaaS". Si le fonds est deeptech/hardware/santé/énergie, l'ICP doit l'être aussi (et exclure le SaaS B2B générique). Les mustHaveKeywords doivent refléter les technologies PRÉCISES du fonds, pas des termes passe-partout.`;
+SPÉCIFICITÉ (critique) : base-toi sur la THÈSE RÉELLE du fonds fournie ci-dessous (résultats web : secteurs, portfolio, stade). N'invente pas une thèse générique "tech/SaaS". Si le fonds est deeptech/hardware/santé/énergie, l'ICP doit l'être aussi (et exclure le SaaS B2B générique). Les mustHaveKeywords doivent refléter les technologies PRÉCISES du fonds, pas des termes passe-partout.
+
+RÈGLE SECTORS : ne mets "Logiciel" ou "IA/Machine Learning" dans "sectors" QUE si le fonds investit EXPLICITEMENT dans des pure-play software. Un fonds deeptech utilise l'IA dans ses technologies mais cible des entreprises avec un produit physique, un procédé, ou une IP scientifique — pas des SaaS. Dans ce cas, mets "Intelligence Artificielle Appliquée" dans subSectors (pas sectors) et AJOUTE "logiciel cloud pur", "SaaS générique", "infrastructure software" à exclusionKeywords.
+
+RÈGLE STADE : sois précis sur stage.min/max en te basant sur le ticket size et le portfolio connu. Un fonds avec ticket < 5M€ est early (seed/serie-a). Un fonds avec ticket > 15M€ est growth (serie-b+). Ne mets jamais un stade incongruent avec le ticket.`;
 
 export function buildThesisAnalysisPrompt(
   fundName?: string,
