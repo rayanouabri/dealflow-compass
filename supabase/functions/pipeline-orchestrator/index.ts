@@ -590,12 +590,30 @@ async function handleDDAnalyze(
     },
   );
 
+  let finalResult: unknown;
   if (!ddResp.ok) {
     const txt = await ddResp.text();
-    throw new Error(`DD analyze échoué: ${ddResp.status} — ${txt}`);
+    // Idempotence : si une tentative précédente a terminé l'analyse mais que
+    // l'orchestrateur est mort avant d'écrire final_result, le retry reçoit
+    // 400 "déjà analysé". On récupère alors le rapport déjà stocké au lieu
+    // de condamner le job.
+    const { data: ddJob } = await supabase
+      .from("due_diligence_jobs")
+      .select("status, result")
+      .eq("id", job.dd_job_id)
+      .single();
+    if (ddJob?.status === "analyze_done" && ddJob.result) {
+      logger.info("DD déjà analysée — récupération du rapport existant", {
+        pipelineId: job.id,
+        ddJobId: job.dd_job_id,
+      });
+      finalResult = ddJob.result;
+    } else {
+      throw new Error(`DD analyze échoué: ${ddResp.status} — ${txt}`);
+    }
+  } else {
+    finalResult = await ddResp.json();
   }
-
-  const finalResult = await ddResp.json();
   const completedAt = new Date().toISOString();
   const startedAt = job.started_at ? new Date(job.started_at).getTime() : null;
   const durationMs = startedAt
