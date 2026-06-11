@@ -50,6 +50,7 @@ interface PipelineStatus {
   errorMessage?: string;
   ddJobId?: string;
   completedAt?: string;
+  finalResult?: unknown;
   thesisSummary?: {
     sectors?: string[];
     stage?: { min?: string; max?: string };
@@ -190,14 +191,22 @@ export default function PipelineProgress() {
   // choisir quelle startup approfondir en due diligence.
 
   const goToDD = useCallback(
-    (name: string, url: string) => {
-      const payload = { companyName: name, companyWebsite: url };
+    (name: string, url: string, preloadedResult?: unknown) => {
+      // preloadedResult : rapport déjà généré par le pipeline (étapes 4-5).
+      // On l'affiche directement au lieu de relancer une DD complète.
+      const payload: Record<string, unknown> = { companyName: name, companyWebsite: url };
+      if (preloadedResult) payload.preloadedResult = preloadedResult;
       try {
         sessionStorage.setItem("due-diligence-request", JSON.stringify(payload));
       } catch {
         // sessionStorage peut être désactivé
       }
-      toast({ title: "Due diligence", description: `Génération du rapport pour ${name}…` });
+      toast({
+        title: "Due diligence",
+        description: preloadedResult
+          ? `Rapport de ${name} prêt.`
+          : `Génération du rapport pour ${name}…`,
+      });
       navigate("/due-diligence/result", { state: payload });
     },
     [navigate, toast],
@@ -475,9 +484,10 @@ export default function PipelineProgress() {
         {isDone && status?.pickedStartup && (
           <Button
             className="w-full h-12 bg-primary hover:bg-primary/90 text-primary-foreground glow-ai-vc"
-            onClick={() => goToDD(status.pickedStartup!.name, status.pickedStartup!.url)}
+            onClick={() => goToDD(status.pickedStartup!.name, status.pickedStartup!.url, status.finalResult)}
           >
-            Due diligence de {status.pickedStartup.name} →
+            {status.finalResult ? "Voir le rapport de " : "Due diligence de "}
+            {status.pickedStartup.name} →
           </Button>
         )}
       </div>

@@ -943,7 +943,7 @@ async function handleStatus(
   const { data: job, error } = await supabase
     .from("pipeline_jobs")
     .select(
-      "id, status, current_step, total_steps, picked_startup, shortlist, error_message, dd_job_id, completed_at, thesis_analysis, created_at, started_at, updated_at, retry_count, max_retries",
+      "id, status, current_step, total_steps, picked_startup, shortlist, error_message, dd_job_id, completed_at, thesis_analysis, created_at, started_at, updated_at, retry_count, max_retries, final_result",
     )
     .eq("id", pipelineId)
     .single();
@@ -980,6 +980,12 @@ async function handleStatus(
       thesisSummary,
       createdAt: job.created_at,
       startedAt: job.started_at,
+      // Rapport DD complet, uniquement à l'état terminal : le front arrête de
+      // poller à dd_done, donc envoyé une seule fois — et il évite de RE-payer
+      // une due diligence complète (~30 recherches + 3 IA) au clic.
+      ...(job.status === "dd_done" && job.final_result
+        ? { finalResult: job.final_result }
+        : {}),
     },
     200,
     req,

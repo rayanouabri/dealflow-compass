@@ -217,6 +217,15 @@ export default function DueDiligenceResult() {
   }, []);
 
   const fetchDueDiligence = async () => {
+    // Rapport déjà généré par le pipeline auto : affichage direct, aucun appel
+    // API (la DD a déjà été payée pendant les étapes 4-5 du pipeline).
+    if (requestPayload?.preloadedResult) {
+      setData(requestPayload.preloadedResult as DueDiligenceData);
+      setProgress(100);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setProgress(0);
