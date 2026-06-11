@@ -1,5 +1,6 @@
 // Client de recherche unifié : Brave Search + Serper, avec déduplication et rate limiting
 import { logger } from "./logger.ts";
+import { getCachedSearch, setCachedSearch } from "./search-cache.ts";
 
 export interface SearchResult {
   title: string;
@@ -120,11 +121,18 @@ export async function serperSearch(
   return [];
 }
 
-// Essaie Brave en premier, Serper en fallback, déduplique les URLs
+// Brave + Serper fusionnés, dédupliqués par URL. Servi depuis search_cache
+// quand la même requête a déjà été payée (<14 j) : mêmes résultats, 0 crédit.
+// Clé de cache distincte des fonctions legacy ("all|") car le contenu fusionné
+// diffère d'un résultat Serper-seul ou Brave-seul.
 export async function searchAll(
   query: string,
   count = 10,
 ): Promise<SearchResult[]> {
+  const cacheQuery = `all|${query}`;
+  const cached = await getCachedSearch<SearchResult>(cacheQuery, count);
+  if (cached) return cached;
+
   const braveResults = await braveSearch(query, count);
   const serperResults = await serperSearch(query, count);
 
@@ -139,5 +147,6 @@ export async function searchAll(
     }
   }
 
+  if (merged.length > 0) await setCachedSearch(cacheQuery, count, merged);
   return merged;
 }
