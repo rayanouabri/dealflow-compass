@@ -9,9 +9,21 @@ import { logger } from "../_shared/logger.ts";
 import { callAI } from "../_shared/ai-client.ts";
 import { searchAll } from "../_shared/search-client.ts";
 import { buildFrenchBiasedQueries } from "../_shared/sourcing-queries-fr.ts";
-import { deduplicateAndRank } from "../_shared/dedup-ranker.ts";
+import { deduplicateAndRank, filterByICP } from "../_shared/dedup-ranker.ts";
+import { searchNewCompanies, inseeToSearchResults } from "../_shared/insee-sirene.ts";
+import { searchHackerNews, hnToSearchResults } from "../_shared/hn-algolia.ts";
+import { searchGitHub, githubToSearchResults } from "../_shared/github-search.ts";
+import { resolveEntities } from "../_shared/entity-cleanup.ts";
+import { buildLinkedInQueries } from "../_shared/linkedin-signals.ts";
+import { buildIPPatentQueries } from "../_shared/ip-patent-signals.ts";
+import {
+  loadSourcedSet,
+  isAlreadySourced,
+  saveSourcedCompanies,
+} from "../_shared/user-memory.ts";
 import {
   buildScoringPrompt,
+  buildBatchScoringPrompt,
   computeWeightedScore,
   DEFAULT_WEIGHTS,
 } from "../_shared/scoring-engine.ts";
@@ -65,11 +77,15 @@ function getSupabaseAdmin() {
 }
 
 // --- Self-invocation pour chaîner les étapes ---
+// Appelle l'étape suivante dans une nouvelle invocation (pour ne pas dépasser
+// le wall-time). CLÉ : on garde l'isolate en vie avec EdgeRuntime.waitUntil
+// jusqu'à ce que la requête soit réellement envoyée — sinon l'isolate est
+// détruit avant l'envoi et l'invocation suivante ne part jamais (jobs figés).
 async function fireContinue(pipelineId: string): Promise<void> {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  // Fire-and-forget : appelle soi-même pour continuer le pipeline
-  const fireAndForgetPromise = fetch(
+
+  const post = fetch(
     `${SUPABASE_URL}/functions/v1/pipeline-orchestrator`,
     {
       method: "POST",
@@ -79,11 +95,19 @@ async function fireContinue(pipelineId: string): Promise<void> {
       },
       body: JSON.stringify({ action: "continue", pipelineId }),
     },
-  ).catch((err) =>
-    logger.error("Self-invocation échouée", { error: String(err), pipelineId })
-  );
-  // fire-and-forget
-  void fireAndForgetPromise;
+  )
+    .then((r) => r.text())
+    .catch((err) =>
+      logger.error("Self-invocation échouée", { error: String(err), pipelineId })
+    );
+
+  // @ts-ignore EdgeRuntime est fourni par le runtime Supabase
+  if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) {
+    // @ts-ignore
+    EdgeRuntime.waitUntil(post);
+  } else {
+    await post; // fallback local
+  }
 }
 
 // --- Helpers DB ---
@@ -137,16 +161,60 @@ async function handleThesisAnalysis(
 ): Promise<void> {
   logger.info("handleThesisAnalysis", { pipelineId: job.id });
 
+  // Recherche web de la thèse RÉELLE du fonds (anti-générique) : on ne se fie
+  // pas à ce que le LLM croit savoir du fonds, on lui donne les faits.
+  let fundContext = "";
+  if (job.fund_name) {
+    try {
+      const fundQueries = [
+        `${job.fund_name} fonds VC thèse investissement secteurs stade ticket`,
+        `${job.fund_name} portfolio startups participations`,
+        `${job.fund_name} investment thesis focus sectors`,
+      ];
+      const fundResults = (
+        await Promise.all(fundQueries.map((q) => searchAll(q, 4)))
+      ).flat();
+      fundContext = fundResults
+        .slice(0, 10)
+        .map((r) => `- ${r.title}: ${r.description}`)
+        .join("\n");
+    } catch (err) {
+      logger.warn("Recherche thèse fonds échouée", { error: String(err) });
+    }
+  }
+
   const userPrompt = buildThesisAnalysisPrompt(
     job.fund_name,
     job.custom_thesis,
+    fundContext,
   );
+
+  // Validation de forme : une réponse tronquée/fragmentaire (ex: juste le
+  // tableau sectors) corromprait TOUT le pipeline aval (queries génériques,
+  // pas d'ICP, pas d'exclusions).
+  const isValidThesis = (t: unknown): boolean => {
+    const x = t as any;
+    return !!x && typeof x === "object" && !Array.isArray(x) &&
+      Array.isArray(x.sectors) && !!x.idealCompanyProfile;
+  };
+
+  // Cache 7 j : la thèse d'un fonds est stable — re-sourcer le même fonds ne
+  // reconsomme ni quota IA ni crédits de recherche.
+  const cacheKey = job.fund_name
+    ? `thesis|fund|${job.fund_name.toLowerCase().trim()}`
+    : `thesis|custom|${JSON.stringify(job.custom_thesis)}`;
 
   const thesisAnalysis = await callAI(
     THESIS_ANALYSIS_SYSTEM_PROMPT,
     userPrompt,
-    { temperature: 0.2, maxTokens: 2048 },
+    { temperature: 0.2, maxTokens: 4096, cacheKey, validate: isValidThesis },
   );
+
+  if (!isValidThesis(thesisAnalysis)) {
+    throw new Error(
+      `Analyse de thèse invalide (JSON incomplet: ${JSON.stringify(thesisAnalysis).slice(0, 120)})`,
+    );
+  }
 
   await updateJob(supabase, job.id, {
     thesis_analysis: thesisAnalysis,
@@ -173,8 +241,56 @@ async function handleSourcingStart(
   const stage: string = thesis?.stage?.min ?? "seed";
   const geography: string = thesis?.geography?.primary ?? "France";
 
-  // Génère les queries FR biaisées
-  const queryGroups = buildFrenchBiasedQueries(sectors, stage, geography);
+  // Profil d'entreprise idéal (ICP) — sert à cibler et filtrer strictement
+  const icp = thesis?.idealCompanyProfile ?? {};
+  const precisionTerms: string[] = [
+    ...(icp.mustHaveKeywords ?? []),
+    ...(thesis?.techKeywords ?? []),
+    ...(thesis?.subSectors ?? []),
+  ];
+  const exclusionTerms: string[] = icp.exclusionKeywords ?? [];
+
+  // Sources structurées GRATUITES (sans coût Serper), lancées en parallèle
+  // de la recherche web → aucune latence ajoutée.
+  const isFrench =
+    thesis?.geography?.frenchBias === true ||
+    /fr|france|paris|île-de-france|ile-de-france|europe/i.test(geography);
+
+  // Termes pour HN / GitHub : secteur + techKeywords (anglais). On n'utilise PAS
+  // les mustHaveKeywords (souvent en français) car ces plateformes sont anglophones.
+  const freeApiTerms = [sectors[0], ...(thesis?.techKeywords ?? [])]
+    .filter(Boolean)
+    .slice(0, 3);
+
+  // INSEE : registre FR (immatriculations récentes). FR/Europe uniquement.
+  const inseePromise = isFrench
+    ? searchNewCompanies({
+        nafCodes: icp.nafCodes,
+        nameTokens: icp.inseeNameTokens,
+        postalPrefixes: /paris|île-de-france|ile-de-france/i.test(geography)
+          ? ["75", "77", "78", "91", "92", "93", "94", "95"]
+          : [],
+        sinceDays: 120,
+        maxResults: 25,
+      })
+    : Promise.resolve([]);
+  // Hacker News (Show HN) : signal produit global.
+  const hnPromise = searchHackerNews({ terms: freeApiTerms, maxResults: 20 });
+  // GitHub : pertinent uniquement pour les thèses tech/logicielles.
+  const isTechThesis =
+    /saas|software|logiciel|\bai\b|\bml\b|\bdata\b|dev|cloud|\bapi\b|crypto|web3|cyber|infra|platform|plateforme|fintech|deeptech|hardware|robot|iot/i
+      .test(
+        JSON.stringify([sectors, thesis?.techKeywords, thesis?.subSectors]),
+      );
+  const githubPromise = isTechThesis
+    ? searchGitHub({ terms: freeApiTerms, maxResults: 20 })
+    : Promise.resolve([]);
+
+  // Génère les queries FR biaisées, ciblées sur le type d'entreprise visé
+  const queryGroups = buildFrenchBiasedQueries(sectors, stage, geography, {
+    precisionTerms,
+    exclusionTerms,
+  });
 
   // Ajoute les queries prioritaires de l'analyse IA
   const priorityQueries: string[] =
@@ -193,7 +309,34 @@ async function handleSourcingStart(
     allQueries.push({ category: "ai_priority", query: q });
   }
 
-  const limited = allQueries.slice(0, 70);
+  // Signaux LinkedIn (pages société, founders ex-GAFAM, hiring, exits) et
+  // IP/brevets (Google Patents, INPI/EPO, inventeur→fondateur). Additif : ces
+  // requêtes web (site:) ne remplacent rien, elles enrichissent les signaux.
+  const signalYear = new Date().getFullYear();
+  const sectorSeed = sectors[0] || "tech";
+  // LinkedIn : on privilégie les requêtes qui ciblent des PAGES SOCIÉTÉ
+  // (site:linkedin.com/company) plutôt que des profils de personnes (/in/),
+  // car le pipeline source des ENTREPRISES.
+  const companyLinkedIn = ["hiring_burst", "investor_connection", "department_head", "advisor_network"];
+  const linkedinQueries = buildLinkedInQueries(sectorSeed, geography, signalYear)
+    .filter((q) => companyLinkedIn.includes(q.signalType))
+    .slice(0, 8);
+  for (const { query } of linkedinQueries) {
+    allQueries.push({ category: "linkedin", query });
+  }
+  // IP : signaux qui ramènent un NOM d'entreprise/fondateur (inventeur→fondateur,
+  // citations de brevets, github). On EXCLUT tech_journal (ramène des publis /
+  // pages de recherche, pas des entreprises) et les bases de brevets brutes.
+  const usefulIp = ["inventor_movement", "patent_citation", "github_innovation"];
+  const ipQueries = buildIPPatentQueries(sectorSeed, geography, signalYear)
+    .filter((q) => usefulIp.includes(q.signalType))
+    .slice(0, 8);
+  for (const { query } of ipQueries) {
+    allQueries.push({ category: "ip", query });
+  }
+
+  // Cap relevé de 70 → 88 pour absorber LinkedIn+IP sans tronquer le reste.
+  const limited = allQueries.slice(0, 88);
   const BATCH_SIZE = 5;
   const allResults: any[] = [];
 
@@ -213,7 +356,51 @@ async function handleSourcingStart(
     }
   }
 
-  const candidates = deduplicateAndRank(allResults);
+  // Fusionne les candidats des sources structurées (noms fiables) avec le web
+  const [inseeCompanies, hnStartups, githubOrgs] = await Promise.all([
+    inseePromise,
+    hnPromise,
+    githubPromise,
+  ]);
+  allResults.push(...inseeToSearchResults(inseeCompanies));
+  allResults.push(...hnToSearchResults(hnStartups));
+  allResults.push(...githubToSearchResults(githubOrgs));
+  logger.info("Sources structurées", {
+    insee: inseeCompanies.length,
+    hn: hnStartups.length,
+    github: githubOrgs.length,
+  });
+
+  const ranked = deduplicateAndRank(allResults);
+  // Filtre strict on-thesis : écarte les acteurs hors-profil, priorise l'ICP
+  const filtered = filterByICP(ranked, {
+    mustHave: precisionTerms,
+    exclude: exclusionTerms,
+  });
+  // Garde-fou : si le filtre est trop agressif, on retombe sur le ranking brut
+  const prefiltered = filtered.length >= 5 ? filtered : ranked;
+
+  // Résolution d'entités IA : nettoie noms, filtre le bruit (comptes perso,
+  // labos, repos sans société), priorise les vraies startups on-thesis.
+  const resolved = await resolveEntities(prefiltered, thesis, 30);
+
+  // Mémoire utilisateur : écarte les sociétés déjà proposées à cet utilisateur
+  // lors de runs précédents (pour ne pas re-sourcer la même chose).
+  let candidates = resolved;
+  if (job.user_id) {
+    const sourcedSet = await loadSourcedSet(supabase, job.user_id);
+    if (sourcedSet.names.size > 0 || sourcedSet.domains.size > 0) {
+      const fresh = resolved.filter(
+        (c) => !isAlreadySourced(sourcedSet, c.name, c.url),
+      );
+      // Garde-fou : ne pas tout vider si l'utilisateur a déjà beaucoup sourcé
+      candidates = fresh.length >= 3 ? fresh : resolved;
+      logger.info("Mémoire utilisateur", {
+        connus: resolved.length - fresh.length,
+        gardes: candidates.length,
+      });
+    }
+  }
 
   await updateJob(supabase, job.id, {
     sourcing_results: candidates.map((c) => ({
@@ -241,8 +428,37 @@ async function handlePicking(
   const sourcingResults: any[] = job.sourcing_results ?? [];
   const thesis = job.thesis_analysis;
 
-  // Top 10 candidats
-  const top10 = sourcingResults.slice(0, 10).map((c) => ({
+  // Top candidats. La couche de résolution d'entités a déjà pré-classé par
+  // pertinence à la thèse → scorer le top 6 suffit.
+  // Quota de diversité : les immatriculations INSEE (nom + code NAF, zéro
+  // empreinte web) sont un signal précoce fort mais une shortlist 100 %
+  // registre n'est pas actionnable → max 3, complété par les meilleurs
+  // candidats web/HN/GitHub.
+  const isRegistryOnly = (c: any) =>
+    (c.categories ?? []).length > 0 &&
+    (c.categories ?? []).every((k: string) => String(k).startsWith("insee"));
+  const TOP_N = 6;
+  const MAX_REGISTRY = 3;
+  const selected: any[] = [];
+  const overflowRegistry: any[] = [];
+  let registryCount = 0;
+  for (const c of sourcingResults) {
+    if (selected.length >= TOP_N) break;
+    if (isRegistryOnly(c)) {
+      if (registryCount >= MAX_REGISTRY) {
+        overflowRegistry.push(c);
+        continue;
+      }
+      registryCount++;
+    }
+    selected.push(c);
+  }
+  // S'il n'y a pas assez de candidats web, on recomplète avec le registre.
+  while (selected.length < TOP_N && overflowRegistry.length > 0) {
+    selected.push(overflowRegistry.shift());
+  }
+
+  const top10 = selected.map((c) => ({
     ...c,
     categories: new Set(c.categories ?? []),
   }));
@@ -251,56 +467,137 @@ async function handlePicking(
     throw new Error("Aucun candidat trouvé lors du sourcing");
   }
 
-  // Score chaque candidat
+  // Enrichissement web des candidats registre : 1 recherche (cachée) par
+  // candidat sans empreinte web → le scoring et la DD reçoivent du signal
+  // réel (site, produit, équipe) au lieu d'une simple ligne d'immatriculation.
+  await Promise.all(
+    top10
+      .filter((c) => c.categories.has("insee") || c.categories.has("insee_named"))
+      .map(async (c) => {
+        try {
+          const web = await searchAll(`"${c.name}" startup OR société France`, 4);
+          for (const r of web.slice(0, 3)) {
+            c.descriptions.push(`${r.title}: ${r.description}`.slice(0, 250));
+          }
+          // Si un site propre émerge (hors annuaires/réseaux), on le retient
+          // comme site officiel probable pour la DD.
+          const own = web.find((r) => {
+            try {
+              const host = new URL(r.url).hostname.replace(/^www\./, "");
+              const blocked = /annuaire-entreprises|societe\.com|pappers\.fr|linkedin\.com|facebook\.com|crunchbase|wikipedia/i;
+              const nameToken = c.name.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8);
+              return !blocked.test(host) && nameToken.length >= 4 &&
+                host.replace(/[^a-z0-9]/g, "").includes(nameToken);
+            } catch {
+              return false;
+            }
+          });
+          if (own) (c as any).website = own.url;
+        } catch (err) {
+          logger.warn("Enrichissement web candidat échoué", {
+            name: c.name,
+            error: String(err),
+          });
+        }
+      }),
+  );
+
+  const toScored = (candidate: any, result: any) => ({
+    name: candidate.name,
+    url: candidate.url,
+    website: candidate.website ?? null,
+    descriptions: candidate.descriptions?.slice(0, 3) ?? [],
+    mentionCount: candidate.mentionCount,
+    categories: Array.from(candidate.categories),
+    sources: candidate.sources,
+    scores: result?.scores ?? {},
+    totalWeighted: computeWeightedScore(result?.scores ?? {}, DEFAULT_WEIGHTS),
+    redFlags: result?.redFlags ?? [],
+    whyNow: result?.whyNow ?? "",
+    whyThisStartup: result?.whyThisStartup ?? "",
+    comparables: result?.comparables ?? [],
+    riskLevel: result?.riskLevel ?? "medium",
+  });
+
   const scoredCandidates: any[] = [];
 
-  for (const candidate of top10) {
-    try {
-      const scoringPrompt = buildScoringPrompt(candidate, thesis);
-      const result = await callAI(
-        "Tu es un analyste VC. Réponds uniquement en JSON valide.",
-        scoringPrompt,
-        { temperature: 0.1, maxTokens: 1024 },
-      ) as any;
+  // BATCH : un seul appel IA pour scorer tout le top (économise le quota Gemini).
+  try {
+    const batch = (await callAI(
+      "Tu es un analyste VC. Réponds uniquement en JSON valide.",
+      buildBatchScoringPrompt(top10, thesis),
+      { temperature: 0.1, maxTokens: 8192 },
+    )) as any;
+    for (const r of batch?.rankings ?? []) {
+      const idx = r?.index;
+      if (typeof idx === "number" && idx >= 0 && idx < top10.length) {
+        scoredCandidates.push(toScored(top10[idx], r));
+      }
+    }
+  } catch (err) {
+    logger.warn("Scoring batché échoué — fallback unitaire", {
+      error: String(err),
+    });
+  }
 
-      const scores = result?.scores ?? {};
-      const totalWeighted = computeWeightedScore(scores, DEFAULT_WEIGHTS);
-
-      scoredCandidates.push({
-        name: candidate.name,
-        url: candidate.url,
-        descriptions: candidate.descriptions?.slice(0, 3) ?? [],
-        mentionCount: candidate.mentionCount,
-        categories: Array.from(candidate.categories),
-        sources: candidate.sources,
-        scores,
-        totalWeighted,
-        redFlags: result?.redFlags ?? [],
-        whyNow: result?.whyNow ?? "",
-        whyThisStartup: result?.whyThisStartup ?? "",
-        comparables: result?.comparables ?? [],
-        riskLevel: result?.riskLevel ?? "medium",
-      });
-    } catch (err) {
-      logger.warn("Scoring échoué pour candidat", {
-        name: candidate.name,
-        error: String(err),
-      });
+  // Complète unitairement si le batch a renvoyé trop peu (troncature/quota) —
+  // garantit une shortlist exploitable d'au moins 3 startups.
+  const minShortlist = Math.min(3, top10.length);
+  if (scoredCandidates.length < minShortlist) {
+    const already = new Set(scoredCandidates.map((s) => s.name));
+    for (const candidate of top10) {
+      if (scoredCandidates.length >= minShortlist) break;
+      if (already.has(candidate.name)) continue;
+      try {
+        const result = (await callAI(
+          "Tu es un analyste VC. Réponds uniquement en JSON valide.",
+          buildScoringPrompt(candidate, thesis),
+          { temperature: 0.1, maxTokens: 1024 },
+        )) as any;
+        scoredCandidates.push(toScored(candidate, result));
+      } catch (err) {
+        logger.warn("Scoring unitaire échoué", {
+          name: candidate.name,
+          error: String(err),
+        });
+      }
     }
   }
 
   scoredCandidates.sort((a, b) => b.totalWeighted - a.totalWeighted);
-  const pickedStartup = scoredCandidates[0];
+
+  // Défense en profondeur : si le scoring a identifié du bruit (article,
+  // programme, réseau — redFlag "pas une entreprise"), on l'écarte de la
+  // shortlist tant qu'il reste au moins un vrai candidat.
+  const realCompanies = scoredCandidates.filter(
+    (s) => !(s.redFlags ?? []).some((f: string) => /pas une entreprise/i.test(String(f))),
+  );
+  const finalShortlist = realCompanies.length > 0 ? realCompanies : scoredCandidates;
+  const pickedStartup = finalShortlist[0];
 
   if (!pickedStartup) {
     throw new Error("Impossible de scorer les candidats");
   }
 
+  // Shortlist : on conserve TOUTES les startups scorées (pas seulement la n°1)
+  // avec leur analyse qualitative — pour un affichage multi-startup.
   await updateJob(supabase, job.id, {
     picked_startup: pickedStartup,
+    shortlist: finalShortlist,
     status: "pick_done",
     current_step: 5,
   });
+
+  // Mémoire utilisateur : mémorise les sociétés proposées pour ne pas les
+  // re-sourcer lors des prochains runs de cet utilisateur.
+  if (job.user_id) {
+    await saveSourcedCompanies(
+      supabase,
+      job.user_id,
+      job.id,
+      finalShortlist.map((c: any) => ({ name: c.name, url: c.url })),
+    );
+  }
 
   await fireContinue(job.id);
 }
@@ -331,7 +628,15 @@ async function handleDDSearch(
       body: JSON.stringify({
         phase: "search",
         companyName: pickedStartup.name,
-        companyWebsite: pickedStartup.url,
+        // Site officiel détecté à l'enrichissement si dispo ; jamais une page
+        // d'agrégateur (les requêtes site: y seraient gâchées).
+        companyWebsite: (() => {
+          const site = pickedStartup.website || pickedStartup.url;
+          return /annuaire-entreprises|github\.com|linkedin\.com|news\.ycombinator|pappers\.fr|societe\.com/i
+            .test(site)
+            ? undefined
+            : site;
+        })(),
       }),
     },
   );
@@ -386,12 +691,30 @@ async function handleDDAnalyze(
     },
   );
 
+  let finalResult: unknown;
   if (!ddResp.ok) {
     const txt = await ddResp.text();
-    throw new Error(`DD analyze échoué: ${ddResp.status} — ${txt}`);
+    // Idempotence : si une tentative précédente a terminé l'analyse mais que
+    // l'orchestrateur est mort avant d'écrire final_result, le retry reçoit
+    // 400 "déjà analysé". On récupère alors le rapport déjà stocké au lieu
+    // de condamner le job.
+    const { data: ddJob } = await supabase
+      .from("due_diligence_jobs")
+      .select("status, result")
+      .eq("id", job.dd_job_id)
+      .single();
+    if (ddJob?.status === "analyze_done" && ddJob.result) {
+      logger.info("DD déjà analysée — récupération du rapport existant", {
+        pipelineId: job.id,
+        ddJobId: job.dd_job_id,
+      });
+      finalResult = ddJob.result;
+    } else {
+      throw new Error(`DD analyze échoué: ${ddResp.status} — ${txt}`);
+    }
+  } else {
+    finalResult = await ddResp.json();
   }
-
-  const finalResult = await ddResp.json();
   const completedAt = new Date().toISOString();
   const startedAt = job.started_at ? new Date(job.started_at).getTime() : null;
   const durationMs = startedAt
@@ -410,16 +733,67 @@ async function handleDDAnalyze(
 // ============================================================
 // ACTION: start
 // ============================================================
+// Extrait l'user_id du JWT (si le front a envoyé le token user, pas l'anon).
+async function getUserId(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  req: Request,
+): Promise<string | null> {
+  try {
+    const auth = req.headers.get("Authorization");
+    if (!auth?.startsWith("Bearer ")) return null;
+    const token = auth.slice(7);
+    const { data } = await supabase.auth.getUser(token);
+    return data.user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Plafond de jobs actifs : borne le coût (Serper/Gemini) en cas d'abus de
+// l'anon key (publique par design). Un job dure ~2-4 min — un utilisateur
+// légitime n'atteint jamais ces seuils.
+const MAX_ACTIVE_JOBS_PER_USER = 3;
+const MAX_ACTIVE_ANONYMOUS_JOBS = 10;
+
+async function countActiveJobs(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  userId: string | null,
+): Promise<number> {
+  let q = supabase
+    .from("pipeline_jobs")
+    .select("id", { count: "exact", head: true })
+    .not("status", "in", "(dd_done,error)");
+  q = userId === null ? q.is("user_id", null) : q.eq("user_id", userId);
+  const { count, error } = await q;
+  if (error) {
+    logger.warn("countActiveJobs erreur — plafond ignoré", { error: error.message });
+    return 0;
+  }
+  return count ?? 0;
+}
+
 async function handleStart(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   body: any,
   req: Request,
 ): Promise<Response> {
   const { fundName, customThesis } = body;
+  const userId = await getUserId(supabase, req);
+
+  const active = await countActiveJobs(supabase, userId);
+  const cap = userId ? MAX_ACTIVE_JOBS_PER_USER : MAX_ACTIVE_ANONYMOUS_JOBS;
+  if (active >= cap) {
+    return jsonResp(
+      { error: "Trop d'analyses en cours. Attendez la fin d'un pipeline avant d'en relancer un." },
+      429,
+      req,
+    );
+  }
 
   const { data: job, error } = await supabase
     .from("pipeline_jobs")
     .insert({
+      user_id: userId,
       fund_name: fundName ?? null,
       custom_thesis: customThesis ?? null,
       status: "thesis_analyzing",
@@ -470,6 +844,31 @@ async function handleContinue(
   const { status, retry_count, max_retries } = job;
 
   logger.info("handleContinue", { pipelineId, status });
+
+  // Claim optimiste : deux invocations concurrentes (watchdog poll + cron sweep,
+  // ou double fireContinue) lisent le même snapshot — seule celle qui réussit
+  // cette mise à jour conditionnelle exécute l'étape, l'autre s'arrête là.
+  if (!["dd_done", "error"].includes(status)) {
+    const { data: claimed, error: claimError } = await supabase
+      .from("pipeline_jobs")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", pipelineId)
+      .eq("status", status)
+      .eq("updated_at", job.updated_at)
+      .select("id");
+    if (claimError) {
+      logger.warn("Claim échoué — on continue sans verrou", {
+        pipelineId,
+        error: claimError.message,
+      });
+    } else if (!claimed || claimed.length === 0) {
+      logger.info("Étape déjà prise en charge par une autre invocation — skip", {
+        pipelineId,
+        status,
+      });
+      return jsonResp({ ok: true, skipped: "already_claimed" }, 200, req);
+    }
+  }
 
   try {
     switch (status) {
@@ -532,6 +931,103 @@ async function handleContinue(
 }
 
 // ============================================================
+// WATCHDOG : auto-réparation des jobs figés
+// ============================================================
+// Seuils > durée normale de chaque étape. Les états "_done" sont des handoffs
+// (le fireContinue suivant peut mourir) → seuil court. dd_done/error = terminaux.
+const STUCK_THRESHOLDS_MS: Record<string, number> = {
+  thesis_analyzing: 45_000,
+  thesis_done: 20_000,
+  sourcing_running: 200_000,
+  sourcing_done: 20_000,
+  picking: 120_000,
+  pick_done: 20_000,
+  dd_search_running: 150_000,
+  dd_search_done: 20_000,
+  dd_analyze_running: 300_000,
+};
+
+async function selfHealIfStuck(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  job: any,
+): Promise<void> {
+  const threshold = STUCK_THRESHOLDS_MS[job.status];
+  if (!threshold) return; // état terminal ou inconnu
+
+  const updatedAt = job.updated_at ? new Date(job.updated_at).getTime() : 0;
+  if (Date.now() - updatedAt < threshold) return;
+
+  const retry = job.retry_count ?? 0;
+  const maxRetries = job.max_retries ?? 3;
+  if (retry >= maxRetries) {
+    await updateJob(supabase, job.id, {
+      status: "error",
+      error_message: `Job figé au stade ${job.status} (watchdog)`,
+      error_step: job.status,
+    });
+    return;
+  }
+
+  logger.warn("Watchdog : job figé, relance auto", {
+    pipelineId: job.id,
+    status: job.status,
+    ageMs: Date.now() - updatedAt,
+  });
+  // Incrémente retry_count ET touche updated_at → évite une rafale de relances
+  // entre deux polls (3s) avant que l'étape relancée ne mette à jour le status.
+  // Bump CONDITIONNEL (eq retry_count) : si le poll status et le cron sweep
+  // détectent le même job figé au même moment, un seul des deux relance.
+  const { data: bumped, error: bumpError } = await supabase
+    .from("pipeline_jobs")
+    .update({ retry_count: retry + 1, updated_at: new Date().toISOString() })
+    .eq("id", job.id)
+    .eq("retry_count", retry)
+    .select("id");
+  if (bumpError) throw new Error(`DB update error: ${bumpError.message}`);
+  if (!bumped || bumped.length === 0) {
+    logger.info("Watchdog : relance déjà déclenchée ailleurs — skip", {
+      pipelineId: job.id,
+    });
+    return;
+  }
+  await fireContinue(job.id);
+}
+
+// ============================================================
+// ACTION: sweep — balayage des jobs figés (appelé par un cron pg_cron).
+// Rend la reprise indépendante du polling frontend.
+// ============================================================
+async function handleSweep(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  req: Request,
+): Promise<Response> {
+  // Jobs non terminaux, pas mis à jour depuis au moins 20s (plus petit seuil).
+  const cutoff = new Date(Date.now() - 20_000).toISOString();
+  const { data: jobs, error } = await supabase
+    .from("pipeline_jobs")
+    .select("id, status, updated_at, retry_count, max_retries")
+    .not("status", "in", "(dd_done,error)")
+    .lt("updated_at", cutoff)
+    .order("updated_at", { ascending: true }) // les plus anciens d'abord
+    .limit(50);
+
+  if (error) {
+    logger.error("Sweep : lecture échouée", { error: error.message });
+    return jsonResp({ error: error.message }, 500, req);
+  }
+
+  let candidates = 0;
+  for (const job of jobs ?? []) {
+    candidates++;
+    // selfHealIfStuck applique le seuil par état et relance si vraiment figé.
+    await selfHealIfStuck(supabase, job);
+  }
+
+  logger.info("Sweep terminé", { scanned: jobs?.length ?? 0 });
+  return jsonResp({ scanned: candidates }, 200, req);
+}
+
+// ============================================================
 // ACTION: status
 // ============================================================
 async function handleStatus(
@@ -548,7 +1044,7 @@ async function handleStatus(
   const { data: job, error } = await supabase
     .from("pipeline_jobs")
     .select(
-      "id, status, current_step, total_steps, picked_startup, error_message, dd_job_id, completed_at, thesis_analysis, created_at, started_at",
+      "id, status, current_step, total_steps, picked_startup, shortlist, error_message, dd_job_id, completed_at, thesis_analysis, created_at, started_at, updated_at, retry_count, max_retries, final_result",
     )
     .eq("id", pipelineId)
     .single();
@@ -556,6 +1052,11 @@ async function handleStatus(
   if (error || !job) {
     return jsonResp({ error: "Job introuvable" }, 404, req);
   }
+
+  // Watchdog : auto-répare un job figé (instance async tuée sans throw → status
+  // bloqué sans erreur). Seuils > durée normale de l'étape pour ne pas relancer
+  // une étape simplement lente. Déclenché par le polling du frontend.
+  await selfHealIfStuck(supabase, job);
 
   // Résumé de la thèse (pas le JSON complet)
   const thesisSummary = job.thesis_analysis
@@ -573,12 +1074,19 @@ async function handleStatus(
       currentStep: job.current_step,
       totalSteps: job.total_steps,
       pickedStartup: job.picked_startup,
+      shortlist: job.shortlist,
       errorMessage: job.error_message,
       ddJobId: job.dd_job_id,
       completedAt: job.completed_at,
       thesisSummary,
       createdAt: job.created_at,
       startedAt: job.started_at,
+      // Rapport DD complet, uniquement à l'état terminal : le front arrête de
+      // poller à dd_done, donc envoyé une seule fois — et il évite de RE-payer
+      // une due diligence complète (~30 recherches + 3 IA) au clic.
+      ...(job.status === "dd_done" && job.final_result
+        ? { finalResult: job.final_result }
+        : {}),
     },
     200,
     req,
@@ -609,6 +1117,16 @@ serve(async (req: Request) => {
 
   logger.info("pipeline-orchestrator appelé", { action });
 
+  // "continue" est une action interne (self-invocation fireContinue) : seul le
+  // service-role peut la déclencher. Sinon, tout porteur de l'anon key (publique)
+  // pourrait rejouer une étape en boucle (coût Serper/Gemini ×N, races).
+  if (action === "continue") {
+    const bearer = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+    if (bearer !== Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) {
+      return jsonResp({ error: "Action réservée" }, 403, req);
+    }
+  }
+
   switch (action) {
     case "start":
       return handleStart(supabase, body, req);
@@ -616,6 +1134,8 @@ serve(async (req: Request) => {
       return handleContinue(supabase, body, req);
     case "status":
       return handleStatus(supabase, body, req);
+    case "sweep":
+      return handleSweep(supabase, req);
     default:
       return jsonResp({ error: `Action inconnue: ${action}` }, 400, req);
   }

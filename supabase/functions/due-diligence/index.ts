@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { callDigitalOceanAgent, formatDueDiligencePrompt } from "../_shared/digitalocean-agent.ts";
 import { getCachedSearch, setCachedSearch } from "../_shared/search-cache.ts";
+import { reserveAiCall } from "../_shared/ai-client.ts";
 
 const ALLOWED_ORIGINS = [
   "https://ai-vc-sourcing.vercel.app",
@@ -317,147 +317,47 @@ serve(async (req) => {
       });
     }
 
-    // Configuration AI
-    // Hardcoded Gemini — Vertex disabled per user choice (AI_PROVIDER env var ignored)
-    const AI_PROVIDER = "gemini";
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_KEY_2") || Deno.env.get("GEMINI_API_KEY");
-    const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-pro";
-    const VERTEX_AI_PROJECT = Deno.env.get("VERTEX_AI_PROJECT_ID");
-    const VERTEX_AI_LOCATION = Deno.env.get("VERTEX_AI_LOCATION") || "us-central1";
-    const VERTEX_AI_MODEL = Deno.env.get("VERTEX_AI_MODEL") || "gemini-2.5-pro";
-    const VERTEX_AI_CREDENTIALS = Deno.env.get("VERTEX_AI_CREDENTIALS");
+    // Configuration AI — Gemini uniquement (le code Vertex, jamais actif, a été retiré).
+    // Rotation de clés (même logique qu'ai-client.ts) : sur 429 on bascule sur
+    // la clé suivante pour cumuler les quotas journaliers.
+    const GEMINI_KEYS = [
+      ...new Set(
+        [
+          Deno.env.get("GEMINI_API_KEY"),
+          Deno.env.get("GEMINI_KEY_2"),
+          Deno.env.get("GEMINI_KEY_3"),
+        ].filter((k): k is string => !!k),
+      ),
+    ];
+    const GEMINI_API_KEY = GEMINI_KEYS[0];
+    const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash";
     const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY");
-    
-    // Helper pour encoder en base64url
-    function base64url(data: Uint8Array | string): string {
-      const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data;
-      const base64 = btoa(String.fromCharCode(...bytes));
-      return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-    }
-    
-    // Helper pour générer un JWT signé
-    async function generateSignedJWT(credentials: any): Promise<string> {
-      const header = { alg: "RS256", typ: "JWT" };
-      const now = Math.floor(Date.now() / 1000);
-      const payload = {
-        iss: credentials.client_email,
-        sub: credentials.client_email,
-        aud: "https://oauth2.googleapis.com/token",
-        iat: now,
-        exp: now + 3600,
-        scope: "https://www.googleapis.com/auth/cloud-platform"
-      };
-      
-      const headerB64 = base64url(JSON.stringify(header));
-      const payloadB64 = base64url(JSON.stringify(payload));
-      const message = `${headerB64}.${payloadB64}`;
-      
-      const pemKey = credentials.private_key.replace(/\\n/g, '\n');
-      const pemContents = pemKey
-        .replace(/-----BEGIN PRIVATE KEY-----/, '')
-        .replace(/-----END PRIVATE KEY-----/, '')
-        .replace(/\s/g, '');
-      const keyBuffer = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
-      
-      const privateKey = await crypto.subtle.importKey(
-        "pkcs8",
-        keyBuffer,
-        { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-        false,
-        ["sign"]
-      );
-      
-      const signature = await crypto.subtle.sign(
-        "RSASSA-PKCS1-v1_5",
-        privateKey,
-        new TextEncoder().encode(message)
-      );
-      
-      const signatureB64 = base64url(new Uint8Array(signature));
-      return `${message}.${signatureB64}`;
-    }
-    
-    // Helper pour obtenir un token OAuth2 pour Vertex AI
-    async function getVertexAIToken(): Promise<string> {
-      if (!VERTEX_AI_CREDENTIALS) {
-        throw new Error("VERTEX_AI_CREDENTIALS requis pour Vertex AI");
-      }
-      
-      const credentials = typeof VERTEX_AI_CREDENTIALS === 'string' 
-        ? JSON.parse(VERTEX_AI_CREDENTIALS) 
-        : VERTEX_AI_CREDENTIALS;
-      
-      const jwt = await generateSignedJWT(credentials);
-      
-      const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-          assertion: jwt
-        })
-      });
-      
-      if (!tokenResponse.ok) {
-        const errorText = await tokenResponse.text();
-        throw new Error(`Erreur OAuth2 Vertex AI: ${tokenResponse.status} - ${errorText}`);
-      }
-      
-      const tokenData = await tokenResponse.json();
-      return tokenData.access_token;
-    }
-    
-    // Helper pour construire l'URL et les headers selon le provider
+    // Sur 2.5-flash, le thinking peut consommer tout le budget de sortie →
+    // désactivé. Les modèles 3.x gèrent leur thinking séparément : ne pas forcer.
+    const GEMINI_THINKING = /2\.5-flash/.test(GEMINI_MODEL)
+      ? { thinkingConfig: { thinkingBudget: 0 } }
+      : {};
+
+    // Clé en header (pas en query string) : les URLs finissent dans les logs, pas les headers.
     const getAIEndpoint = async () => {
-      const useModel = AI_PROVIDER === "vertex" ? VERTEX_AI_MODEL : GEMINI_MODEL;
-      
-      if (AI_PROVIDER === "vertex") {
-        if (!VERTEX_AI_PROJECT || !VERTEX_AI_CREDENTIALS) {
-          throw new Error("Configuration Vertex AI incomplète");
-        }
-        
-        const accessToken = await getVertexAIToken();
-        
-        return {
-          url: `https://${VERTEX_AI_LOCATION}-aiplatform.googleapis.com/v1/projects/${VERTEX_AI_PROJECT}/locations/${VERTEX_AI_LOCATION}/publishers/google/models/${useModel}:generateContent`,
-          headers: { 
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${accessToken}`
-          },
-        };
-      } else {
-        if (!GEMINI_API_KEY) {
-          throw new Error("GEMINI_API_KEY requis");
-        }
-        
-        return {
-          url: `https://generativelanguage.googleapis.com/v1beta/models/${useModel}:generateContent?key=${GEMINI_API_KEY}`,
-          headers: { "Content-Type": "application/json" },
-        };
-      }
-    };
-    
-    // Vérification configuration
-    if (AI_PROVIDER === "vertex") {
-      if (!VERTEX_AI_PROJECT || !VERTEX_AI_CREDENTIALS) {
-        return new Response(JSON.stringify({ 
-          error: "Configuration Vertex AI invalide. Vérifiez VERTEX_AI_PROJECT_ID et VERTEX_AI_CREDENTIALS.",
-          setupRequired: true
-        }), {
-          status: 500,
-          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
-        });
-      }
-    } else {
       if (!GEMINI_API_KEY) {
-        return new Response(JSON.stringify({ 
-          error: "GEMINI_API_KEY manquante.",
-          setupRequired: true
-        }), {
-          status: 500,
-          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
-        });
+        throw new Error("GEMINI_API_KEY requis");
       }
+      return {
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+        headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY },
+      };
+    };
+
+    // Vérification configuration
+    if (!GEMINI_API_KEY) {
+      return new Response(JSON.stringify({
+        error: "GEMINI_API_KEY manquante.",
+        setupRequired: true
+      }), {
+        status: 500,
+        headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+      });
     }
     
     const SERPER_API_KEY = Deno.env.get("SERPER_API_KEY") || Deno.env.get("serper_api");
@@ -473,6 +373,7 @@ serve(async (req) => {
 
     // ========== PHASE ANALYZE : charger le job et lancer l'IA uniquement ==========
     if (phase === "analyze" && jobId) {
+      const phaseStart = Date.now();
       const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
       const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
       if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -518,6 +419,22 @@ serve(async (req) => {
       // search_context peut être vide si aucun résultat de recherche ; l'IA analysera avec ses connaissances
       const analyzeContext = job.search_context || `ENTREPRISE À ANALYSER: ${companyName}`;
       const analyzeSearchCount = job.search_results_count || 0;
+
+      // Cache rapport (3 j) : re-générer la DD de la même société brûlerait
+      // 3-4 appels IA free-tier pour un résultat quasi identique.
+      const reportCacheKey = `ddreport|${companyName.toLowerCase().trim()}`;
+      const cachedReport = await getCachedSearch<any>(`ai|${reportCacheKey}`, 1);
+      if (cachedReport && cachedReport.length > 0 && cachedReport[0]?.company) {
+        console.log(`[DD] Rapport servi depuis le cache pour: ${companyName}`);
+        await fetch(`${SUPABASE_URL}/rest/v1/due_diligence_jobs?id=eq.${encodeURIComponent(jobId)}`, {
+          method: "PATCH",
+          headers: { "apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ result: cachedReport[0], status: "analyze_done", updated_at: new Date().toISOString() }),
+        });
+        return new Response(JSON.stringify(cachedReport[0]), {
+          headers: { ...corsHeaders(req), "Content-Type": "application/json" },
+        });
+      }
 
       const systemPromptAnalyze = `Tu es un analyste VC senior spécialisé en due diligence avec 20 ans d'expérience. 
 Tu dois produire un rapport de due diligence COMPLET et PROFESSIONNEL sur l'entreprise "${companyName}".
@@ -612,9 +529,8 @@ ${contextExtract}
 TÂCHE : Identifie 2 à 4 thèmes où les infos sont INSUFFISANTES pour remplir le rapport. Priorité : (1) équipe/fondateurs (LinkedIn, parcours, formation), (2) marché (TAM/SAM, évolution, tendances, acteurs), (3) clients/traction (customers, partenariats, chiffres), (4) financements/métriques. Pour chaque thème, 1 à 2 requêtes web en ANGLAIS, courtes ; inclure "${companyName}" (ex: "${companyName} founder LinkedIn", "${companyName} market size TAM").
 Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 4 gaps, 2 queries par gap. Si suffisant : {"gaps":[]}.`;
 
-        const gapBody = AI_PROVIDER === "vertex"
-          ? { contents: [{ role: "user", parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 2048, thinkingConfig: { thinkingBudget: 0 } } }
-          : { contents: [{ parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 2048, responseMimeType: "application/json" as const, thinkingConfig: { thinkingBudget: 0 } } };
+        const gapBody = { contents: [{ parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 2048, responseMimeType: "application/json" as const, ...GEMINI_THINKING } };
+        await reserveAiCall();
         const gapRes = await fetch(aiEndpointGap.url, { method: "POST", headers: aiEndpointGap.headers, body: JSON.stringify(gapBody) });
         if (gapRes.ok) {
           const gapData = await gapRes.json();
@@ -694,31 +610,38 @@ Réponds UNIQUEMENT avec du JSON valide.`;
 
       const aiEndpoint = await getAIEndpoint();
       // 16384 max output: enough for a complete DD report, fast enough to fit Supabase's 150s budget
-      const aiBody = AI_PROVIDER === "vertex"
-        ? {
-            contents: [{ role: "user", parts: [{ text: `${systemPromptAnalyze}\n\n${userPromptAnalyze}` }] }],
-            generationConfig: { temperature: 0.1, topP: 0.9, topK: 40, maxOutputTokens: 16384, thinkingConfig: { thinkingBudget: 0 } },
-          }
-        : {
-            contents: [{ parts: [{ text: `${systemPromptAnalyze}\n\n${userPromptAnalyze}` }] }],
-            generationConfig: { temperature: 0.1, topP: 0.9, topK: 40, maxOutputTokens: 16384, responseMimeType: "application/json" as const, thinkingConfig: { thinkingBudget: 0 } },
-          };
+      const aiBody = {
+        contents: [{ parts: [{ text: `${systemPromptAnalyze}\n\n${userPromptAnalyze}` }] }],
+        generationConfig: { temperature: 0.1, topP: 0.9, topK: 40, maxOutputTokens: 16384, responseMimeType: "application/json" as const, ...GEMINI_THINKING },
+      };
 
-      // Retry on transient Gemini errors (503 overload, 429 burst, 500/502/504).
-      // Total wait: 2s + 5s = 7s across 3 attempts; leaves the 150s budget intact.
+      // Retry on transient Gemini errors (503 overload, 500/502/504) + rotation
+      // de clés sur 429 (quota épuisé sur une clé → clé suivante, sans attente).
+      // Total wait: 2s + 5s sur les transitoires; leaves the 150s budget intact.
       const sleepMs = (ms: number) => new Promise((r) => setTimeout(r, ms));
-      const TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504]);
+      const TRANSIENT_STATUSES = new Set([500, 502, 503, 504]);
       let response: Response | null = null;
       let lastErrText = "";
       let lastStatus = 0;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const r = await fetch(aiEndpoint.url, { method: "POST", headers: aiEndpoint.headers, body: JSON.stringify(aiBody) });
+      let keyIdx = 0;
+      let transientWaits = 0;
+      const maxAttempts = 3 + GEMINI_KEYS.length;
+      await reserveAiCall();
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const headers = { ...aiEndpoint.headers, "x-goog-api-key": GEMINI_KEYS[keyIdx] };
+        const r = await fetch(aiEndpoint.url, { method: "POST", headers, body: JSON.stringify(aiBody) });
         if (r.ok) { response = r; break; }
         lastStatus = r.status;
         lastErrText = await r.text();
-        console.warn(`[DD analyze] Gemini HTTP ${r.status} attempt ${attempt + 1}/3: ${lastErrText.slice(0, 150)}`);
+        console.warn(`[DD analyze] Gemini HTTP ${r.status} key#${keyIdx} attempt ${attempt + 1}/${maxAttempts}: ${lastErrText.slice(0, 150)}`);
+        if (r.status === 429) {
+          if (keyIdx < GEMINI_KEYS.length - 1) { keyIdx++; continue; } // quota → clé suivante
+          break; // toutes les clés en quota
+        }
         if (!TRANSIENT_STATUSES.has(r.status)) break;                  // permanent error → don't retry
-        if (attempt < 2) await sleepMs(attempt === 0 ? 2000 : 5000);   // 2s, then 5s
+        if (transientWaits >= 2) break;
+        await sleepMs(transientWaits === 0 ? 2000 : 5000);             // 2s, then 5s
+        transientWaits++;
       }
       if (!response) {
         const hint = lastStatus === 503
@@ -853,9 +776,68 @@ Réponds UNIQUEMENT avec du JSON valide.`;
         if (!ir.investmentHorizon || typeof ir.investmentHorizon !== "string") ir.investmentHorizon = "Non disponible";
         if (!ir.suggestedTicket || typeof ir.suggestedTicket !== "string") ir.suggestedTicket = "Non disponible";
       }
-      dueDiligenceResult.metadata = { companyName, generatedAt: new Date().toISOString(), searchResultsCount: analyzeSearchCount, aiProvider: AI_PROVIDER };
+      // L'IA remplit parfois les "sources" de section mais laisse allSources
+      // vide : on agrège déterministiquement (dédup par URL), le front affiche
+      // allSources dans l'onglet Sources.
+      const aggregateSectionSources = (root: any): void => {
+        const all: any[] = Array.isArray(root.allSources) ? root.allSources : [];
+        const seen = new Set(all.map((s: any) => s?.url).filter(Boolean));
+        const visit = (node: any): void => {
+          if (!node || typeof node !== "object") return;
+          if (Array.isArray(node)) { node.forEach(visit); return; }
+          for (const k of Object.keys(node)) {
+            if (k === "allSources") continue;
+            if (k === "sources" && Array.isArray(node[k])) {
+              for (const src of node[k]) {
+                const u = src?.url;
+                if (typeof u === "string" && u.startsWith("http") && !seen.has(u)) {
+                  seen.add(u);
+                  all.push({
+                    name: typeof src?.name === "string" ? src.name : u,
+                    url: u,
+                    type: typeof src?.type === "string" ? src.type : "other",
+                    relevance: typeof src?.relevance === "string" ? src.relevance : "",
+                  });
+                }
+              }
+            } else {
+              visit(node[k]);
+            }
+          }
+        };
+        visit(root);
+        root.allSources = all;
+        if (root.dataQuality && (root.dataQuality.sourcesCount == null || root.dataQuality.sourcesCount === "")) {
+          root.dataQuality.sourcesCount = String(all.length);
+        }
+      };
+      aggregateSectionSources(dueDiligenceResult);
+
+      dueDiligenceResult.metadata = { companyName, generatedAt: new Date().toISOString(), searchResultsCount: analyzeSearchCount, aiProvider: "gemini", aiModel: GEMINI_MODEL };
 
       // ——— 2e itération : lacunes sur le rapport → recherches → enrichissement ———
+      // Conditionnelle : (a) budget wall-time — l'enrichissement refait une
+      // génération 16k (~50s), risque de kill 546 près du plafond 150s ;
+      // (b) complétude — si les sections clés sont déjà remplies, ces 2 appels
+      // IA free-tier n'apportent rien.
+      const ROUND2_BUDGET_MS = 85_000;
+      const elapsedMs = Date.now() - phaseStart;
+      const reportIncomplete = (() => {
+        const r = dueDiligenceResult;
+        const nd = (v: unknown) => !v || /non disponible|non identifié/i.test(String(v));
+        const founders = r?.team?.founders;
+        const foundersWeak = !Array.isArray(founders) || founders.length === 0 ||
+          founders.every((f: any) => nd(f?.name));
+        const tamWeak = nd(r?.market?.tam);
+        const fundingWeak = nd(r?.financials?.totalFunding);
+        const sourcesWeak = !Array.isArray(r?.allSources) || r.allSources.length < 8;
+        return foundersWeak || tamWeak || fundingWeak || sourcesWeak;
+      })();
+      if (elapsedMs > ROUND2_BUDGET_MS) {
+        console.warn(`[DueDiligence] 2e itération sautée (budget temps: ${Math.round(elapsedMs / 1000)}s écoulées)`);
+      } else if (!reportIncomplete) {
+        console.log("[DueDiligence] 2e itération sautée (rapport déjà complet — économie de 2 appels IA)");
+      } else
       try {
         const reportSummary = JSON.stringify(dueDiligenceResult).slice(0, 4000);
         const gapPrompt2 = `Rapport de due diligence (brouillon) sur "${companyName}". Extrait : ${reportSummary}
@@ -863,9 +845,8 @@ Identifie 1 à 3 thèmes où des infos manquent encore (équipe, financements, m
 Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 3 gaps, 1-2 queries chacun. Si rien : {"gaps":[]}.`;
 
         const aiEndpointGap2 = await getAIEndpoint();
-        const gapBody2 = AI_PROVIDER === "vertex"
-          ? { contents: [{ role: "user", parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 1500, thinkingConfig: { thinkingBudget: 0 } } }
-          : { contents: [{ parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 1500, responseMimeType: "application/json" as const, thinkingConfig: { thinkingBudget: 0 } } };
+        const gapBody2 = { contents: [{ parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 1500, responseMimeType: "application/json" as const, ...GEMINI_THINKING } };
+        await reserveAiCall();
         const gapRes2 = await fetch(aiEndpointGap2.url, { method: "POST", headers: aiEndpointGap2.headers, body: JSON.stringify(gapBody2) });
         if (gapRes2.ok) {
           const gapData2 = await gapRes2.json();
@@ -919,9 +900,8 @@ DONNÉES COMPLÉMENTAIRES :
 ${extraContext2}
 
 Réponds UNIQUEMENT avec le JSON complet.`;
-              const enrichBody = AI_PROVIDER === "vertex"
-                ? { contents: [{ role: "user", parts: [{ text: enrichPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 16384, thinkingConfig: { thinkingBudget: 0 } } }
-                : { contents: [{ parts: [{ text: enrichPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 16384, responseMimeType: "application/json" as const, thinkingConfig: { thinkingBudget: 0 } } };
+              const enrichBody = { contents: [{ parts: [{ text: enrichPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 16384, responseMimeType: "application/json" as const, ...GEMINI_THINKING } };
+              await reserveAiCall();
               const enrichRes = await fetch(aiEndpointGap2.url, { method: "POST", headers: aiEndpointGap2.headers, body: JSON.stringify(enrichBody) });
               if (enrichRes.ok) {
                 const enrichData = await enrichRes.json();
@@ -950,6 +930,11 @@ Réponds UNIQUEMENT avec le JSON complet.`;
         }
       } catch (round2Err) {
         console.warn("[DueDiligence] 2e itération ignorée:", round2Err);
+      }
+
+      // Cache 3 j : une nouvelle DD de la même société est servie sans IA.
+      if (dueDiligenceResult?.company) {
+        await setCachedSearch(`ai|${reportCacheKey}`, 1, [dueDiligenceResult], 3);
       }
 
       const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/due_diligence_jobs?id=eq.${encodeURIComponent(jobId)}`, {

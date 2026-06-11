@@ -51,7 +51,52 @@ L'outil est un SaaS pour fonds VC qui automatise deux choses :
 
 ---
 
-## 3. Sourcing : pipeline `analyze-fund` (4 phases)
+## 2-bis. Sourcing v2 : `pipeline-orchestrator` (ACTIF)
+
+C'est le moteur de sourcing **réellement utilisé** par `/analyse` ([Analyser.tsx](src/pages/Analyser.tsx) + [PipelineProgress.tsx](src/pages/PipelineProgress.tsx)). Le pipeline `analyze-fund` (section 3) est l'ancien path. Tout l'état est dans la table `pipeline_jobs`.
+
+### Orchestration : machine à états auto-chaînée
+Une seule Edge Function ([pipeline-orchestrator](supabase/functions/pipeline-orchestrator/index.ts)) gère 5 étapes. Chaque étape, en fin de traitement, se ré-appelle elle-même (`action:"continue"`) pour lancer la suivante — découpage nécessaire pour ne pas dépasser le wall-time Supabase.
+
+Actions : `start` (crée le job) · `continue` (exécute l'étape courante selon `status`) · `status` (lecture + watchdog) · `sweep` (balayage cron).
+
+**Robustesse (3 niveaux)** :
+1. `EdgeRuntime.waitUntil()` garde l'isolate vivant le temps que la requête de chaînage parte réellement (sinon l'isolate est tué avant l'envoi → job figé). C'est le correctif racine.
+2. **Watchdog** (`selfHealIfStuck`) : sur chaque poll `status`, si un job dépasse le seuil de son étape sans bouger, il est relancé (`retry_count++`), borné par `max_retries` puis passé en `error`.
+3. **Cron** (`pg_cron` + `pg_net`, toutes les minutes) appelle `sweep` → relance les jobs figés même si personne ne regarde la page.
+
+### Étape 1 — Analyse de thèse → ICP
+Si un nom de fonds est fourni, on **recherche d'abord sur le web sa thèse réelle** (secteurs, portfolio, stade) — anti-générique : on ne se fie pas à ce que le LLM croit savoir. Puis 1 appel IA ([thesis-analysis.ts](supabase/functions/_shared/prompts/thesis-analysis.ts)) produit un JSON structuré, dont un **Ideal Company Profile** : `definition`, `businessModel`, `mustHaveKeywords`, `exclusionKeywords`, `nafCodes`, `inseeNameTokens`. Exemple vérifié : "Supernova Invest" → ICP deeptech (photonique/quantique/biotech/capteurs) qui EXCLUT le SaaS B2B générique.
+
+### Étape 2 — Sourcing multi-source (gratuit, parallèle)
+| Source | Fichier | Nature |
+|--------|---------|--------|
+| Web FR-biaisé, ciblé ICP + exclusions | [sourcing-queries-fr.ts](supabase/functions/_shared/sourcing-queries-fr.ts) | Serper/Brave (~63 req) |
+| INSEE Sirene (browse NAF + **nom-ciblé** sur tokens thèse) | [insee-sirene.ts](supabase/functions/_shared/insee-sirene.ts) | registre FR, gratuit |
+| Hacker News (Show HN) | [hn-algolia.ts](supabase/functions/_shared/hn-algolia.ts) | gratuit, sans clé |
+| GitHub (si thèse tech) | [github-search.ts](supabase/functions/_shared/github-search.ts) | `GITHUB_TOKEN` |
+
+Puis **dedup + ranking** ([dedup-ranker.ts](supabase/functions/_shared/dedup-ranker.ts)) : regroupement par chemin complet pour les agrégateurs, blocklist d'annuaires/presse, filtre anti-titre-d'article, filtre ICP strict (exclut les acteurs hors-profil, boost on-thesis).
+
+Enfin **résolution d'entités IA** ([entity-cleanup.ts](supabase/functions/_shared/entity-cleanup.ts)) : 1 appel qui filtre le bruit (comptes perso, repos sans société, labos), normalise les noms, dédoublonne, note la pertinence. Fallback = candidats bruts.
+
+### Étape 3 — Picking
+1 appel IA **batché** ([scoring-engine.ts](supabase/functions/_shared/scoring-engine.ts) `buildBatchScoringPrompt`) score les 6 meilleurs candidats d'un coup (8 dimensions pondérées) au lieu d'un appel par candidat. Fallback unitaire qui complète à ≥3 si le batch tronque. Le résultat est stocké en **shortlist** (toutes les startups scorées + analyse qualitative), pas seulement la n°1.
+
+> **Quota IA (free tier strict)** : l'app ne peut PAS dépasser le quota gratuit Gemini.
+> 1. Garde-fou dur : chaque appel IA réserve un slot dans `ai_usage_daily` (RPC `increment_ai_usage`) ; au-delà de `AI_DAILY_LIMIT` (240/j) → refus propre.
+> 2. Rotation de clés `GEMINI_API_KEY`/`GEMINI_KEY_2`/`GEMINI_KEY_3` sur 429 quota ; un 429 de rythme (RPM) attend le `retryDelay` de Google.
+> 3. Caches IA (`search_cache`, préfixe `ai|`) : thèse par fonds (7 j), rapport DD par société (3 j) — re-sourcer le même fonds ≈ 0 appel.
+> 4. Modèle : `gemini-2.5-flash` (250 req/j gratuites). Coût par run à froid : ~5-7 appels ; à chaud : 0-2.
+
+### Étapes 4-5 — Due Diligence
+Délègue à la fonction `due-diligence` (phases `search` puis `analyze`, cf. section 4).
+
+**Coût IA par run** : 1 (thèse) + 1 (cleanup) + 1 (picking batché) + DD. **Sources structurées = 0 crédit Serper.**
+
+---
+
+## 3. Sourcing : pipeline `analyze-fund` (4 phases) — LEGACY
 
 Tout l'état est stocké dans la table `sourcing_jobs`. Chaque phase lit le job, écrit son résultat dans `search_context` (JSONB), met à jour `status`.
 
@@ -237,7 +282,10 @@ RLS activé partout. `search_cache` n'a pas de policies publiques (accès via se
 
 ## 8. Sécurité
 
-- **Auth** : JWT Supabase, vérifié sur la plupart des Edge Functions (sauf `due-diligence` et `advanced-sourcing` qui ont `verify_jwt: false` pour des raisons historiques — à corriger).
+- **Auth** : JWT Supabase, `verify_jwt: true` sur TOUTES les fonctions actives (analyze-fund,
+  due-diligence, pipeline-orchestrator, ai-qa) — figé dans `supabase/config.toml`. L'action
+  `continue` de l'orchestrateur est en plus réservée au service-role, et `start` est plafonné
+  (3 jobs actifs/utilisateur, 10 anonymes). Audit complet : [AUDIT_DURCISSEMENT.md](./AUDIT_DURCISSEMENT.md).
 - **Anon key seulement côté client** (jamais le service role).
 - **CORS** : whitelist explicite (`ai-vc-sourcing.vercel.app` + localhost dev).
 - **Secrets** : tous dans Supabase Functions Secrets, jamais dans le code.
@@ -313,9 +361,9 @@ Sans IA, la phase `pick` retombe sur l'heuristique qui peut sélectionner des pa
 ### 🔧 Améliorations recommandées (par ordre d'impact)
 1. **Consolider les requêtes quasi-dupliquées** dans search_startups (results1-6 se chevauchent fortement) → −5 recherches/analyse sans perte.
 2. **Cacher aussi les réponses IA stables** (extraction critères, analyse marché identiques pour mêmes inputs).
-3. **Mutualiser le code dupliqué** : `braveSearch()` existe en deux copies (analyze-fund + due-diligence). Utiliser `_shared/search-api-client.ts` (déjà utilisé par advanced-sourcing).
+3. ~~Activer `verify_jwt` sur `due-diligence`~~ ✅ fait (2026-06-11, voir AUDIT_DURCISSEMENT.md) ; `advanced-sourcing`/`ninja-sourcing` supprimés du repo (orphelins — à supprimer aussi au dashboard avec `analyze-company` et `quick-worker`).
 4. **Job cron de purge** : supprimer `search_cache WHERE expires_at < now()`.
-5. **Activer `verify_jwt` sur `due-diligence` et `advanced-sourcing`** (actuellement public).
+5. **Afficher `final_result` du pipeline** au lieu de rejouer une DD complète quand l'utilisateur clique "Due diligence" sur la startup déjà analysée (PipelineProgress.goToDD).
 6. **Webhook Stripe** (`stripe-webhook` function pas encore implémentée — décrit dans `PRODUCT_ROADMAP.md v2.1`).
 7. **Pagination/pré-fetch** dans `AnalysisHistory.tsx` pour gros volumes.
 

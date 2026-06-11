@@ -1025,7 +1025,7 @@ serve((req) => {
         aiEndpointA = { url: `https://us-central1-aiplatform.googleapis.com/v1/projects/${VERTEX_AI_PROJECT_A}/locations/us-central1/publishers/google/models/${VERTEX_AI_MODEL_A}:generateContent`, headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` } };
       } else {
         if (!GEMINI_API_KEY_A) throw new Error("GEMINI_API_KEY requis");
-        aiEndpointA = { url: `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL_A}:generateContent?key=${GEMINI_API_KEY_A}`, headers: { "Content-Type": "application/json" } };
+        aiEndpointA = { url: `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL_A}:generateContent`, headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY_A } };
       }
       const maxOutputTokensA = 16384;
       const sleepA = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -1297,8 +1297,8 @@ ${extraContext2}`;
         return new Response(JSON.stringify({ error: "GEMINI_API_KEY requis (phase pick)" }), { status: 500, headers: { ...corsHeaders(req), "Content-Type": "application/json" } });
       }
       console.log(`[pick] Using Gemini (model: ${GEMINI_MODEL_P})`);
-      const aiUrlP = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL_P}:generateContent?key=${GEMINI_API_KEY_P}`;
-      const aiHeadersP: Record<string, string> = { "Content-Type": "application/json" };
+      const aiUrlP = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL_P}:generateContent`;
+      const aiHeadersP: Record<string, string> = { "Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY_P };
 
       // Prompt court : choisir la meilleure startup parmi les résultats de sourcing
       // MAX_PICK_CONTEXT_LENGTH = 8000 : résultats Brave (titre + description + URL), suffisant pour identifier une startup
@@ -1694,8 +1694,8 @@ ${pickContext.slice(0, MAX_PICK_CONTEXT_LENGTH)}`;
         }
         
         return {
-          url: `https://generativelanguage.googleapis.com/v1beta/models/${useModel}:generateContent?key=${GEMINI_API_KEY}`,
-          headers: { "Content-Type": "application/json" },
+          url: `https://generativelanguage.googleapis.com/v1beta/models/${useModel}:generateContent`,
+          headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY },
           needsAuth: false
         };
       }

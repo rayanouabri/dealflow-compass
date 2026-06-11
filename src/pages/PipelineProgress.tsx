@@ -39,9 +39,18 @@ interface PipelineStatus {
     comparables: string[];
     scores?: Record<string, number>;
   };
+  shortlist?: Array<{
+    name: string;
+    url: string;
+    totalWeighted: number;
+    riskLevel: string;
+    whyThisStartup?: string;
+    whyNow?: string;
+  }>;
   errorMessage?: string;
   ddJobId?: string;
   completedAt?: string;
+  finalResult?: unknown;
   thesisSummary?: {
     sectors?: string[];
     stage?: { min?: string; max?: string };
@@ -141,7 +150,6 @@ export default function PipelineProgress() {
 
   const [status, setStatus] = useState<PipelineStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const [redirecting, setRedirecting] = useState(false);
 
   const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? "";
   const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "";
@@ -179,28 +187,30 @@ export default function PipelineProgress() {
     return () => clearInterval(interval);
   }, [pipelineId, fetchStatus, status?.status]);
 
-  // Auto-redirect quand DD terminé
-  useEffect(() => {
-    if (status?.status === "dd_done" && status.pickedStartup && !redirecting) {
-      setRedirecting(true);
-      toast({
-        title: "Rapport terminé ! 🎉",
-        description: "Redirection vers le rapport de due diligence…",
-      });
-      const payload = {
-        companyName: status.pickedStartup.name,
-        companyWebsite: status.pickedStartup.url,
-      };
+  // Plus d'auto-redirection : on laisse l'utilisateur voir la shortlist et
+  // choisir quelle startup approfondir en due diligence.
+
+  const goToDD = useCallback(
+    (name: string, url: string, preloadedResult?: unknown) => {
+      // preloadedResult : rapport déjà généré par le pipeline (étapes 4-5).
+      // On l'affiche directement au lieu de relancer une DD complète.
+      const payload: Record<string, unknown> = { companyName: name, companyWebsite: url };
+      if (preloadedResult) payload.preloadedResult = preloadedResult;
       try {
         sessionStorage.setItem("due-diligence-request", JSON.stringify(payload));
       } catch {
         // sessionStorage peut être désactivé
       }
-      setTimeout(() => {
-        navigate("/due-diligence/result", { state: payload });
-      }, 2000);
-    }
-  }, [status, navigate, toast, redirecting]);
+      toast({
+        title: "Due diligence",
+        description: preloadedResult
+          ? `Rapport de ${name} prêt.`
+          : `Génération du rapport pour ${name}…`,
+      });
+      navigate("/due-diligence/result", { state: payload });
+    },
+    [navigate, toast],
+  );
 
   const handleLogin = () => {
     // Pas de dialog de login sur cette page — l'utilisateur vient de l'app déjà connecté
@@ -401,6 +411,47 @@ export default function PipelineProgress() {
           </Card>
         )}
 
+        {/* Shortlist : autres startups identifiées */}
+        {status?.shortlist && status.shortlist.length > 1 && (
+          <Card className="bg-card/70 border border-primary/20 backdrop-blur-sm shadow-lg mb-6">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base text-foreground flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-primary" />
+                Autres startups identifiées ({status.shortlist.length - 1})
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {status.shortlist.slice(1).map((s, i) => (
+                <div
+                  key={i}
+                  className="flex items-start justify-between gap-3 py-2 px-3 rounded-lg bg-primary/5 border border-primary/10"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-semibold text-foreground truncate">{s.name}</h4>
+                      <RiskBadge level={s.riskLevel} />
+                    </div>
+                    {s.whyThisStartup && (
+                      <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{s.whyThisStartup}</p>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-end gap-1.5 shrink-0">
+                    <div className="text-lg font-bold text-primary leading-none">{s.totalWeighted}</div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs gap-1 border-primary/30"
+                      onClick={() => goToDD(s.name, s.url)}
+                    >
+                      Due diligence
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Error state */}
         {isError && (
           <Card className="bg-card/70 border border-destructive/30 backdrop-blur-sm shadow-lg mb-6">
@@ -429,32 +480,14 @@ export default function PipelineProgress() {
           </Card>
         )}
 
-        {/* Redirect notice */}
-        {redirecting && (
-          <div className="flex items-center gap-3 text-sm text-primary bg-primary/10 border border-primary/20 rounded-xl px-4 py-3">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            Redirection vers le rapport de due diligence…
-          </div>
-        )}
-
-        {/* CTA si DD terminée mais pas encore redirigé */}
-        {isDone && status?.pickedStartup && !redirecting && (
+        {/* CTA : due diligence de la startup recommandée */}
+        {isDone && status?.pickedStartup && (
           <Button
             className="w-full h-12 bg-primary hover:bg-primary/90 text-primary-foreground glow-ai-vc"
-            onClick={() => {
-              const payload = {
-                companyName: status.pickedStartup!.name,
-                companyWebsite: status.pickedStartup!.url,
-              };
-              try {
-                sessionStorage.setItem("due-diligence-request", JSON.stringify(payload));
-              } catch {
-                // sessionStorage peut être désactivé
-              }
-              navigate("/due-diligence/result", { state: payload });
-            }}
+            onClick={() => goToDD(status.pickedStartup!.name, status.pickedStartup!.url, status.finalResult)}
           >
-            Voir le rapport complet →
+            {status.finalResult ? "Voir le rapport de " : "Due diligence de "}
+            {status.pickedStartup.name} →
           </Button>
         )}
       </div>
