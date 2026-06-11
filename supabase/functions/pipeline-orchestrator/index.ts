@@ -907,6 +907,7 @@ async function handleSweep(
     .select("id, status, updated_at, retry_count, max_retries")
     .not("status", "in", "(dd_done,error)")
     .lt("updated_at", cutoff)
+    .order("updated_at", { ascending: true }) // les plus anciens d'abord
     .limit(50);
 
   if (error) {
