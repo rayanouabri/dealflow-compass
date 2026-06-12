@@ -405,11 +405,11 @@ export default function DueDiligenceResult() {
   const getRecommendationBadge = (rec?: string) => {
     switch (rec?.toUpperCase()) {
       case "INVEST":
-        return <Badge className="bg-green-500/20 text-green-400 border-green-500/30"><CheckCircle2 className="w-3 h-3 mr-1" /> INVEST</Badge>;
+        return <Badge variant="outline" className="border-success/40 text-success bg-success/5 font-medium tracking-wide"><CheckCircle2 className="w-3 h-3 mr-1.5" /> INVEST</Badge>;
       case "WATCH":
-        return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30"><AlertTriangle className="w-3 h-3 mr-1" /> WATCH</Badge>;
+        return <Badge variant="outline" className="border-primary/40 text-primary bg-primary/5 font-medium tracking-wide"><AlertTriangle className="w-3 h-3 mr-1.5" /> WATCH</Badge>;
       case "PASS":
-        return <Badge className="bg-red-500/20 text-red-400 border-red-500/30"><XCircle className="w-3 h-3 mr-1" /> PASS</Badge>;
+        return <Badge variant="outline" className="border-destructive/40 text-destructive bg-destructive/5 font-medium tracking-wide"><XCircle className="w-3 h-3 mr-1.5" /> PASS</Badge>;
       default:
         return <Badge variant="outline">{rec || "N/A"}</Badge>;
     }
@@ -418,11 +418,11 @@ export default function DueDiligenceResult() {
   const getRiskBadge = (level?: string) => {
     switch (level?.toLowerCase()) {
       case "low":
-        return <Badge className="bg-green-500/20 text-green-400">Risque Faible</Badge>;
+        return <Badge variant="outline" className="border-success/40 text-success bg-success/5 font-normal">Risque faible</Badge>;
       case "medium":
-        return <Badge className="bg-amber-500/20 text-amber-400">Risque Modéré</Badge>;
+        return <Badge variant="outline" className="border-primary/40 text-primary bg-primary/5 font-normal">Risque modéré</Badge>;
       case "high":
-        return <Badge className="bg-red-500/20 text-red-400">Risque Élevé</Badge>;
+        return <Badge variant="outline" className="border-destructive/40 text-destructive bg-destructive/5 font-normal">Risque élevé</Badge>;
       default:
         return null;
     }
@@ -550,7 +550,7 @@ export default function DueDiligenceResult() {
         href={url} 
         target="_blank" 
         rel="noopener noreferrer"
-        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 hover:text-amber-300 border border-amber-500/20 hover:border-amber-500/40 transition-all"
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground border border-border transition-colors"
         title={url}
       >
         <LinkIcon className="w-3 h-3 flex-shrink-0" />
@@ -739,7 +739,7 @@ export default function DueDiligenceResult() {
     if (!sources || sources.length === 0) return null;
     
     return (
-      <div className="mt-6 pt-4 border-t border-gray-700/30">
+      <div className="mt-6 pt-4 border-t border-border">
         <div className="flex items-center gap-2 mb-3">
           <LinkIcon className="w-3.5 h-3.5 text-muted-foreground" />
           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Sources</span>
@@ -778,42 +778,44 @@ export default function DueDiligenceResult() {
         {/* Loading State */}
         {loading && (
           <div className="lg:col-span-12">
-          <Card className="bg-card border-border">
-            <CardContent className="py-16">
-              <div className="flex flex-col items-center gap-6">
-                <div className="relative">
-                  <Loader2 className="w-16 h-16 text-amber-400 animate-spin" />
-                  <FileSearch className="w-8 h-8 text-amber-400 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
-                </div>
-                <div className="text-center">
-                  <h2 className="text-xl font-semibold mb-2">
-                    Analyse de {requestPayload?.companyName}
-                  </h2>
-                  <p className="text-muted-foreground mb-4">{statusMessage}</p>
-                </div>
-                <div className="w-full max-w-md">
-                  <Progress value={progress} className="h-2" />
-                  <p className="text-center text-xs text-muted-foreground mt-2">{Math.round(progress)}%</p>
-                </div>
+            <div className="max-w-xl mx-auto border border-border rounded-lg bg-card overflow-hidden mt-8">
+              <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-[0.18em]">
+                  Due diligence en cours
+                </p>
+                <span className="text-xs text-muted-foreground tabular-nums">{Math.round(progress)} %</span>
               </div>
-            </CardContent>
-          </Card>
+              <div className="px-6 py-8">
+                <h2 className="font-display text-2xl font-medium text-foreground mb-2">
+                  {requestPayload?.companyName}
+                </h2>
+                <p className="text-sm text-muted-foreground mb-6 flex items-center gap-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                  {statusMessage}
+                </p>
+                <Progress value={progress} className="h-1" />
+                <p className="text-xs text-muted-foreground mt-4 leading-relaxed">
+                  Collecte des sources, vérification des informations puis rédaction du rapport.
+                  Comptez 1 à 3 minutes.
+                </p>
+              </div>
+            </div>
           </div>
         )}
 
         {/* Error State */}
         {!loading && error && (
           <div className="lg:col-span-12">
-          <Card className="bg-card/80 border-red-500/30">
+          <Card className="bg-card border-destructive/30">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-red-400">
+              <CardTitle className="flex items-center gap-2 text-destructive">
                 <AlertCircle className="w-5 h-5" />
                 Erreur d'analyse
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4">
-                <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-line">{error}</p>
+              <div className="bg-destructive/5 border border-destructive/20 rounded-lg p-4">
+                <p className="text-sm text-foreground/85 leading-relaxed whitespace-pre-line">{error}</p>
               </div>
               
               <div className="space-y-2">
@@ -919,66 +921,70 @@ export default function DueDiligenceResult() {
           </aside>
 
           <div className="lg:col-span-8 xl:col-span-9 lg:row-start-2 min-w-0 max-w-full overflow-x-hidden space-y-8 order-1 lg:order-2">
-            <h1 className="text-2xl md:text-3xl font-bold break-words text-foreground">
-              Due Diligence — {data.company?.name || requestPayload?.companyName}
-            </h1>
-            {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 rounded-xl border border-border bg-card p-6">
-              <div>
-                <div className="flex items-center gap-3 mb-2 flex-wrap">
-                  <h2 className="text-xl md:text-2xl font-bold text-foreground">
-                    {data.company?.name || requestPayload?.companyName}
-                  </h2>
-                  {getRecommendationBadge(data.executiveSummary?.recommendation)}
+            {/* Masthead — style mémo d'investissement */}
+            <header className="border-b border-border pb-6">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-[0.18em] mb-3">
+                Rapport de due diligence
+              </p>
+              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <h1 className="font-display text-3xl md:text-4xl font-medium tracking-tight text-foreground break-words">
+                      {data.company?.name || requestPayload?.companyName}
+                    </h1>
+                    {getRecommendationBadge(data.executiveSummary?.recommendation)}
+                  </div>
+                  {data.company?.tagline && (
+                    <p className="text-muted-foreground leading-relaxed max-w-2xl mt-2">
+                      {stripInlineSources(data.company.tagline)}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-4 text-[13px] text-muted-foreground">
+                    {[
+                      data.company?.sector,
+                      data.company?.stage,
+                      data.company?.headquarters,
+                      data.company?.founded && `Fondée en ${data.company.founded}`,
+                      data.company?.employeeCount && `${data.company.employeeCount} employés`,
+                    ]
+                      .filter(Boolean)
+                      .map((item, i, arr) => (
+                        <span key={i} className="flex items-center gap-4">
+                          {stripInlineSources(String(item))}
+                          {i < arr.length - 1 && <span className="text-border">·</span>}
+                        </span>
+                      ))}
+                  </div>
                 </div>
-                {data.company?.tagline && (
-                  <p className="text-muted-foreground leading-relaxed max-w-2xl">
-                    {stripInlineSources(data.company.tagline)}
-                  </p>
-                )}
-                <div className="flex flex-wrap items-center gap-3 mt-3">
-                  {data.company?.sector && (
-                    <Badge variant="outline" className="font-normal">{stripInlineSources(data.company.sector)}</Badge>
+                <div className="flex flex-wrap gap-2 flex-shrink-0">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={exportFullReport}
+                    className="gap-2 bg-foreground text-background hover:bg-foreground/90"
+                  >
+                    <Download className="w-4 h-4" />
+                    Exporter
+                  </Button>
+                  {data.company?.website && (
+                    <Button variant="outline" size="sm" asChild className="border-border">
+                      <a href={data.company.website} target="_blank" rel="noopener noreferrer">
+                        <Globe className="w-4 h-4 mr-2" />
+                        Site web
+                      </a>
+                    </Button>
                   )}
-                  {data.company?.stage && (
-                    <Badge variant="secondary">{stripInlineSources(data.company.stage)}</Badge>
-                  )}
-                  {data.company?.headquarters && (
-                    <span className="text-sm text-muted-foreground flex items-center gap-1">
-                      <Globe className="w-3 h-3" />
-                      {stripInlineSources(data.company.headquarters)}
-                    </span>
+                  {data.company?.linkedinUrl && (
+                    <Button variant="outline" size="sm" asChild className="border-border">
+                      <a href={data.company.linkedinUrl} target="_blank" rel="noopener noreferrer">
+                        <Linkedin className="w-4 h-4 mr-2" />
+                        LinkedIn
+                      </a>
+                    </Button>
                   )}
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2 flex-shrink-0">
-                <Button
-                  variant="default"
-                  size="sm"
-                  onClick={exportFullReport}
-                  className="gap-2 bg-primary hover:bg-primary/90"
-                >
-                  <Download className="w-4 h-4" />
-                  Exporter le rapport
-                </Button>
-                {data.company?.website && (
-                  <Button variant="outline" size="sm" asChild className="border-border hover:border-primary/50">
-                    <a href={data.company.website} target="_blank" rel="noopener noreferrer">
-                      <Globe className="w-4 h-4 mr-2" />
-                      Site web
-                    </a>
-                  </Button>
-                )}
-                {data.company?.linkedinUrl && (
-                  <Button variant="outline" size="sm" asChild className="border-border hover:border-primary/50">
-                    <a href={data.company.linkedinUrl} target="_blank" rel="noopener noreferrer">
-                      <Linkedin className="w-4 h-4 mr-2" />
-                      LinkedIn
-                    </a>
-                  </Button>
-                )}
-              </div>
-            </div>
+            </header>
 
             {/* Executive Summary Card */}
             <Card className="rounded-xl border border-border bg-card overflow-hidden">
@@ -996,33 +1002,33 @@ export default function DueDiligenceResult() {
                 <div className="grid md:grid-cols-2 gap-4 mt-4">
                   {/* Key Highlights */}
                   {toArray(data.executiveSummary?.keyHighlights).length > 0 && (
-                    <div className="bg-green-500/5 border border-green-500/20 rounded-xl p-4">
-                      <h4 className="font-semibold text-green-400 mb-2 flex items-center gap-2">
-                        <CheckCircle2 className="w-4 h-4" />
-                        Points Forts
+                    <div className="rounded-lg border border-border bg-muted/20 p-4">
+                      <h4 className="text-xs font-medium text-success uppercase tracking-wider mb-3 flex items-center gap-2">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        Points forts
                       </h4>
                       <ul className="space-y-2">
                         {toArray(data.executiveSummary?.keyHighlights).map((h, i) => (
-                          <li key={i} className="text-sm text-foreground/90 flex items-start gap-2">
-                            <ChevronRight className="w-3 h-3 mt-1 text-green-500 flex-shrink-0" />
+                          <li key={i} className="text-sm text-foreground/90 flex items-start gap-2.5 leading-relaxed">
+                            <span className="w-1 h-1 rounded-full bg-success mt-2 shrink-0" />
                             {stripInlineSources(h)}
                           </li>
                         ))}
                       </ul>
                     </div>
                   )}
-                  
+
                   {/* Key Risks */}
                   {toArray(data.executiveSummary?.keyRisks).length > 0 && (
-                    <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-4">
-                      <h4 className="font-semibold text-red-400 mb-2 flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4" />
-                        Risques Clés
+                    <div className="rounded-lg border border-border bg-muted/20 p-4">
+                      <h4 className="text-xs font-medium text-destructive uppercase tracking-wider mb-3 flex items-center gap-2">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        Risques clés
                       </h4>
                       <ul className="space-y-2">
                         {toArray(data.executiveSummary?.keyRisks).map((r, i) => (
-                          <li key={i} className="text-sm text-foreground/90 flex items-start gap-2">
-                            <ChevronRight className="w-3 h-3 mt-1 text-red-500 flex-shrink-0" />
+                          <li key={i} className="text-sm text-foreground/90 flex items-start gap-2.5 leading-relaxed">
+                            <span className="w-1 h-1 rounded-full bg-destructive mt-2 shrink-0" />
                             {stripInlineSources(r)}
                           </li>
                         ))}
@@ -1128,14 +1134,14 @@ export default function DueDiligenceResult() {
                                   <Badge variant="outline" className="text-xs">{round.round}</Badge>
                                   <span className="text-lg font-bold text-primary">{round.amount}</span>
                                 </div>
-                                {round.date && <span className="text-xs text-muted-foreground bg-gray-800/50 px-2 py-1 rounded">{round.date}</span>}
+                                {round.date && <span className="text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded">{round.date}</span>}
                               </div>
                               {round.valuation && (
                                 <p className="text-sm text-muted-foreground mb-2 font-medium">Valorisation: {round.valuation}</p>
                               )}
                               {round.investors && (
                                 <p className="text-sm text-muted-foreground">
-                                  <span className="font-medium text-gray-300">Investisseurs:</span> {Array.isArray(round.investors) ? round.investors.join(", ") : (typeof round.investors === "string" ? round.investors : String(round.investors ?? ""))}
+                                  <span className="font-medium text-foreground/85">Investisseurs:</span> {Array.isArray(round.investors) ? round.investors.join(", ") : (typeof round.investors === "string" ? round.investors : String(round.investors ?? ""))}
                                 </p>
                               )}
                             </div>
@@ -1154,7 +1160,7 @@ export default function DueDiligenceResult() {
                               <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 font-medium">
                                 {key.replace(/([A-Z])/g, ' $1').trim()}
                               </p>
-                              <p className="text-sm font-semibold text-gray-200">{value}</p>
+                              <p className="text-sm font-semibold text-foreground">{value}</p>
                             </div>
                           ))}
                         </div>
@@ -1304,7 +1310,7 @@ export default function DueDiligenceResult() {
                                   </a>
                                 )}
                               </div>
-                              {f.background && <p className="text-sm text-gray-400">{f.background}</p>}
+                              {f.background && <p className="text-sm text-muted-foreground">{f.background}</p>}
                             </div>
                           ))}
                         </div>
@@ -1318,7 +1324,7 @@ export default function DueDiligenceResult() {
                           {toArray(data.team?.keyExecutives).map((e, i) => (
                             <div key={i} className="bg-muted/20 rounded-lg p-3 border border-border">
                               <p className="font-medium">{e.name} <span className="text-sm text-muted-foreground">- {e.role}</span></p>
-                              {e.background && <p className="text-sm text-gray-400 mt-1">{e.background}</p>}
+                              {e.background && <p className="text-sm text-muted-foreground mt-1">{e.background}</p>}
                             </div>
                           ))}
                         </div>
@@ -1368,20 +1374,20 @@ export default function DueDiligenceResult() {
                                 <p className="font-semibold">{c.name}</p>
                                 {c.funding && <Badge variant="outline">{c.funding}</Badge>}
                               </div>
-                              {c.description && <p className="text-sm text-gray-400 mb-2">{c.description}</p>}
+                              {c.description && <p className="text-sm text-muted-foreground mb-2">{c.description}</p>}
                               <div className="grid md:grid-cols-2 gap-2 text-xs">
                                 {toArray(c.strengths).length > 0 && (
                                   <div>
-                                    <p className="text-green-400 font-medium mb-1">Forces:</p>
-                                    <ul className="text-gray-400">
+                                    <p className="text-success font-medium mb-1 uppercase tracking-wider text-[11px]">Forces</p>
+                                    <ul className="text-muted-foreground space-y-0.5">
                                       {toArray(c.strengths).map((s, j) => <li key={j}>• {toDisplayString(s)}</li>)}
                                     </ul>
                                   </div>
                                 )}
                                 {toArray(c.weaknesses).length > 0 && (
                                   <div>
-                                    <p className="text-red-400 font-medium mb-1">Faiblesses:</p>
-                                    <ul className="text-gray-400">
+                                    <p className="text-destructive font-medium mb-1 uppercase tracking-wider text-[11px]">Faiblesses</p>
+                                    <ul className="text-muted-foreground space-y-0.5">
                                       {toArray(c.weaknesses).map((w, j) => <li key={j}>• {toDisplayString(w)}</li>)}
                                     </ul>
                                   </div>
@@ -1448,9 +1454,9 @@ export default function DueDiligenceResult() {
                           <div className="space-y-2">
                             {list.map((m, i) => (
                               <div key={i} className="flex items-start gap-3 bg-muted/20 rounded-lg p-3 border border-border">
-                                <div className="w-2 h-2 rounded-full bg-green-400 mt-2 flex-shrink-0" />
+                                <div className="w-1.5 h-1.5 rounded-full bg-success mt-2 flex-shrink-0" />
                                 <div className="flex-1">
-                                  <p className="text-sm text-gray-300">{stripInlineSources(toDisplayString(m?.milestone))}</p>
+                                  <p className="text-sm text-foreground/85">{stripInlineSources(toDisplayString(m?.milestone))}</p>
                                   {m?.date && <p className="text-xs text-muted-foreground mt-1">{m.date}</p>}
                                 </div>
                               </div>
@@ -1483,12 +1489,12 @@ export default function DueDiligenceResult() {
                       return (
                         <div>
                           <h4 className="font-semibold mb-2 flex items-center gap-2">
-                            <Award className="w-4 h-4 text-amber-400" />
+                            <Award className="w-4 h-4 text-muted-foreground" />
                             Récompenses
                           </h4>
                           <ul className="space-y-1">
                             {list.map((a, i) => (
-                              <li key={i} className="text-sm text-gray-300">• {toDisplayString(a)}</li>
+                              <li key={i} className="text-sm text-foreground/85">• {toDisplayString(a)}</li>
                             ))}
                           </ul>
                         </div>
@@ -1514,58 +1520,39 @@ export default function DueDiligenceResult() {
                   </CardHeader>
                   <CardContent className="space-y-5 pt-2">
                     <div className="grid md:grid-cols-2 gap-4">
-                      {toArray(data.risks?.marketRisks).length > 0 && (
-                        <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-4">
-                          <h4 className="font-semibold text-red-400 mb-2">Risques Marché</h4>
-                          <ul className="space-y-1 text-sm">
-                            {toArray(data.risks?.marketRisks).map((r, i) => (
-                              <li key={i} className="text-gray-300">• {r}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      
-                      {toArray(data.risks?.executionRisks).length > 0 && (
-                        <div className="bg-orange-500/5 border border-orange-500/20 rounded-lg p-4">
-                          <h4 className="font-semibold text-orange-400 mb-2">Risques Exécution</h4>
-                          <ul className="space-y-1 text-sm">
-                            {toArray(data.risks?.executionRisks).map((r, i) => (
-                              <li key={i} className="text-gray-300">• {r}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      
-                      {toArray(data.risks?.financialRisks).length > 0 && (
-                        <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-lg p-4">
-                          <h4 className="font-semibold text-yellow-400 mb-2">Risques Financiers</h4>
-                          <ul className="space-y-1 text-sm">
-                            {toArray(data.risks?.financialRisks).map((r, i) => (
-                              <li key={i} className="text-gray-300">• {r}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      
-                      {toArray(data.risks?.competitiveRisks).length > 0 && (
-                        <div className="bg-purple-500/5 border border-purple-500/20 rounded-lg p-4">
-                          <h4 className="font-semibold text-purple-400 mb-2">Risques Concurrentiels</h4>
-                          <ul className="space-y-1 text-sm">
-                            {toArray(data.risks?.competitiveRisks).map((r, i) => (
-                              <li key={i} className="text-gray-300">• {r}</li>
-                            ))}
-                          </ul>
-                        </div>
+                      {([
+                        { key: "marketRisks", label: "Risques marché" },
+                        { key: "executionRisks", label: "Risques d'exécution" },
+                        { key: "financialRisks", label: "Risques financiers" },
+                        { key: "competitiveRisks", label: "Risques concurrentiels" },
+                      ] as const).map(({ key, label }) =>
+                        toArray(data.risks?.[key]).length > 0 ? (
+                          <div key={key} className="rounded-lg border border-border bg-muted/20 p-4">
+                            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+                              {label}
+                            </h4>
+                            <ul className="space-y-2 text-sm">
+                              {toArray(data.risks?.[key]).map((r, i) => (
+                                <li key={i} className="text-foreground/85 flex items-start gap-2.5 leading-relaxed">
+                                  <span className="w-1 h-1 rounded-full bg-destructive mt-2 shrink-0" />
+                                  {r}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null
                       )}
                     </div>
-                    
+
                     {toArray(data.risks?.mitigations).length > 0 && (
-                      <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-4">
-                        <h4 className="font-semibold text-green-400 mb-2">Facteurs Atténuants</h4>
-                        <ul className="space-y-1 text-sm">
+                      <div className="rounded-lg border border-border bg-muted/20 p-4">
+                        <h4 className="text-xs font-medium text-success uppercase tracking-wider mb-3">
+                          Facteurs atténuants
+                        </h4>
+                        <ul className="space-y-2 text-sm">
                           {toArray(data.risks?.mitigations).map((m, i) => (
-                            <li key={i} className="text-gray-300 flex items-start gap-2">
-                              <CheckCircle2 className="w-3 h-3 mt-1 text-green-400 flex-shrink-0" />
+                            <li key={i} className="text-foreground/85 flex items-start gap-2.5 leading-relaxed">
+                              <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 text-success flex-shrink-0" />
                               {m}
                             </li>
                           ))}
@@ -1615,22 +1602,28 @@ export default function DueDiligenceResult() {
                     
                     <div className="grid md:grid-cols-2 gap-4">
                       {toArray(data.investmentRecommendation?.strengths).length > 0 && (
-                        <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-4">
-                          <h4 className="font-semibold text-green-400 mb-2">Forces</h4>
-                          <ul className="space-y-1 text-sm">
+                        <div className="rounded-lg border border-border bg-muted/20 p-4">
+                          <h4 className="text-xs font-medium text-success uppercase tracking-wider mb-3">Forces</h4>
+                          <ul className="space-y-2 text-sm">
                             {toArray(data.investmentRecommendation?.strengths).map((s, i) => (
-                              <li key={i} className="text-gray-300">• {toDisplayString(s)}</li>
+                              <li key={i} className="text-foreground/85 flex items-start gap-2.5 leading-relaxed">
+                                <span className="w-1 h-1 rounded-full bg-success mt-2 shrink-0" />
+                                {toDisplayString(s)}
+                              </li>
                             ))}
                           </ul>
                         </div>
                       )}
-                      
+
                       {toArray(data.investmentRecommendation?.weaknesses).length > 0 && (
-                        <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-4">
-                          <h4 className="font-semibold text-red-400 mb-2">Faiblesses</h4>
-                          <ul className="space-y-1 text-sm">
+                        <div className="rounded-lg border border-border bg-muted/20 p-4">
+                          <h4 className="text-xs font-medium text-destructive uppercase tracking-wider mb-3">Faiblesses</h4>
+                          <ul className="space-y-2 text-sm">
                             {toArray(data.investmentRecommendation?.weaknesses).map((w, i) => (
-                              <li key={i} className="text-gray-300">• {toDisplayString(w)}</li>
+                              <li key={i} className="text-foreground/85 flex items-start gap-2.5 leading-relaxed">
+                                <span className="w-1 h-1 rounded-full bg-destructive mt-2 shrink-0" />
+                                {toDisplayString(w)}
+                              </li>
                             ))}
                           </ul>
                         </div>
@@ -1642,7 +1635,7 @@ export default function DueDiligenceResult() {
                         <h4 className="font-semibold text-foreground mb-2">Questions à Creuser</h4>
                         <ul className="space-y-1 text-sm">
                           {toArray(data.investmentRecommendation?.keyQuestions).map((q, i) => (
-                            <li key={i} className="text-gray-300">• {toDisplayString(q)}</li>
+                            <li key={i} className="text-foreground/85">• {toDisplayString(q)}</li>
                           ))}
                         </ul>
                       </div>
@@ -1653,8 +1646,8 @@ export default function DueDiligenceResult() {
                         <h4 className="font-semibold mb-2">Prochaines Étapes Suggérées</h4>
                         <ol className="space-y-2">
                           {toArray(data.investmentRecommendation?.suggestedNextSteps).map((s, i) => (
-                            <li key={i} className="flex items-start gap-3 text-sm text-gray-300">
-                              <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-xs font-semibold flex-shrink-0">
+                            <li key={i} className="flex items-start gap-3 text-sm text-foreground/85">
+                              <span className="w-6 h-6 rounded-full border border-border bg-muted/40 text-muted-foreground flex items-center justify-center text-xs font-semibold flex-shrink-0">
                                 {i + 1}
                               </span>
                               {toDisplayString(s)}
@@ -1683,7 +1676,7 @@ export default function DueDiligenceResult() {
                     {data.dataQuality && (
                       <div className="mb-6 p-4 bg-muted/20 rounded-lg border border-border">
                         <div className="flex items-center justify-between mb-3">
-                          <span className="text-sm font-medium text-gray-200">Qualité des Données</span>
+                          <span className="text-sm font-medium text-foreground">Qualité des Données</span>
                           <Badge variant={
                             data.dataQuality.overallScore === "excellent" ? "default" :
                             data.dataQuality.overallScore === "good" ? "secondary" : "outline"
@@ -1693,7 +1686,7 @@ export default function DueDiligenceResult() {
                         </div>
                         {toArray(data.dataQuality?.limitations).length > 0 && (
                           <div className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border">
-                            <p className="font-medium mb-2 text-gray-300">Limitations:</p>
+                            <p className="font-medium mb-2 text-foreground/85">Limitations:</p>
                             <ul className="space-y-1">
                               {toArray(data.dataQuality?.limitations).map((l, i) => (
                                 <li key={i} className="flex items-start gap-2">
@@ -1733,7 +1726,7 @@ export default function DueDiligenceResult() {
                                   {source.url ? shortenUrl(source.url, 60) : ""}
                                 </p>
                                 {source.relevance && (
-                                  <p className="text-xs text-gray-400 mt-1.5 line-clamp-2">{source.relevance}</p>
+                                  <p className="text-xs text-muted-foreground mt-1.5 line-clamp-2">{source.relevance}</p>
                                 )}
                               </div>
                               <ExternalLink className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0 mt-0.5" />

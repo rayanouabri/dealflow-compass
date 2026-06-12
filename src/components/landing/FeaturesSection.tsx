@@ -1,123 +1,61 @@
-import { motion } from "framer-motion";
-import { Badge } from "@/components/ui/badge";
-import {
-  Radar,
-  FileSearch,
-  Linkedin,
-  FileText,
-  Github,
-  Filter,
-  ListChecks,
-  Building2,
-  Sparkles,
-} from "lucide-react";
-
 const features = [
   {
-    icon: Radar,
     title: "Détection multi-signaux",
     description:
-      "12 canaux croisés (LinkedIn hiring, brevets INPI/EPO/USPTO, GitHub trending, arXiv/HAL, ProductHunt, Show HN, Wellfound, Pappers…). Une startup qui apparaît dans 3+ canaux est boostée automatiquement.",
-    highlight: true,
+      "Douze canaux croisés : embauches LinkedIn, brevets INPI / EPO / USPTO, GitHub, arXiv / HAL, Product Hunt, Show HN, Pappers. Une startup présente sur trois canaux ou plus est automatiquement remontée.",
   },
   {
-    icon: Linkedin,
-    title: "Signaux LinkedIn",
+    title: "Détection pré-Crunchbase",
     description:
-      "Hiring bursts (10+ postes en 3 mois), profils fondateurs ex-GAFAM, exits passés, paires cofondateurs, embauches VP/Head of — tout patternisé sans API LinkedIn payante.",
+      "Mouvements chercheur vers fondateur, hiring bursts, dépôts de brevets, orgs GitHub récentes : les signaux les plus en amont, avant qu'une société ait une page Crunchbase ou PitchBook.",
   },
   {
-    icon: FileText,
-    title: "Brevets & spin-offs",
+    title: "Filtrage thèse et portfolio",
     description:
-      "Suivi Google Patents, INPI (France), EPO. Mouvement chercheur→fondateur, citations brevets, dépôts trademark — les signaux les plus en amont de toute traction.",
+      "La thèse est extraite de votre portfolio réel, puis les sociétés déjà investies sont exclues du sourcing. Aucun doublon avec votre deck.",
   },
   {
-    icon: Github,
-    title: "Open-source & ProductHunt",
+    title: "Scoring avec corroboration",
     description:
-      "Repos trending par secteur, orgs créées récemment, lancements ProductHunt, posts Show HN. Détecte les fondateurs builders avant qu'ils aient une page Crunchbase.",
+      "Chaque candidat est noté : poids du signal, nombre de mentions, récence, bonus de convergence entre canaux. Le classement est explicable, critère par critère.",
   },
   {
-    icon: Filter,
-    title: "Filtrage thèse + portfolio",
+    title: "Due diligence traçable",
     description:
-      "L'IA extrait votre thèse réelle depuis votre portfolio existant, puis exclut automatiquement les sociétés que vous avez déjà investies. Plus jamais de doublon avec votre deck.",
+      "Rapport structuré en huit sections, généré en deux minutes environ. Chaque affirmation est reliée à sa source ; les limites des données sont indiquées explicitement.",
   },
   {
-    icon: FileSearch,
-    title: "Due diligence en ~2 min",
+    title: "Couverture France et international",
     description:
-      "Rapport structuré : équipe, marché TAM/SAM, traction, produit, concurrents, risques, recommandation. Avec sources cliquables — chaque affirmation traçable.",
-  },
-  {
-    icon: ListChecks,
-    title: "Scoring + corroboration",
-    description:
-      "Chaque startup obtient un score signal weight × mentions × récence, avec bonus cross-signal. Les pré-seed avec 4 canaux convergents remontent en tête.",
-  },
-  {
-    icon: Building2,
-    title: "Couverture France-first",
-    description:
-      "Requêtes natives FR (Pappers, HAL.science, INPI, Welcometothejungle, Agoranov/Wilco/Station F). Et requêtes globales en anglais quand la géographie l'exige.",
-  },
-  {
-    icon: Sparkles,
-    title: "Cache intelligent",
-    description:
-      "Les thèses, données marché et requêtes récurrentes sont mises en cache 14 jours — votre 2e analyse sur le même secteur coûte 60% moins de crédits, identique en qualité.",
+      "Requêtes natives en français (Pappers, HAL, INPI, Welcome to the Jungle) et requêtes globales en anglais lorsque la géographie de la thèse l'exige.",
   },
 ];
 
 export function FeaturesSection() {
   return (
-    <section className="py-24 md:py-32 relative">
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-primary/3 to-transparent" />
-      <div className="container max-w-7xl mx-auto px-4 relative">
-        <div className="text-center mb-16">
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
-            <Badge variant="outline" className="mb-4 border-primary/40 bg-primary/20 backdrop-blur-sm">
-              Fonctionnalités
-            </Badge>
-            <h2 className="text-3xl md:text-5xl font-bold mb-4 text-foreground">
-              Conçu pour les analystes
-              <span className="block text-gradient-ai-vc">qui veulent voir les deals avant les autres</span>
-            </h2>
-            <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
-              Pas un wrapper ChatGPT. Un vrai moteur de signaux faibles + due diligence, taillé pour le sourcing pré-seed et seed.
-            </p>
-          </motion.div>
+    <section className="py-20 md:py-28 border-b border-border/70">
+      <div className="max-w-6xl mx-auto px-5 sm:px-8">
+        <div className="max-w-2xl mb-14">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-[0.18em] mb-4">
+            Fonctionnalités
+          </p>
+          <h2 className="font-display text-3xl md:text-[2.25rem] font-medium tracking-tight text-foreground leading-tight">
+            Un moteur de signaux faibles, pas un wrapper de chat.
+          </h2>
+          <p className="text-[15px] text-muted-foreground leading-relaxed mt-4">
+            Conçu pour le sourcing pré-seed et seed, là où les bases de données classiques
+            n'ont pas encore de ligne.
+          </p>
         </div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {features.map((feature, i) => (
-            <motion.div
-              key={i}
-              className={`p-6 rounded-2xl border transition-all duration-300 group relative overflow-hidden backdrop-blur-sm ${
-                feature.highlight
-                  ? "bg-primary/15 border-primary/50 hover:border-primary/70 glow-ai-vc"
-                  : "bg-card/70 border-primary/30 hover:border-primary/50"
-              }`}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: i * 0.06 }}
-              whileHover={{ y: -6, scale: 1.02 }}
-            >
-              <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-              <div className="relative z-10">
-                <div
-                  className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 transition-all ${
-                    feature.highlight ? "bg-primary/30 group-hover:bg-primary/40 glow-ai-vc" : "bg-primary/20 group-hover:bg-primary/30"
-                  }`}
-                >
-                  <feature.icon className="w-6 h-6 text-primary" />
-                </div>
-                <h3 className="text-lg font-semibold mb-2 text-foreground">{feature.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{feature.description}</p>
-              </div>
-            </motion.div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-10 gap-y-12">
+          {features.map((feature) => (
+            <div key={feature.title} className="border-t border-border pt-5">
+              <h3 className="text-[15px] font-medium text-foreground mb-2">{feature.title}</h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                {feature.description}
+              </p>
+            </div>
           ))}
         </div>
       </div>

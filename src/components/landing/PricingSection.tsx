@@ -1,7 +1,5 @@
-import { motion } from "framer-motion";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Check, Zap, ArrowRight, Sparkles } from "lucide-react";
+import { Check } from "lucide-react";
 
 interface PricingSectionProps {
   onStartTrial: () => void;
@@ -10,9 +8,9 @@ interface PricingSectionProps {
 const plans = [
   {
     name: "Découverte",
-    price: "0",
-    period: "/mois",
-    description: "Pour tester l'outil sur 5 deals",
+    price: "0 €",
+    period: "",
+    description: "Pour évaluer l'outil sur cinq deals.",
     features: [
       "5 sourcings + due diligences",
       "8 catégories de signaux faibles",
@@ -20,22 +18,22 @@ const plans = [
       "Historique 30 jours",
       "Support email",
     ],
-    cta: "Démarrer gratuitement",
+    cta: "Commencer gratuitement",
     popular: false,
     note: "Sans carte bancaire",
   },
   {
     name: "Pro",
-    price: "99",
-    period: "/mois",
-    description: "Pour les analystes & investisseurs solo",
+    price: "99 €",
+    period: "/ mois",
+    description: "Pour les analystes et investisseurs solo.",
     features: [
-      "50 analyses complètes / mois",
+      "50 analyses complètes par mois",
       "12 canaux de signaux croisés",
-      "Détection brevets + spin-offs",
-      "Export PDF + Markdown",
+      "Détection brevets et spin-offs",
+      "Export PDF et Markdown",
       "Historique illimité",
-      "Cache partagé (analyses 60% moins chères)",
+      "Cache partagé entre analyses",
       "Support prioritaire",
     ],
     cta: "Commencer Pro",
@@ -46,121 +44,101 @@ const plans = [
     name: "Fund",
     price: "Sur mesure",
     period: "",
-    description: "Pour les fonds, family offices, corporate VC",
+    description: "Pour les fonds, family offices, corporate VC.",
     features: [
       "Analyses illimitées",
-      "Multi-utilisateurs (équipe)",
-      "Thèses fonds personnalisées",
-      "Intégration portfolio existant",
-      "API + webhooks",
+      "Multi-utilisateurs",
+      "Thèses de fonds personnalisées",
+      "Intégration du portfolio existant",
+      "API et webhooks",
       "Account manager dédié",
-      "White-label disponible",
-      "SLA + onboarding équipe",
+      "SLA et onboarding équipe",
     ],
     cta: "Parler à l'équipe",
     popular: false,
-    note: "Démo personnalisée + onboarding fonds",
+    note: "Démo personnalisée",
   },
 ];
 
 export function PricingSection({ onStartTrial }: PricingSectionProps) {
   return (
-    <section className="py-24 md:py-32 relative" id="pricing">
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-primary/3 to-transparent" />
-      <div className="container max-w-7xl mx-auto px-4 relative z-10">
-        <div className="text-center mb-16">
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
-            <Badge variant="outline" className="mb-4 border-primary/40 bg-primary/20 backdrop-blur-sm">
-              Tarifs
-            </Badge>
-            <h2 className="text-3xl md:text-5xl font-bold mb-4 text-foreground">
-              Simple. Transparent.
-              <span className="block text-gradient-ai-vc">Pensé pour les VCs.</span>
-            </h2>
-            <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
-              Commencez gratuitement, passez Pro quand vous voulez plus de deals, contactez-nous pour votre fonds.
-            </p>
-          </motion.div>
+    <section className="py-20 md:py-28 border-b border-border/70" id="pricing">
+      <div className="max-w-6xl mx-auto px-5 sm:px-8">
+        <div className="max-w-2xl mb-14">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-[0.18em] mb-4">
+            Tarifs
+          </p>
+          <h2 className="font-display text-3xl md:text-[2.25rem] font-medium tracking-tight text-foreground leading-tight">
+            Un prix par siège, pas par deal.
+          </h2>
+          <p className="text-[15px] text-muted-foreground leading-relaxed mt-4">
+            Commencez gratuitement, passez en Pro quand le volume suit. Les fonds nous
+            contactent directement.
+          </p>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-6 max-w-6xl mx-auto items-stretch">
-          {plans.map((plan, i) => (
-            <motion.div
-              key={i}
-              className={`relative p-7 rounded-2xl border overflow-hidden backdrop-blur-sm flex flex-col ${
-                plan.popular
-                  ? "bg-card/90 border-primary/70 shadow-[0_0_40px_rgba(48,100%,55%,0.25)] md:scale-[1.04] z-10"
-                  : "bg-card/70 border-primary/30"
+        <div className="grid md:grid-cols-3 gap-5 items-stretch">
+          {plans.map((plan) => (
+            <div
+              key={plan.name}
+              className={`rounded-lg border bg-card p-7 flex flex-col ${
+                plan.popular ? "border-foreground/30" : "border-border"
               }`}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: i * 0.1 }}
-              whileHover={{ y: -4 }}
             >
-              <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-50" />
-              {plan.popular && (
-                <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground glow-ai-vc border-2 border-background">
-                  <Sparkles className="w-3 h-3 mr-1" />
-                  Le plus choisi
-                </Badge>
-              )}
-
-              <div className="mb-6 relative z-10">
-                <h3 className="text-2xl font-bold mb-1 text-foreground">{plan.name}</h3>
-                <p className="text-sm text-muted-foreground mb-5">{plan.description}</p>
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-medium text-foreground uppercase tracking-wider">
+                    {plan.name}
+                  </h3>
+                  {plan.popular && (
+                    <span className="text-[11px] font-medium text-primary border border-primary/40 rounded px-2 py-0.5">
+                      Recommandé
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-baseline gap-1.5">
-                  {plan.price !== "Sur mesure" && plan.price !== "0" && <span className="text-lg text-muted-foreground">€</span>}
-                  {plan.price === "0" && <span className="text-lg text-muted-foreground">€</span>}
-                  <span className="text-5xl font-bold bg-gradient-to-r from-foreground to-primary bg-clip-text text-transparent leading-none">
+                  <span className="font-display text-4xl font-medium text-foreground leading-none">
                     {plan.price}
                   </span>
-                  <span className="text-muted-foreground">{plan.period}</span>
+                  {plan.period && (
+                    <span className="text-sm text-muted-foreground">{plan.period}</span>
+                  )}
                 </div>
+                <p className="text-[13px] text-muted-foreground mt-3">{plan.description}</p>
               </div>
 
-              <ul className="space-y-3 mb-7 relative z-10 flex-1">
-                {plan.features.map((feature, j) => (
-                  <li key={j} className="flex items-start gap-3 text-sm text-foreground">
-                    <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <Check className="w-3 h-3 text-primary" />
-                    </div>
+              <ul className="space-y-2.5 mb-8 flex-1">
+                {plan.features.map((feature) => (
+                  <li key={feature} className="flex items-start gap-2.5 text-sm text-foreground/90">
+                    <Check className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-1" />
                     <span className="leading-snug">{feature}</span>
                   </li>
                 ))}
               </ul>
 
-              <div className="relative z-10 space-y-2">
+              <div className="space-y-2">
                 <Button
-                  className={`w-full gap-2 h-12 ${
+                  className={`w-full h-10 text-sm font-medium ${
                     plan.popular
-                      ? "bg-primary hover:bg-primary/90 text-primary-foreground glow-ai-vc"
-                      : "border-primary/40 hover:border-primary/60 hover:bg-primary/10"
+                      ? "bg-foreground text-background hover:bg-foreground/90"
+                      : "border-border text-foreground hover:bg-secondary"
                   }`}
                   variant={plan.popular ? "default" : "outline"}
                   onClick={onStartTrial}
                 >
                   {plan.cta}
-                  <ArrowRight className="w-4 h-4" />
                 </Button>
-                {plan.note && (
-                  <p className="text-[11px] text-center text-muted-foreground">{plan.note}</p>
-                )}
+                <p className="text-[11px] text-center text-muted-foreground">{plan.note}</p>
               </div>
-            </motion.div>
+            </div>
           ))}
         </div>
 
-        <motion.p
-          className="text-center text-sm text-muted-foreground mt-10 flex flex-wrap items-center justify-center gap-x-5 gap-y-2"
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
-          viewport={{ once: true }}
-        >
-          <span className="flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-primary" /> Annulation à tout moment</span>
-          <span className="flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-primary" /> Stockage en EU (Supabase Ireland)</span>
-          <span className="flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-primary" /> Données VC privées non utilisées pour l'entraînement</span>
-        </motion.p>
+        <p className="text-[13px] text-muted-foreground mt-10 flex flex-wrap gap-x-6 gap-y-2">
+          <span>Annulation à tout moment</span>
+          <span>Données hébergées en Europe (Supabase, Irlande)</span>
+          <span>Vos deals ne servent jamais à entraîner de modèles</span>
+        </p>
       </div>
     </section>
   );

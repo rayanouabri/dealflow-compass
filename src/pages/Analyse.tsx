@@ -250,17 +250,17 @@ export default function Analyse() {
               Retour à la configuration
             </Link>
 
-            <Card className="bg-card/80 border-red-500/30">
+            <Card className="bg-card border-destructive/30">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-red-400">
+                <CardTitle className="flex items-center gap-2 text-destructive">
                   <AlertCircle className="w-5 h-5" />
                   L&apos;analyse a échoué
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 {errorMessage && (
-                  <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4">
-                    <p className="text-sm text-gray-300 leading-relaxed">{errorMessage}</p>
+                  <div className="bg-destructive/5 border border-destructive/20 rounded-lg p-4">
+                    <p className="text-sm text-foreground/85 leading-relaxed">{errorMessage}</p>
                   </div>
                 )}
                 

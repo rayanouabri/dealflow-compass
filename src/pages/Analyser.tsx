@@ -12,7 +12,7 @@ import { PaywallModal } from "@/components/PaywallModal";
 import { useTrial } from "@/hooks/useTrial";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Sparkles, Building2, FileEdit, Zap, Loader2 } from "lucide-react";
+import { ArrowLeft, Building2, FileEdit, Loader2, CheckCircle2 } from "lucide-react";
 import { Link } from "react-router-dom";
 
 interface HistoryItem {
@@ -25,6 +25,13 @@ interface HistoryItem {
 }
 
 const EXAMPLE_FUNDS = ["Supernova Invest", "Breega", "Elaia Partners", "Partech", "Index Ventures"];
+
+const HOW_IT_WORKS = [
+  { step: "01", label: "Analyse de la these", desc: "L'IA extrait et structure les criteres d'investissement du fonds cible." },
+  { step: "02", label: "Sourcing multi-source", desc: "Recherche simultanee sur le web, bases FR, GitHub et Hacker News." },
+  { step: "03", label: "Scoring & selection", desc: "Chaque startup est notee sur 100 points selon la these du fonds." },
+  { step: "04", label: "Due diligence auto", desc: "Rapport complet : equipe, marche, financement, risques." },
+];
 
 export default function Analyser() {
   const navigate = useNavigate();
@@ -63,22 +70,21 @@ export default function Analyser() {
       if (!user) {
         setAuthView("signup");
         setShowAuthDialog(true);
-        toast({ title: "Inscription requise", description: "Créez un compte pour continuer.", variant: "destructive" });
+        toast({ title: "Inscription requise", description: "Creez un compte pour continuer.", variant: "destructive" });
       } else setShowPaywall(true);
       return;
     }
     if (!useCustomThesis && !fundName.trim()) {
-      toast({ title: "Fond requis", description: "Saisissez un fond ou utilisez une thèse personnalisée.", variant: "destructive" });
+      toast({ title: "Fond requis", description: "Saisissez un fond ou utilisez une these personnalisee.", variant: "destructive" });
       return;
     }
     if (useCustomThesis && !customThesis.sectors?.length && !customThesis.description) {
-      toast({ title: "Thèse requise", description: "Indiquez au moins des secteurs ou une description.", variant: "destructive" });
+      toast({ title: "These requise", description: "Indiquez au moins des secteurs ou une description.", variant: "destructive" });
       return;
     }
 
     const requestBody: any = {
       params: {
-        // Ne pas envoyer les paramètres redondants si on utilise une thèse personnalisée
         numberOfStartups: params.numberOfStartups || 1,
         includeCompetitors: params.includeCompetitors,
         includeMarketSize: params.includeMarketSize,
@@ -86,7 +92,6 @@ export default function Analyser() {
         includeMoat: params.includeMoat,
         detailLevel: params.detailLevel,
         slideCount: params.slideCount || 8,
-        // En mode fonds : inclure UNIQUEMENT les critères que l'utilisateur a explicitement modifiés (pas "auto")
         ...(useCustomThesis ? {} : {
           ...(params.startupStage !== "auto" && { startupStage: params.startupStage }),
           ...(params.startupSector !== "auto" && { startupSector: params.startupSector }),
@@ -112,7 +117,6 @@ export default function Analyser() {
   };
 
   const handleHistorySelect = (item: HistoryItem) => {
-    // Redirige vers l'outil Due Diligence avec le nom de la startup pré-rempli
     navigate("/due-diligence", {
       state: { companyName: item.startup_name },
       replace: false,
@@ -129,12 +133,12 @@ export default function Analyser() {
       if (!user) {
         setAuthView("signup");
         setShowAuthDialog(true);
-        toast({ title: "Inscription requise", description: "Créez un compte pour continuer.", variant: "destructive" });
+        toast({ title: "Inscription requise", description: "Creez un compte pour continuer.", variant: "destructive" });
       } else setShowPaywall(true);
       return;
     }
     if (!useCustomThesis && !fundName.trim()) {
-      toast({ title: "Fond requis", description: "Saisissez un fond ou utilisez une thèse personnalisée.", variant: "destructive" });
+      toast({ title: "Fond requis", description: "Saisissez un fond ou utilisez une these personnalisee.", variant: "destructive" });
       return;
     }
 
@@ -163,7 +167,7 @@ export default function Analyser() {
       }
 
       const { pipelineId } = await resp.json();
-      if (!pipelineId) throw new Error("Pas de pipelineId retourné");
+      if (!pipelineId) throw new Error("Pas de pipelineId retourne");
 
       navigate(`/pipeline?id=${pipelineId}`);
     } catch (err) {
@@ -179,6 +183,10 @@ export default function Analyser() {
 
   if (authLoading) return null;
 
+  const canSubmit = useCustomThesis
+    ? !!(customThesis.sectors?.length || customThesis.description)
+    : !!fundName.trim();
+
   return (
     <AppLayout
       user={user}
@@ -187,64 +195,68 @@ export default function Analyser() {
       onLogin={handleLogin}
       onSignOut={signOut}
     >
-      <div className="max-w-2xl mx-auto">
-        <Link
-          to="/"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Retour à l&apos;accueil
-        </Link>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-12">
+        {/* Main form column */}
+        <div className="lg:col-span-2 space-y-6">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Accueil
+          </Link>
 
-        <div className="mb-8">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/20 border border-primary/40 text-primary text-xs font-medium mb-4 glow-ai-vc backdrop-blur-sm">
-            <Sparkles className="w-3.5 h-3.5" />
-            Étape 1 — Configuration
+          <div>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-[0.18em] mb-3">
+              Sourcing automatique
+            </p>
+            <h1 className="font-display text-[1.75rem] font-medium text-foreground tracking-tight leading-tight">
+              Trouvez des startups alignées avec votre thèse
+            </h1>
+            <p className="text-sm text-muted-foreground mt-2 leading-relaxed max-w-lg">
+              Entrez le nom d'un fonds VC ou definissez votre propre these. L'IA source, score et selectionne la meilleure opportunite en 2-4 minutes.
+            </p>
           </div>
-          <h1 className="text-3xl sm:text-4xl font-bold text-foreground tracking-tight mb-2 bg-gradient-to-r from-foreground to-primary bg-clip-text text-transparent">
-            Sourcez des startups
-          </h1>
-          <p className="text-muted-foreground mt-1.5 text-base">
-            Analysez un fond VC ou définissez votre thèse pour trouver des startups correspondantes.
-          </p>
-        </div>
 
-        <div className="space-y-6">
-          <div className="flex rounded-xl border border-primary/50 bg-card/70 backdrop-blur-sm overflow-hidden shadow-lg">
+          {/* Mode toggle */}
+          <div className="border-b border-border flex">
             <button
               type="button"
               onClick={() => setUseCustomThesis(false)}
-              className={`flex-1 flex items-center justify-center gap-2 py-3.5 px-4 text-sm font-medium transition-all ${
-                !useCustomThesis 
-                  ? "bg-primary text-primary-foreground glow-ai-vc shadow-[0_0_20px_rgba(48,100%,60%,0.3)]" 
-                  : "bg-card/30 text-muted-foreground hover:bg-primary/10 hover:text-foreground"
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                !useCustomThesis
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
-              <Building2 className="w-4 h-4" />
-              Fond VC
+              <Building2 className="w-3.5 h-3.5" />
+              Fonds VC
             </button>
             <button
               type="button"
               onClick={() => setUseCustomThesis(true)}
-              className={`flex-1 flex items-center justify-center gap-2 py-3.5 px-4 text-sm font-medium transition-all ${
-                useCustomThesis 
-                  ? "bg-primary text-primary-foreground glow-ai-vc shadow-[0_0_20px_rgba(48,100%,60%,0.3)]" 
-                  : "bg-card/30 text-muted-foreground hover:bg-primary/10 hover:text-foreground"
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                useCustomThesis
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
-              <FileEdit className="w-4 h-4" />
-              Thèse personnalisée
+              <FileEdit className="w-3.5 h-3.5" />
+              These personnalisee
             </button>
           </div>
 
           {!useCustomThesis ? (
-            <div className="rounded-xl border border-primary/40 bg-card/80 backdrop-blur-sm shadow-lg p-6 space-y-4">
-              <label className="block text-sm font-medium text-gray-100">Nom du fond</label>
+            <div className="space-y-3">
+              <label className="block text-sm font-medium text-foreground">
+                Nom du fonds
+              </label>
               <Input
-                placeholder="ex. Accel, Sequoia, a16z…"
+                placeholder="ex. Accel, Sequoia, a16z..."
                 value={fundName}
                 onChange={(e) => setFundName(e.target.value)}
-                className="h-11 bg-gray-800/50 border border-gray-700 text-white placeholder:text-gray-500 rounded-lg focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/20"
+                onKeyDown={(e) => e.key === "Enter" && canSubmit && handlePipeline()}
+                className="h-10 bg-card border-border text-foreground placeholder:text-muted-foreground/60 focus-visible:ring-primary/30"
               />
               <div className="flex flex-wrap gap-2">
                 {EXAMPLE_FUNDS.map((f) => (
@@ -252,7 +264,11 @@ export default function Analyser() {
                     key={f}
                     type="button"
                     onClick={() => setFundName(f)}
-                    className="text-xs px-3 py-1.5 rounded-lg border border-gray-700 bg-gray-800 text-gray-300 hover:text-white hover:bg-gray-700 transition-all"
+                    className={`text-xs px-2.5 py-1 rounded border transition-all ${
+                      fundName === f
+                        ? "border-primary text-primary bg-primary/10"
+                        : "border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/40"
+                    }`}
                   >
                     {f}
                   </button>
@@ -260,53 +276,134 @@ export default function Analyser() {
               </div>
             </div>
           ) : (
-            <div className="rounded-xl border border-primary/40 bg-card/80 backdrop-blur-sm shadow-lg p-6">
+            <div className="border border-border rounded-md p-4 bg-card">
               <CustomThesisInput thesis={customThesis} onChange={setCustomThesis} onClear={() => setCustomThesis({})} />
             </div>
           )}
 
-          <div className="rounded-xl border border-primary/40 bg-card/80 backdrop-blur-sm shadow-lg p-6">
-            <AnalysisParameters 
-              params={params} 
-              onChange={setParams} 
-              isPro={false}
-              useCustomThesis={useCustomThesis}
-            />
+          {/* Parameters section */}
+          <div className="border border-border rounded-md overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-border bg-card/50">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Parametres d&apos;analyse
+              </p>
+            </div>
+            <div className="p-4">
+              <AnalysisParameters
+                params={params}
+                onChange={setParams}
+                isPro={false}
+                useCustomThesis={useCustomThesis}
+              />
+            </div>
           </div>
 
-          <Button
-            type="button"
-            size="lg"
-            className="w-full h-14 text-base font-medium bg-primary hover:bg-primary/90 text-primary-foreground glow-ai-vc shadow-[0_0_30px_rgba(48,100%,55%,0.4)]"
-            onClick={handleSubmit}
-            disabled={!hasTrialRemaining || (!useCustomThesis && !fundName.trim())}
-          >
-            Lancer l&apos;analyse — {params.numberOfStartups || 1} startup{(params.numberOfStartups || 1) > 1 ? "s" : ""}
-          </Button>
+          {/* Action buttons */}
+          <div className="space-y-2.5">
+            <Button
+              type="button"
+              size="lg"
+              className="w-full h-11 text-sm font-medium bg-foreground text-background hover:bg-foreground/90"
+              onClick={handlePipeline}
+              disabled={pipelineLoading || !hasTrialRemaining || !canSubmit}
+            >
+              {pipelineLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Lancement...
+                </>
+              ) : (
+                <>Lancer l'analyse complète — sourcing + due diligence</>
+              )}
+            </Button>
 
-          <Button
-            type="button"
-            size="lg"
-            variant="outline"
-            className="w-full h-12 text-sm font-medium border-primary/50 hover:border-primary hover:bg-primary/10 text-primary gap-2"
-            onClick={handlePipeline}
-            disabled={pipelineLoading || !hasTrialRemaining || (!useCustomThesis && !fundName.trim())}
-          >
-            {pipelineLoading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Zap className="w-4 h-4" />
-            )}
-            Auto-Pick + Due Diligence (1 clic)
-          </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full h-10 text-sm border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/40"
+              onClick={handleSubmit}
+              disabled={!hasTrialRemaining || !canSubmit}
+            >
+              Sourcing seul — {params.numberOfStartups || 1} startup{(params.numberOfStartups || 1) > 1 ? "s" : ""}
+            </Button>
+          </div>
+
+          {!hasTrialRemaining && (
+            <p className="text-xs text-destructive text-center">
+              Quota d'analyses epuise.{" "}
+              {!user ? (
+                <button
+                  className="underline hover:no-underline"
+                  onClick={() => { setAuthView("signup"); setShowAuthDialog(true); }}
+                >
+                  Creer un compte pour continuer
+                </button>
+              ) : (
+                "Contactez-nous pour upgrader."
+              )}
+            </p>
+          )}
         </div>
 
-        {history.length > 0 && (
-          <div className="mt-10">
-            <AnalysisHistory history={history} onSelect={handleHistorySelect} />
+        {/* Info column */}
+        <div className="space-y-5">
+          <div className="border border-border rounded-md overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-border bg-card/50">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Comment ca marche
+              </p>
+            </div>
+            <div className="divide-y divide-border">
+              {HOW_IT_WORKS.map(({ step, label, desc }) => (
+                <div key={step} className="px-4 py-3.5 flex items-start gap-3">
+                  <span className="text-xs font-bold text-primary tabular-nums shrink-0 mt-0.5 w-5">
+                    {step}
+                  </span>
+                  <div>
+                    <p className="text-sm font-medium text-foreground leading-tight">{label}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-        )}
+
+          <div className="border border-border rounded-md overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-border bg-card/50">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Ce qui est analyse
+              </p>
+            </div>
+            <div className="px-4 py-3 space-y-2.5">
+              {[
+                "Sources web, bases FR, GitHub, Hacker News",
+                "Scoring sur 100 pts par rapport a la these",
+                "Filtrage des vraies startups (IA)",
+                "Rapport DD : equipe, marche, risques",
+                "Export Markdown du rapport complet",
+              ].map((item) => (
+                <div key={item} className="flex items-start gap-2">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
+                  <p className="text-xs text-muted-foreground leading-relaxed">{item}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-md border border-border px-4 py-3">
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              <span className="text-foreground font-medium">Temps estime :</span>{" "}
+              2 a 4 minutes pour le pipeline complet (sourcing + DD auto).
+            </p>
+          </div>
+        </div>
       </div>
+
+      {history.length > 0 && (
+        <div className="mt-10 pt-8 border-t border-border">
+          <AnalysisHistory history={history} onSelect={handleHistorySelect} />
+        </div>
+      )}
 
       <AuthDialog
         open={showAuthDialog}
