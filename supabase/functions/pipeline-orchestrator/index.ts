@@ -24,8 +24,8 @@ import {
 import {
   buildScoringPrompt,
   buildBatchScoringPrompt,
+  buildContextualWeights,
   computeWeightedScore,
-  DEFAULT_WEIGHTS,
 } from "../_shared/scoring-engine.ts";
 import {
   THESIS_ANALYSIS_SYSTEM_PROMPT,
@@ -268,6 +268,10 @@ async function handleSourcingStart(
     .filter(Boolean)
     .slice(0, 3);
 
+  // Pré-seed : les startups très early ont peu d'empreinte web — on élargit
+  // les fenêtres des canaux structurés (registre, GitHub, HN) pour le recall.
+  const isVeryEarly = /pre-?seed|amorçage/i.test(stage);
+
   // INSEE : registre FR (immatriculations récentes). FR/Europe uniquement.
   const inseePromise = isFrench
     ? searchNewCompanies({
@@ -276,12 +280,16 @@ async function handleSourcingStart(
         postalPrefixes: /paris|île-de-france|ile-de-france/i.test(geography)
           ? ["75", "77", "78", "91", "92", "93", "94", "95"]
           : [],
-        sinceDays: 120,
-        maxResults: 25,
+        sinceDays: isVeryEarly ? 270 : 120,
+        maxResults: isVeryEarly ? 35 : 25,
       })
     : Promise.resolve([]);
   // Hacker News (Show HN) : signal produit global.
-  const hnPromise = searchHackerNews({ terms: freeApiTerms, maxResults: 20 });
+  const hnPromise = searchHackerNews({
+    terms: freeApiTerms,
+    maxResults: 20,
+    sinceDays: isVeryEarly ? 540 : 365,
+  });
   // GitHub : pertinent uniquement pour les thèses tech/logicielles.
   const isTechThesis =
     /saas|software|logiciel|\bai\b|\bml\b|\bdata\b|dev|cloud|\bapi\b|crypto|web3|cyber|infra|platform|plateforme|fintech|deeptech|hardware|robot|iot/i
@@ -289,7 +297,13 @@ async function handleSourcingStart(
         JSON.stringify([sectors, thesis?.techKeywords, thesis?.subSectors]),
       );
   const githubPromise = isTechThesis
-    ? searchGitHub({ terms: freeApiTerms, maxResults: 20 })
+    ? searchGitHub({
+        terms: freeApiTerms,
+        maxResults: 20,
+        // Une org pré-seed n'a souvent que quelques étoiles ; le filtre
+        // Organization + anti-bruit pédagogique limite déjà les faux positifs.
+        minStars: isVeryEarly ? 3 : 10,
+      })
     : Promise.resolve([]);
 
   // Génère les queries FR biaisées, ciblées sur le type d'entreprise visé
@@ -508,22 +522,44 @@ async function handlePicking(
       }),
   );
 
-  const toScored = (candidate: any, result: any) => ({
-    name: candidate.name,
-    url: candidate.url,
-    website: candidate.website ?? null,
-    descriptions: candidate.descriptions?.slice(0, 3) ?? [],
-    mentionCount: candidate.mentionCount,
-    categories: Array.from(candidate.categories),
-    sources: candidate.sources,
-    scores: result?.scores ?? {},
-    totalWeighted: computeWeightedScore(result?.scores ?? {}, DEFAULT_WEIGHTS),
-    redFlags: result?.redFlags ?? [],
-    whyNow: result?.whyNow ?? "",
-    whyThisStartup: result?.whyThisStartup ?? "",
-    comparables: result?.comparables ?? [],
-    riskLevel: result?.riskLevel ?? "medium",
-  });
+  // Poids contextuels : hors thèse FR, le bonus écosystème français est
+  // redistribué vers thesisFit et teamQuality.
+  const weights = buildContextualWeights(
+    String(thesis?.geography?.primary ?? "France"),
+  );
+
+  const toScored = (candidate: any, result: any) => {
+    // Critères STRUCTURELS calculés depuis les données réelles du sourcing —
+    // pas demandés à l'IA : mêmes faits → même score, classement explicable.
+    // L'IA garde les critères de jugement (thesisFit, timing, team, moat).
+    const catCount = candidate.categories?.size ?? 0;
+    const srcCount = candidate.sources?.length ?? 0;
+    const structuralScores = {
+      signalDiversity: Math.min(100, catCount * 25),
+      sourceCorroboration: Math.min(
+        100,
+        srcCount * 25 + Math.min(candidate.mentionCount ?? 0, 10) * 5,
+      ),
+      recency: Math.min(100, (candidate.recencyScore ?? 1) * 10),
+    };
+    const scores = { ...(result?.scores ?? {}), ...structuralScores };
+    return {
+      name: candidate.name,
+      url: candidate.url,
+      website: candidate.website ?? null,
+      descriptions: candidate.descriptions?.slice(0, 3) ?? [],
+      mentionCount: candidate.mentionCount,
+      categories: Array.from(candidate.categories),
+      sources: candidate.sources,
+      scores,
+      totalWeighted: computeWeightedScore(scores, weights),
+      redFlags: result?.redFlags ?? [],
+      whyNow: result?.whyNow ?? "",
+      whyThisStartup: result?.whyThisStartup ?? "",
+      comparables: result?.comparables ?? [],
+      riskLevel: result?.riskLevel ?? "medium",
+    };
+  };
 
   const scoredCandidates: any[] = [];
 

@@ -833,6 +833,9 @@ Réponds UNIQUEMENT avec du JSON valide.`;
         const sourcesWeak = !Array.isArray(r?.allSources) || r.allSources.length < 8;
         return foundersWeak || tamWeak || fundingWeak || sourcesWeak;
       })();
+      // Contexte additionnel de l'itération 2, conservé pour la vérification
+      // des sources en fin de phase.
+      let round2Context = "";
       if (elapsedMs > ROUND2_BUDGET_MS) {
         console.warn(`[DueDiligence] 2e itération sautée (budget temps: ${Math.round(elapsedMs / 1000)}s écoulées)`);
       } else if (!reportIncomplete) {
@@ -890,6 +893,7 @@ Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 3 gap
               } catch (_) {}
             }
             const extraContext2 = extraLines2.join("\n").slice(0, 3500);
+            round2Context = extraContext2;
             if (extraContext2) {
               const enrichPrompt = `Rapport de due diligence (JSON) et données complémentaires. Intègre les nouvelles données où pertinent. Retourne le JSON COMPLET, même structure.
 
@@ -932,6 +936,78 @@ Réponds UNIQUEMENT avec le JSON complet.`;
         console.warn("[DueDiligence] 2e itération ignorée:", round2Err);
       }
 
+      // ——— Vérification anti-hallucination des sources ———
+      // Chaque URL citée dans le rapport doit exister dans les résultats de
+      // recherche réellement fournis à l'IA. Les URLs inventées sont retirées
+      // et dataQuality est recalculé déterministiquement (l'auto-évaluation de
+      // l'IA n'est pas fiable).
+      const normalizeSrcUrl = (u: string): string =>
+        u.toLowerCase()
+          .replace(/^https?:\/\//, "")
+          .replace(/^www\./, "")
+          .replace(/[.,;:)\]]+$/, "")
+          .replace(/\/$/, "");
+      const allowedUrls = new Set<string>();
+      for (const m of `${enrichedAnalyzeContext}\n${round2Context}`.matchAll(/https?:\/\/[^\s|"<>)]+/gi)) {
+        allowedUrls.add(normalizeSrcUrl(m[0]));
+      }
+      if (allowedUrls.size > 0) {
+        let removedCount = 0;
+        const isVerified = (src: any): boolean => {
+          const u = typeof src?.url === "string" ? src.url : "";
+          return u.startsWith("http") && allowedUrls.has(normalizeSrcUrl(u));
+        };
+        const filterSources = (node: any): void => {
+          if (!node || typeof node !== "object") return;
+          if (Array.isArray(node)) { node.forEach(filterSources); return; }
+          for (const k of Object.keys(node)) {
+            if ((k === "sources" || k === "allSources") && Array.isArray(node[k])) {
+              const kept = node[k].filter(isVerified);
+              removedCount += node[k].length - kept.length;
+              node[k] = kept;
+            } else {
+              filterSources(node[k]);
+            }
+          }
+        };
+        filterSources(dueDiligenceResult);
+        // Ré-agrège les sources de section (toutes vérifiées) dans allSources
+        aggregateSectionSources(dueDiligenceResult);
+
+        const verifiedCount = Array.isArray(dueDiligenceResult.allSources)
+          ? dueDiligenceResult.allSources.length
+          : 0;
+        const dq = (dueDiligenceResult.dataQuality && typeof dueDiligenceResult.dataQuality === "object")
+          ? dueDiligenceResult.dataQuality
+          : {};
+        dq.sourcesCount = String(verifiedCount);
+        dq.overallScore = verifiedCount >= 15
+          ? "excellent"
+          : verifiedCount >= 8
+          ? "good"
+          : verifiedCount >= 4
+          ? "fair"
+          : "limited";
+        const limitations: string[] = Array.isArray(dq.limitations)
+          ? dq.limitations.map((l: any) => String(l))
+          : [];
+        if (removedCount > 0) {
+          limitations.push(
+            `${removedCount} source(s) citée(s) non retrouvée(s) dans les recherches — retirée(s) du rapport`,
+          );
+        }
+        if (analyzeSearchCount < 10) {
+          limitations.push(
+            `Recherches web limitées (${analyzeSearchCount} résultats) — fiabilité réduite, croiser avec d'autres bases`,
+          );
+        }
+        dq.limitations = limitations;
+        dueDiligenceResult.dataQuality = dq;
+        if (removedCount > 0) {
+          console.log(`[DD] Vérification sources: ${removedCount} URL(s) non vérifiable(s) retirée(s), ${verifiedCount} conservée(s)`);
+        }
+      }
+
       // Cache 3 j : une nouvelle DD de la même société est servie sans IA.
       if (dueDiligenceResult?.company) {
         await setCachedSearch(`ai|${reportCacheKey}`, 1, [dueDiligenceResult], 3);
@@ -958,50 +1034,45 @@ Réponds UNIQUEMENT avec le JSON complet.`;
     // PHASE 1: RECHERCHES MASSIVES ET PARALLÈLES
     // ============================================
     
-    // Phase 1 seule = tout le budget ~150s pour la recherche → on maximise requêtes et limites
+    // Phase 1 seule = tout le budget ~150s pour la recherche.
+    // Liste élaguée des quasi-doublons (-8 requêtes ≈ -20 % de crédits par DD
+    // non cachée) ; années dynamiques — jamais hardcodées.
+    const yearNow = new Date().getFullYear();
     const searchQueries = [
       `${companyName} company overview about`,
       `${companyName} startup official website`,
       `"${companyName}" company profile business`,
-      `${companyName} company description mission`,
-      `${companyName} funding round investment 2024 2025`,
+      `${companyName} funding round investment ${yearNow - 1} ${yearNow}`,
       `${companyName} series A B C funding valuation investors`,
       `${companyName} raised million funding round`,
-      `${companyName} valuation latest funding`,
       `${companyName} levée de fonds investisseurs`,
       `${companyName} revenue ARR MRR metrics`,
       `${companyName} customers clients users growth`,
-      `${companyName} traction growth rate metrics 2024`,
+      `${companyName} traction growth rate metrics ${yearNow}`,
       `${companyName} milestones achievements key events`,
       `${companyName} partnerships deals clients`,
-      `${companyName} market share business performance`,
       `${companyName} key metrics KPIs unit economics`,
-      `${companyName} revenue growth ARR valuation multiple`,
       `${companyName} founders CEO CTO team LinkedIn`,
       `${companyName} founder CEO name background biography`,
       `${companyName} leadership team executives background`,
       `${companyName} employees headcount team size`,
       `${companyName} fondateurs équipe management`,
-      `${companyName} who founded CEO`,
       `${companyName} product technology platform`,
       `${companyName} solution features how it works`,
       `${companyName} technology stack patents`,
-      `${companyName} produit innovation`,
       `${companyName} competitors market landscape`,
       `${companyName} industry market TAM SAM`,
       `${companyName} competitive advantage moat`,
       `${companyName} market size opportunity`,
-      `${companyName} news latest 2024 2025`,
+      `${companyName} news latest ${yearNow - 1} ${yearNow}`,
       `${companyName} press release announcement`,
       `${companyName} partenariat accord`,
       `${companyName} LinkedIn company page`,
       `${companyName} Crunchbase profile`,
-      `${companyName} Dealroom PitchBook`,
       `${companyName} challenges risks concerns`,
       `${companyName} reviews reputation`,
       `${companyName} awards prizes recognition`,
       `${companyName} récompenses prix concours`,
-      `${companyName} investment thesis target return ticket`,
     ];
     
     // Si le site web est fourni, l'ajouter aux recherches

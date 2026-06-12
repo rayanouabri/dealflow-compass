@@ -48,7 +48,7 @@ export function buildIPPatentQueries(
       weight: 4,
     },
     {
-      query: `site:patents.google.com ${sector} "granted" "2023" OR "2024" startup`,
+      query: `site:patents.google.com ${sector} "granted" "${year - 1}" OR "${year}" startup`,
       signalType: "patent_granted",
       weight: 4,
     },
@@ -62,7 +62,7 @@ export function buildIPPatentQueries(
     ...(isFrance
       ? [
           {
-            query: `site:inpi.fr ${sector} "brevet" "2024" "2025"`,
+            query: `site:inpi.fr ${sector} "brevet" "${year - 1}" "${year}"`,
             signalType: "patent_filed" as const,
             weight: 4,
           },
@@ -81,7 +81,7 @@ export function buildIPPatentQueries(
 
     // === EPO (Europe) ===
     {
-      query: `site:espacenet.com ${sector} "filing date" 2024 2025`,
+      query: `site:espacenet.com ${sector} "filing date" ${year - 1} ${year}`,
       signalType: "patent_filed",
       weight: 4,
     },
@@ -139,7 +139,7 @@ export function buildIPPatentQueries(
       weight: 3,
     },
     {
-      query: `site:scholar.google.com ${sector} 2024 2025 "start-up" OR "startup"`,
+      query: `site:scholar.google.com ${sector} ${year - 1} ${year} "start-up" OR "startup"`,
       signalType: "tech_journal",
       weight: 3,
     },
@@ -151,12 +151,12 @@ export function buildIPPatentQueries(
 
     // === GITHUB INNOVATION (open-source startups) ===
     {
-      query: `site:github.com ${sector} startup "trending" repositories 2024`,
+      query: `site:github.com ${sector} startup "trending" repositories ${year}`,
       signalType: "github_innovation",
       weight: 3,
     },
     {
-      query: `site:github.com/${sector}-startup OR site:github.com/org-${sector} 2024`,
+      query: `site:github.com/${sector}-startup OR site:github.com/org-${sector} ${year}`,
       signalType: "github_innovation",
       weight: 3,
     },

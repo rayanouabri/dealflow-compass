@@ -161,13 +161,81 @@ const DIRECTORY_HOSTS = new Set([
   "signet.watch",
 ]);
 
+// Grands groupes : leurs pages produit (oracle.com/java, wso2.com/bijira,
+// sap.com/products/...) passent pour des startups. Jamais candidats.
+const CORPORATE_HOSTS = new Set([
+  "wso2.com",
+  "oracle.com",
+  "sap.com",
+  "salesforce.com",
+  "google.com",
+  "amazon.com",
+  "aws.amazon.com",
+  "meta.com",
+  "facebook.com",
+  "apple.com",
+  "adobe.com",
+  "atlassian.com",
+  "vmware.com",
+  "redhat.com",
+  "intel.com",
+  "nvidia.com",
+  "cisco.com",
+  "siemens.com",
+  "bosch.com",
+  "schneider-electric.com",
+  "thalesgroup.com",
+  "airbus.com",
+  "safran-group.com",
+  "3ds.com",
+  "dassault-systemes.com",
+  "capgemini.com",
+  "soprasteria.com",
+  "atos.net",
+  "orange.com",
+  "huawei.com",
+  "samsung.com",
+  "sony.com",
+  "fujitsu.com",
+  "accenture.com",
+  "servicenow.com",
+  "workday.com",
+  "databricks.com",
+  "snowflake.com",
+]);
+
 // Match par suffixe : alexandre.substack.com → substack.com
 function isDirectoryHost(normUrl: string): boolean {
   const host = normUrl.split("/")[0];
   for (const d of DIRECTORY_HOSTS) {
     if (host === d || host.endsWith("." + d)) return true;
   }
+  for (const d of CORPORATE_HOSTS) {
+    if (host === d || host.endsWith("." + d)) return true;
+  }
   return false;
+}
+
+// Généralisation du pattern wso2.com/bijira : une SOUS-PAGE d'un domaine dont
+// le nom extrait ne correspond pas au domaine est presque toujours un produit,
+// une filiale ou une fonctionnalité d'une autre entreprise — pas une startup
+// autonome. La vraie page d'une startup est sa racine (path vide) ou une page
+// dont le titre porte sa marque (= son domaine).
+function isProductSubpage(normUrl: string, name: string): boolean {
+  const slash = normUrl.indexOf("/");
+  if (slash === -1) return false; // racine du domaine : jamais filtré
+  const host = normUrl.slice(0, slash);
+  const path = normUrl.slice(slash + 1);
+  if (!path) return false;
+  const nameToken = name.toLowerCase().normalize("NFD").replace(/[^a-z0-9]/g, "");
+  if (nameToken.length < 4) return false; // nom trop court pour décider
+  const hostAlnum = host.replace(/[^a-z0-9]/g, "");
+  const hostBase = host.split(".")[0].replace(/[^a-z0-9]/g, "");
+  // Le nom porte le domaine (acmerobotics → acmerobotics.com) ou le domaine
+  // porte le nom (acme.io/about titré "Acme") → page du site de la startup.
+  if (hostAlnum.includes(nameToken.slice(0, 10))) return false;
+  if (hostBase.length >= 4 && nameToken.includes(hostBase)) return false;
+  return true;
 }
 
 // Un nom qui ressemble à un titre d'article/listicle n'est pas une entreprise.
@@ -223,14 +291,17 @@ function computeRecencyScore(descriptions: string[]): { score: number; year: num
   const text = descriptions.join(" ");
   const currentYear = new Date().getFullYear();
 
-  // Extract years from descriptions
-  const years = text.match(/\b(202[4-9]|203\d)\b/g);
-  if (!years || years.length === 0) return { score: 1, year: null };
+  // Années détectées dans les descriptions, fenêtre glissante (année courante
+  // -3 à +1) — jamais d'année hardcodée.
+  const years = (text.match(/\b20\d{2}\b/g) ?? [])
+    .map(Number)
+    .filter((y) => y >= currentYear - 3 && y <= currentYear + 1);
+  if (years.length === 0) return { score: 1, year: null };
 
-  const latestYear = Math.max(...years.map(Number));
-  const yearDiff = currentYear - latestYear;
+  const latestYear = Math.max(...years);
+  const yearDiff = Math.max(0, currentYear - latestYear);
 
-  // Scoring: 2024 = 10, 2023 = 7, 2022 = 4, earlier = 1
+  // Année courante = 10, -1 = 7, -2 = 4, avant = 1
   let score = 1;
   if (yearDiff === 0) score = 10;
   else if (yearDiff === 1) score = 7;
@@ -265,6 +336,16 @@ export function deduplicateAndRank(
     const candidateName = extractCompanyName(r.title, r.url);
     // Ignore les titres d'articles/listicles capturés comme faux candidats
     if (looksLikeArticle(candidateName)) continue;
+
+    // Sous-page produit d'un autre domaine (ex: wso2.com/bijira) : le nom ne
+    // correspond pas au domaine → produit/filiale, pas une startup autonome.
+    // Ne s'applique pas aux agrégateurs (github.com/org est légitime).
+    if (
+      !AGGREGATOR_HOSTS.has(normUrl.split("/")[0]) &&
+      isProductSubpage(normUrl, candidateName)
+    ) {
+      continue;
+    }
 
     // Clé de regroupement : hostname pour un site d'entreprise (acme.com/team
     // et acme.com/blog → même candidat), chemin complet pour un agrégateur.

@@ -48,7 +48,7 @@ export function buildLinkedInQueries(
       weight: 4,
     },
     {
-      query: `site:linkedin.com/company ${sector} "we're hiring" 2024 2025 ${geoTerm}`,
+      query: `site:linkedin.com/company ${sector} "we're hiring" ${year - 1} ${year} ${geoTerm}`,
       signalType: "hiring_burst",
       weight: 4,
     },
@@ -82,7 +82,7 @@ export function buildLinkedInQueries(
       weight: 5,
     },
     {
-      query: `site:linkedin.com/in entrepreneur serial founder ${sector} startup exit 2020-2024`,
+      query: `site:linkedin.com/in entrepreneur serial founder ${sector} startup exit ${year - 4}-${year}`,
       signalType: "exit_signal",
       weight: 4,
     },
