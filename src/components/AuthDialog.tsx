@@ -27,23 +27,9 @@ export function AuthDialog({ open, onOpenChange, defaultView = "login", onAuthSu
   }, [defaultView, open]);
 
   const handleSuccess = () => {
-    console.log("AuthDialog: handleSuccess called");
-    // Close dialog - parent will handle redirect
     onOpenChange(false);
-    // Call success callback if provided
-    if (onAuthSuccess) {
-      setTimeout(() => {
-        onAuthSuccess();
-      }, 200);
-    }
-    // Reset view to login for next time
-    setTimeout(() => setView("login"), 100);
+    onAuthSuccess?.();
   };
-
-  // Debug: log when dialog open state changes
-  useEffect(() => {
-    console.log("AuthDialog open state:", open, "view:", view);
-  }, [open, view]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

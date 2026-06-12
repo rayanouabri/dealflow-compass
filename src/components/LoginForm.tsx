@@ -35,7 +35,7 @@ export function LoginForm({ onSuccess, onSwitchToSignup }: LoginFormProps) {
   const onSubmit = async (data: LoginFormData) => {
     setIsLoading(true);
     try {
-      const { data: authData, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email: data.email,
         password: data.password,
       });
@@ -47,10 +47,7 @@ export function LoginForm({ onSuccess, onSwitchToSignup }: LoginFormProps) {
         description: "Bienvenue sur DealFlow Compass !",
       });
 
-      // Wait a bit for auth state to update
-      setTimeout(() => {
-        onSuccess?.();
-      }, 300);
+      onSuccess?.();
     } catch (error: any) {
       toast({
         title: "Erreur de connexion",

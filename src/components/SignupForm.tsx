@@ -61,10 +61,7 @@ export function SignupForm({ onSuccess, onSwitchToLogin }: SignupFormProps) {
         });
       }
 
-      // Wait a bit for auth state to update
-      setTimeout(() => {
-        onSuccess?.();
-      }, 300);
+      onSuccess?.();
     } catch (error: any) {
       toast({
         title: "Erreur lors de l'inscription",

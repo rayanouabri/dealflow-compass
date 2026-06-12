@@ -1,24 +1,33 @@
+import { lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { AuthProvider } from "@/components/AuthProvider";
+import { queryClient } from "@/lib/query-client";
+import { Loader2 } from "lucide-react";
 import Index from "./pages/Index";
-import Analyser from "./pages/Analyser";
-import Analyse from "./pages/Analyse";
-import DueDiligence from "./pages/DueDiligence";
-import DueDiligenceResult from "./pages/DueDiligenceResult";
-import Contact from "./pages/Contact";
-import APropos from "./pages/APropos";
-import MentionsLegales from "./pages/MentionsLegales";
-import ConditionsUtilisation from "./pages/ConditionsUtilisation";
-import Confidentialite from "./pages/Confidentialite";
-import PipelineProgress from "./pages/PipelineProgress";
-import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
+// Routes secondaires chargées à la demande : la landing n'embarque pas le
+// rapport DD (le plus gros composant du site) ni les pages d'analyse.
+const Analyser = lazy(() => import("./pages/Analyser"));
+const Analyse = lazy(() => import("./pages/Analyse"));
+const DueDiligence = lazy(() => import("./pages/DueDiligence"));
+const DueDiligenceResult = lazy(() => import("./pages/DueDiligenceResult"));
+const PipelineProgress = lazy(() => import("./pages/PipelineProgress"));
+const Contact = lazy(() => import("./pages/Contact"));
+const APropos = lazy(() => import("./pages/APropos"));
+const MentionsLegales = lazy(() => import("./pages/MentionsLegales"));
+const ConditionsUtilisation = lazy(() => import("./pages/ConditionsUtilisation"));
+const Confidentialite = lazy(() => import("./pages/Confidentialite"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+
+const RouteFallback = () => (
+  <div className="min-h-screen flex items-center justify-center bg-background dark">
+    <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+  </div>
+);
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -26,22 +35,23 @@ const App = () => (
       <AuthProvider>
         <TooltipProvider>
           <Toaster />
-          <Sonner />
           <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/analyser" element={<Analyser />} />
-            <Route path="/analyse" element={<Analyse />} />
-            <Route path="/due-diligence" element={<DueDiligence />} />
-            <Route path="/due-diligence/result" element={<DueDiligenceResult />} />
-            <Route path="/pipeline" element={<PipelineProgress />} />
-            <Route path="/contact" element={<Contact />} />
-            <Route path="/a-propos" element={<APropos />} />
-            <Route path="/mentions-legales" element={<MentionsLegales />} />
-            <Route path="/conditions-utilisation" element={<ConditionsUtilisation />} />
-            <Route path="/confidentialite" element={<Confidentialite />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+            <Suspense fallback={<RouteFallback />}>
+              <Routes>
+                <Route path="/" element={<Index />} />
+                <Route path="/analyser" element={<Analyser />} />
+                <Route path="/analyse" element={<Analyse />} />
+                <Route path="/due-diligence" element={<DueDiligence />} />
+                <Route path="/due-diligence/result" element={<DueDiligenceResult />} />
+                <Route path="/pipeline" element={<PipelineProgress />} />
+                <Route path="/contact" element={<Contact />} />
+                <Route path="/a-propos" element={<APropos />} />
+                <Route path="/mentions-legales" element={<MentionsLegales />} />
+                <Route path="/conditions-utilisation" element={<ConditionsUtilisation />} />
+                <Route path="/confidentialite" element={<Confidentialite />} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
           </BrowserRouter>
         </TooltipProvider>
       </AuthProvider>
