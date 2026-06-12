@@ -207,7 +207,13 @@ async function handleThesisAnalysis(
   const thesisAnalysis = await callAI(
     THESIS_ANALYSIS_SYSTEM_PROMPT,
     userPrompt,
-    { temperature: 0.2, maxTokens: 4096, cacheKey, validate: isValidThesis },
+    {
+      temperature: 0.2,
+      maxTokens: 8192,
+      cacheKey,
+      validate: isValidThesis,
+      model: "gemini-2.5-pro",
+    },
   );
 
   if (!isValidThesis(thesisAnalysis)) {

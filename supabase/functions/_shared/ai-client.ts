@@ -17,6 +17,8 @@ export interface AIOptions {
   // Garde de forme : un résultat qui ne passe pas n'est ni mis en cache ni
   // servi depuis le cache (évite d'empoisonner le cache avec un JSON tronqué).
   validate?: (result: unknown) => boolean;
+  // Surcharge du modèle pour cet appel (ex: "gemini-2.5-pro" pour la thèse).
+  model?: string;
 }
 
 async function sleep(ms: number): Promise<void> {
@@ -72,32 +74,38 @@ async function callGemini(
   userPrompt: string,
   opts: AIOptions,
 ): Promise<string> {
-  // Rotation de clés : on cumule le quota journalier de plusieurs clés.
-  // Sur 429 (quota épuisé sur une clé) → on bascule sur la clé suivante.
-  const keys = [
+  // Rotation de clés : 4 clés distribuent le quota journalier et le RPM.
+  // Sélection aléatoire initiale pour équilibrer la charge ; sur 429 (quota
+  // épuisé sur une clé) → on bascule sur les suivantes.
+  const allKeys = [
     Deno.env.get("GEMINI_API_KEY"),
     Deno.env.get("GEMINI_KEY_2"),
     Deno.env.get("GEMINI_KEY_3"),
+    Deno.env.get("GEMINI_KEY_4"),
   ].filter((k): k is string => !!k);
-  const uniqueKeys = [...new Set(keys)];
+  const uniqueKeys = [...new Set(allKeys)];
   if (uniqueKeys.length === 0) throw new Error("GEMINI_API_KEY manquant");
+  // Mélanger pour distribuer la charge sur les 4 clés (RPM équilibré)
+  const shuffled = [...uniqueKeys].sort(() => Math.random() - 0.5);
 
-  const model = Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash";
+  const model = opts.model ?? Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash";
 
   const baseBudget = opts.maxTokens ?? 4096;
-  const isFlash25 = /2\.5-flash/.test(model);
+  const isFlash = /flash/.test(model);
+  const isPro = /pro/.test(model);
   const generationConfig: any = {
     temperature: opts.temperature ?? 0.3,
-    // Les modèles 3.x consomment leurs tokens de "thinking" SUR le budget de
-    // sortie : sans marge, le JSON est tronqué en plein milieu (vérifié en
-    // E2E : une thèse coupée après le tableau sectors). On ajoute la marge.
-    maxOutputTokens: isFlash25 ? baseBudget : baseBudget + 4096,
+    maxOutputTokens: baseBudget,
     ...(opts.jsonMode ? { responseMimeType: "application/json" } : {}),
   };
-  // Sur les modèles flash 2.5, le "thinking" peut consommer tout le budget de
-  // sortie et renvoyer une réponse vide. On le désactive pour garantir le JSON.
-  if (isFlash25) {
+  // Flash 2.5 : désactive thinking (thinkingBudget: 0 garanti le budget JSON).
+  // Pro 2.5 : thinking obligatoire — on alloue un budget minimal (1024) et
+  // augmente le budget de sortie pour absorber les tokens COT.
+  if (isFlash) {
     generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  } else if (isPro) {
+    generationConfig.thinkingConfig = { thinkingBudget: 1024 };
+    generationConfig.maxOutputTokens = baseBudget + 2048;
   }
 
   const body: any = {
@@ -113,7 +121,7 @@ async function callGemini(
   // Clé en header (pas en query string) : les URLs finissent dans les logs
   // d'erreurs fetch et les proxies, pas les headers.
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-  for (const key of uniqueKeys) {
+  for (const key of shuffled) {
     let rateWaits = 0;
     // Retry sur 5xx (transitoire) et 429 de rythme (RPM, avec retryDelay) ;
     // sur 429 de quota journalier → clé suivante.

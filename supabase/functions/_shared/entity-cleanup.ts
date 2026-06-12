@@ -64,7 +64,7 @@ Inclus TOUS les candidats dans ta réponse (même ceux avec isCompany:false).`;
   try {
     const res = (await callAI(systemPrompt, userPrompt, {
       temperature: 0.1,
-      maxTokens: 3072,
+      maxTokens: 4096,
     })) as any;
     const ents = res?.entities;
     if (!Array.isArray(ents) || ents.length === 0) return candidates;
