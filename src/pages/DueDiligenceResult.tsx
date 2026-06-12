@@ -778,7 +778,7 @@ export default function DueDiligenceResult() {
         {/* Loading State */}
         {loading && (
           <div className="lg:col-span-12">
-          <Card className="bg-card/80 border-amber-500/30">
+          <Card className="bg-card border-border">
             <CardContent className="py-16">
               <div className="flex flex-col items-center gap-6">
                 <div className="relative">
@@ -849,7 +849,7 @@ export default function DueDiligenceResult() {
             <div className="flex flex-col sm:flex-row gap-2">
               <Link
                 to="/due-diligence"
-                className="inline-flex items-center justify-center gap-1.5 text-sm text-foreground/70 hover:text-primary transition-all duration-300 hover:bg-primary/10 px-3 py-1.5 rounded-lg border border-gray-700 hover:border-primary/40 backdrop-blur-sm"
+                className="inline-flex items-center justify-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-all hover:bg-muted px-3 py-1.5 rounded-lg border border-border"
               >
                 <ArrowLeft className="w-4 h-4" />
                 Nouvelle analyse
@@ -858,27 +858,27 @@ export default function DueDiligenceResult() {
                 variant="outline"
                 size="sm"
                 onClick={exportFullReport}
-                className="gap-1.5 border-gray-600 hover:border-primary/50 text-foreground/90"
+                className="gap-1.5 border-border hover:border-primary/50 text-foreground/90"
               >
                 <Download className="w-4 h-4" />
                 Exporter le rapport
               </Button>
             </div>
-            <Card className="rounded-xl border border-primary/40 bg-card/80 backdrop-blur-sm p-5 space-y-3 shadow-lg">
+            <Card className="rounded-xl border border-border bg-card p-5 space-y-3">
               <h3 className="text-sm font-semibold text-foreground">{data.company?.name || requestPayload?.companyName}</h3>
               <div className="flex flex-wrap gap-2">
                 {getRecommendationBadge(data.executiveSummary?.recommendation)}
                 {data.company?.sector && <Badge variant="outline" className="text-xs font-normal">{stripInlineSources(data.company.sector)}</Badge>}
                 {data.company?.stage && <Badge variant="secondary" className="text-xs">{stripInlineSources(data.company.stage)}</Badge>}
               </div>
-              <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-700/50">
+              <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
                 {data.company?.website && (
-                  <Button variant="outline" size="sm" asChild className="border-gray-600 hover:border-primary/50 text-xs">
+                  <Button variant="outline" size="sm" asChild className="border-border hover:border-primary/50 text-xs">
                     <a href={data.company.website} target="_blank" rel="noopener noreferrer"><Globe className="w-3 h-3 mr-1" /> Site</a>
                   </Button>
                 )}
                 {data.company?.linkedinUrl && (
-                  <Button variant="outline" size="sm" asChild className="border-gray-600 hover:border-primary/50 text-xs">
+                  <Button variant="outline" size="sm" asChild className="border-border hover:border-primary/50 text-xs">
                     <a href={data.company.linkedinUrl} target="_blank" rel="noopener noreferrer"><Linkedin className="w-3 h-3 mr-1" /> LinkedIn</a>
                   </Button>
                 )}
@@ -886,10 +886,10 @@ export default function DueDiligenceResult() {
             </Card>
             {/* Sources du rapport — toujours visible dans la sidebar */}
             {allSourcesAggregated.length > 0 && (
-              <Card className="rounded-xl border border-primary/30 bg-card/80 backdrop-blur-sm shadow-lg overflow-hidden">
-                <CardHeader className="pb-2 border-b border-gray-700/50">
+              <Card className="rounded-xl border border-border bg-card overflow-hidden">
+                <CardHeader className="pb-2 border-b border-border">
                   <CardTitle className="flex items-center gap-2 text-base">
-                    <LinkIcon className="w-4 h-4 text-primary" />
+                    <LinkIcon className="w-4 h-4 text-muted-foreground" />
                     Sources du rapport
                     <Badge variant="outline" className="text-xs font-normal">{allSourcesAggregated.length}</Badge>
                   </CardTitle>
@@ -903,7 +903,7 @@ export default function DueDiligenceResult() {
                           href={source.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs bg-gray-800/50 hover:bg-primary/20 border border-gray-700/50 hover:border-primary/40 text-foreground/90 hover:text-primary transition-all truncate"
+                          className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs bg-muted/40 hover:bg-muted border border-border hover:border-border text-foreground/90 hover:text-primary transition-all truncate"
                           title={source.url}
                         >
                           <LinkIcon className="w-3 h-3 flex-shrink-0 text-muted-foreground" />
@@ -919,11 +919,11 @@ export default function DueDiligenceResult() {
           </aside>
 
           <div className="lg:col-span-8 xl:col-span-9 lg:row-start-2 min-w-0 max-w-full overflow-x-hidden space-y-8 order-1 lg:order-2">
-            <h1 className="text-2xl md:text-3xl font-bold break-words bg-gradient-to-r from-foreground to-primary bg-clip-text text-transparent">
+            <h1 className="text-2xl md:text-3xl font-bold break-words text-foreground">
               Due Diligence — {data.company?.name || requestPayload?.companyName}
             </h1>
             {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 rounded-xl border border-primary/30 bg-card/80 backdrop-blur-sm p-6 shadow-lg">
+            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 rounded-xl border border-border bg-card p-6">
               <div>
                 <div className="flex items-center gap-3 mb-2 flex-wrap">
                   <h2 className="text-xl md:text-2xl font-bold text-foreground">
@@ -962,7 +962,7 @@ export default function DueDiligenceResult() {
                   Exporter le rapport
                 </Button>
                 {data.company?.website && (
-                  <Button variant="outline" size="sm" asChild className="border-gray-600 hover:border-primary/50">
+                  <Button variant="outline" size="sm" asChild className="border-border hover:border-primary/50">
                     <a href={data.company.website} target="_blank" rel="noopener noreferrer">
                       <Globe className="w-4 h-4 mr-2" />
                       Site web
@@ -970,7 +970,7 @@ export default function DueDiligenceResult() {
                   </Button>
                 )}
                 {data.company?.linkedinUrl && (
-                  <Button variant="outline" size="sm" asChild className="border-gray-600 hover:border-primary/50">
+                  <Button variant="outline" size="sm" asChild className="border-border hover:border-primary/50">
                     <a href={data.company.linkedinUrl} target="_blank" rel="noopener noreferrer">
                       <Linkedin className="w-4 h-4 mr-2" />
                       LinkedIn
@@ -981,10 +981,10 @@ export default function DueDiligenceResult() {
             </div>
 
             {/* Executive Summary Card */}
-            <Card className="rounded-xl border border-primary/30 bg-card/80 backdrop-blur-sm shadow-lg overflow-hidden">
-              <CardHeader className="pb-4 bg-gradient-to-br from-amber-500/10 to-orange-500/5 border-b border-amber-500/20">
-                <CardTitle className="flex items-center gap-2 text-amber-400 text-lg">
-                  <FileSearch className="w-5 h-5" />
+            <Card className="rounded-xl border border-border bg-card overflow-hidden">
+              <CardHeader className="pb-4 border-b border-border">
+                <CardTitle className="flex items-center gap-2 text-foreground text-lg">
+                  <FileSearch className="w-5 h-5 text-muted-foreground" />
                   Résumé Exécutif
                 </CardTitle>
               </CardHeader>
@@ -1033,60 +1033,46 @@ export default function DueDiligenceResult() {
               </CardContent>
             </Card>
 
-            {/* Export bar — toujours visible au-dessus des onglets */}
-            <div className="flex flex-wrap items-center justify-between gap-3 py-3 px-4 rounded-xl bg-primary/10 border border-primary/30 mb-4">
-              <span className="text-sm font-medium text-foreground">Exporter l&apos;analyse complète (rapport + sources)</span>
-              <Button
-                variant="default"
-                size="sm"
-                onClick={exportFullReport}
-                className="gap-2 bg-primary hover:bg-primary/90 shrink-0"
-              >
-                <Download className="w-4 h-4" />
-                Exporter en texte (.md)
-              </Button>
-            </div>
-
             {/* Tabs for detailed sections — style aligné Analyse */}
             <Tabs defaultValue="financials" className="w-full">
-              <TabsList className="w-full flex flex-wrap justify-start gap-1.5 rounded-xl bg-gray-900/50 backdrop-blur-sm border border-gray-700 p-1.5 h-auto shadow-lg">
-                <TabsTrigger value="financials" className="text-xs px-3 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300 text-foreground/70 data-[state=active]:text-primary-foreground">
+              <TabsList className="w-full flex flex-wrap justify-start gap-0 rounded-none bg-transparent border-b border-border p-0 h-auto">
+                <TabsTrigger value="financials" className="text-xs px-3 py-2.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-all text-muted-foreground hover:text-foreground">
                   <DollarSign className="w-3.5 h-3.5 mr-1.5" />
                   Financements
                 </TabsTrigger>
-                <TabsTrigger value="product" className="text-xs px-3 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300 text-foreground/70 data-[state=active]:text-primary-foreground">
+                <TabsTrigger value="product" className="text-xs px-3 py-2.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-all text-muted-foreground hover:text-foreground">
                   <Target className="w-3.5 h-3.5 mr-1.5" />
                   Produit
                 </TabsTrigger>
-                <TabsTrigger value="market" className="text-xs px-3 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300 text-foreground/70 data-[state=active]:text-primary-foreground">
+                <TabsTrigger value="market" className="text-xs px-3 py-2.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-all text-muted-foreground hover:text-foreground">
                   <BarChart3 className="w-3.5 h-3.5 mr-1.5" />
                   Marché
                 </TabsTrigger>
-                <TabsTrigger value="team" className="text-xs px-3 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300 text-foreground/70 data-[state=active]:text-primary-foreground">
+                <TabsTrigger value="team" className="text-xs px-3 py-2.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-all text-muted-foreground hover:text-foreground">
                   <Users className="w-3.5 h-3.5 mr-1.5" />
                   Équipe
                 </TabsTrigger>
-                <TabsTrigger value="competition" className="text-xs px-3 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300 text-foreground/70 data-[state=active]:text-primary-foreground">
+                <TabsTrigger value="competition" className="text-xs px-3 py-2.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-all text-muted-foreground hover:text-foreground">
                   <Shield className="w-3.5 h-3.5 mr-1.5" />
                   Concurrence
                 </TabsTrigger>
-                <TabsTrigger value="traction" className="text-xs px-3 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300 text-foreground/70 data-[state=active]:text-primary-foreground">
+                <TabsTrigger value="traction" className="text-xs px-3 py-2.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-all text-muted-foreground hover:text-foreground">
                   <TrendingUp className="w-3.5 h-3.5 mr-1.5" />
                   Traction
                 </TabsTrigger>
-                <TabsTrigger value="risks" className="text-xs px-3 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300 text-foreground/70 data-[state=active]:text-primary-foreground">
+                <TabsTrigger value="risks" className="text-xs px-3 py-2.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-all text-muted-foreground hover:text-foreground">
                   <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
                   Risques
                 </TabsTrigger>
-                <TabsTrigger value="recommendation" className="text-xs px-3 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300 text-foreground/70 data-[state=active]:text-primary-foreground">
+                <TabsTrigger value="recommendation" className="text-xs px-3 py-2.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-all text-muted-foreground hover:text-foreground">
                   <Lightbulb className="w-3.5 h-3.5 mr-1.5" />
                   Recommandation
                 </TabsTrigger>
-                <TabsTrigger value="sources" className="text-xs px-3 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300 text-foreground/70 data-[state=active]:text-primary-foreground">
+                <TabsTrigger value="sources" className="text-xs px-3 py-2.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-all text-muted-foreground hover:text-foreground">
                   <LinkIcon className="w-3.5 h-3.5 mr-1.5" />
                   Sources
                 </TabsTrigger>
-                <TabsTrigger value="assistant" className="text-xs px-3 py-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300 text-foreground/70 data-[state=active]:text-primary-foreground">
+                <TabsTrigger value="assistant" className="text-xs px-3 py-2.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-all text-muted-foreground hover:text-foreground">
                   <MessageCircle className="w-3.5 h-3.5 mr-1.5" />
                   Assistant IA
                 </TabsTrigger>
@@ -1094,36 +1080,36 @@ export default function DueDiligenceResult() {
 
               {/* Financials Tab */}
               <TabsContent value="financials" className="mt-4">
-                <Card className="bg-card/80 border-gray-700/50">
+                <Card className="bg-card border-border">
                   <CardHeader className="pb-4">
                     <CardTitle className="flex items-center gap-2 text-lg">
-                      <DollarSign className="w-5 h-5 text-green-400" />
+                      <DollarSign className="w-5 h-5 text-muted-foreground" />
                       Financements & Métriques
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-6 pt-2">
                     {/* Summary metrics */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div className="bg-gradient-to-br from-gray-800/60 to-gray-800/40 rounded-lg p-4 border border-gray-700/30">
+                      <div className="bg-muted/30 rounded-lg p-4 border border-border">
                         <p className="text-xs text-muted-foreground mb-1.5 uppercase tracking-wider">Total Levé</p>
-                        <p className="text-xl font-bold text-green-400">
+                        <p className="text-xl font-bold text-foreground">
                           {data.financials?.totalFunding || "N/A"}
                         </p>
                       </div>
-                      <div className="bg-gradient-to-br from-gray-800/60 to-gray-800/40 rounded-lg p-4 border border-gray-700/30">
+                      <div className="bg-muted/30 rounded-lg p-4 border border-border">
                         <p className="text-xs text-muted-foreground mb-1.5 uppercase tracking-wider">Valorisation</p>
-                        <p className="text-xl font-bold text-amber-400">
+                        <p className="text-xl font-bold text-foreground">
                           {data.financials?.latestValuation || "N/A"}
                         </p>
                       </div>
                       {data.financials?.metrics?.arr && (
-                        <div className="bg-gradient-to-br from-gray-800/60 to-gray-800/40 rounded-lg p-4 border border-gray-700/30">
+                        <div className="bg-muted/30 rounded-lg p-4 border border-border">
                           <p className="text-xs text-muted-foreground mb-1.5 uppercase tracking-wider">ARR</p>
                           <p className="text-xl font-bold">{data.financials.metrics.arr}</p>
                         </div>
                       )}
                       {data.financials?.metrics?.customers && (
-                        <div className="bg-gradient-to-br from-gray-800/60 to-gray-800/40 rounded-lg p-4 border border-gray-700/30">
+                        <div className="bg-muted/30 rounded-lg p-4 border border-border">
                           <p className="text-xs text-muted-foreground mb-1.5 uppercase tracking-wider">Clients</p>
                           <p className="text-xl font-bold">{data.financials.metrics.customers}</p>
                         </div>
@@ -1136,16 +1122,16 @@ export default function DueDiligenceResult() {
                         <h4 className="font-semibold mb-4 text-base">Historique des Levées</h4>
                         <div className="space-y-3">
                           {toArray(data.financials?.fundingHistory).map((round, i) => (
-                            <div key={i} className="bg-gradient-to-br from-gray-800/40 to-gray-800/20 rounded-lg p-4 border border-gray-700/40 hover:border-green-500/30 transition-colors">
+                            <div key={i} className="bg-muted/20 rounded-lg p-4 border border-border hover:border-border transition-colors">
                               <div className="flex justify-between items-start mb-2">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <Badge variant="outline" className="text-xs">{round.round}</Badge>
-                                  <span className="text-lg font-bold text-green-400">{round.amount}</span>
+                                  <span className="text-lg font-bold text-primary">{round.amount}</span>
                                 </div>
                                 {round.date && <span className="text-xs text-muted-foreground bg-gray-800/50 px-2 py-1 rounded">{round.date}</span>}
                               </div>
                               {round.valuation && (
-                                <p className="text-sm text-amber-400 mb-2 font-medium">Valorisation: {round.valuation}</p>
+                                <p className="text-sm text-muted-foreground mb-2 font-medium">Valorisation: {round.valuation}</p>
                               )}
                               {round.investors && (
                                 <p className="text-sm text-muted-foreground">
@@ -1164,7 +1150,7 @@ export default function DueDiligenceResult() {
                         <h4 className="font-semibold mb-4 text-base">Métriques Détaillées</h4>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                           {Object.entries(data.financials.metrics).map(([key, value]) => (
-                            <div key={key} className="bg-gradient-to-br from-gray-800/40 to-gray-800/20 rounded-lg p-3 border border-gray-700/30">
+                            <div key={key} className="bg-muted/20 rounded-lg p-3 border border-border">
                               <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 font-medium">
                                 {key.replace(/([A-Z])/g, ' $1').trim()}
                               </p>
@@ -1183,10 +1169,10 @@ export default function DueDiligenceResult() {
 
               {/* Product Tab */}
               <TabsContent value="product" className="mt-4">
-                <Card className="bg-card/80 border-gray-700/50">
+                <Card className="bg-card border-border">
                   <CardHeader className="pb-4">
                     <CardTitle className="flex items-center gap-2 text-lg">
-                      <Target className="w-5 h-5 text-blue-400" />
+                      <Target className="w-5 h-5 text-muted-foreground" />
                       Produit & Technologie
                     </CardTitle>
                   </CardHeader>
@@ -1198,8 +1184,8 @@ export default function DueDiligenceResult() {
                       </div>
                     )}
                     {data.product?.valueProposition && (
-                      <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-4">
-                        <h4 className="font-semibold text-blue-400 mb-2">Proposition de Valeur</h4>
+                      <div className="bg-muted/30 border border-border rounded-lg p-4">
+                        <h4 className="font-semibold text-foreground mb-2">Proposition de Valeur</h4>
                         <p className="text-foreground/90">{stripInlineSources(data.product.valueProposition)}</p>
                       </div>
                     )}
@@ -1227,27 +1213,27 @@ export default function DueDiligenceResult() {
 
               {/* Market Tab */}
               <TabsContent value="market" className="mt-4">
-                <Card className="bg-card/80 border-gray-700/50">
+                <Card className="bg-card border-border">
                   <CardHeader className="pb-4">
                     <CardTitle className="flex items-center gap-2 text-lg">
-                      <BarChart3 className="w-5 h-5 text-purple-400" />
+                      <BarChart3 className="w-5 h-5 text-muted-foreground" />
                       Analyse du Marché
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-5 pt-2">
                     {/* TAM/SAM/SOM */}
                     <div className="grid grid-cols-3 gap-4">
-                      <div className="bg-purple-500/10 rounded-lg p-4 text-center">
+                      <div className="bg-muted/30 rounded-lg p-4 text-center border border-border">
                         <p className="text-xs text-muted-foreground mb-1">TAM</p>
-                        <p className="text-lg font-semibold text-purple-400">{data.market?.tam || "N/A"}</p>
+                        <p className="text-lg font-semibold text-foreground">{data.market?.tam || "N/A"}</p>
                       </div>
-                      <div className="bg-purple-500/10 rounded-lg p-4 text-center">
+                      <div className="bg-muted/30 rounded-lg p-4 text-center border border-border">
                         <p className="text-xs text-muted-foreground mb-1">SAM</p>
-                        <p className="text-lg font-semibold text-purple-400">{data.market?.sam || "N/A"}</p>
+                        <p className="text-lg font-semibold text-foreground">{data.market?.sam || "N/A"}</p>
                       </div>
-                      <div className="bg-purple-500/10 rounded-lg p-4 text-center">
+                      <div className="bg-muted/30 rounded-lg p-4 text-center border border-border">
                         <p className="text-xs text-muted-foreground mb-1">SOM</p>
-                        <p className="text-lg font-semibold text-purple-400">{data.market?.som || "N/A"}</p>
+                        <p className="text-lg font-semibold text-foreground">{data.market?.som || "N/A"}</p>
                       </div>
                     </div>
                     
@@ -1268,7 +1254,7 @@ export default function DueDiligenceResult() {
                         <ul className="space-y-1">
                           {toArray(data.market?.trends).map((t, i) => (
                             <li key={i} className="text-sm text-foreground/90 flex items-start gap-2">
-                              <TrendingUp className="w-3 h-3 mt-1 text-purple-400 flex-shrink-0" />
+                              <TrendingUp className="w-3 h-3 mt-1 text-muted-foreground flex-shrink-0" />
                               {stripInlineSources(t)}
                             </li>
                           ))}
@@ -1283,10 +1269,10 @@ export default function DueDiligenceResult() {
 
               {/* Team Tab */}
               <TabsContent value="team" className="mt-4">
-                <Card className="bg-card/80 border-gray-700/50">
+                <Card className="bg-card border-border">
                   <CardHeader className="pb-4">
                     <CardTitle className="flex items-center gap-2 text-lg">
-                      <Users className="w-5 h-5 text-cyan-400" />
+                      <Users className="w-5 h-5 text-muted-foreground" />
                       Équipe & Fondateurs
                     </CardTitle>
                   </CardHeader>
@@ -1294,9 +1280,9 @@ export default function DueDiligenceResult() {
                     {data.team?.overview && (
                       <p className="text-foreground/90 leading-relaxed">{stripInlineSources(data.team.overview)}</p>
                     )}
-                    
+
                     {data.team?.teamSize && (
-                      <div className="bg-cyan-500/10 rounded-lg p-3 inline-block">
+                      <div className="bg-muted/30 border border-border rounded-lg p-3 inline-block">
                         <p className="text-sm"><strong>Taille de l'équipe:</strong> {stripInlineSources(data.team.teamSize)}</p>
                       </div>
                     )}
@@ -1306,15 +1292,15 @@ export default function DueDiligenceResult() {
                         <h4 className="font-semibold mb-3">Fondateurs</h4>
                         <div className="grid md:grid-cols-2 gap-4">
                           {toArray(data.team?.founders).map((f, i) => (
-                            <div key={i} className="bg-gray-800/30 rounded-lg p-4 border border-gray-700/50">
+                            <div key={i} className="bg-muted/20 rounded-lg p-4 border border-border">
                               <div className="flex justify-between items-start mb-2">
                                 <div>
                                   <p className="font-semibold">{f.name}</p>
-                                  <p className="text-sm text-cyan-400">{f.role}</p>
+                                  <p className="text-sm text-muted-foreground">{f.role}</p>
                                 </div>
                                 {f.linkedin && (
                                   <a href={f.linkedin} target="_blank" rel="noopener noreferrer">
-                                    <Linkedin className="w-4 h-4 text-muted-foreground hover:text-cyan-400" />
+                                    <Linkedin className="w-4 h-4 text-muted-foreground hover:text-foreground" />
                                   </a>
                                 )}
                               </div>
@@ -1330,7 +1316,7 @@ export default function DueDiligenceResult() {
                         <h4 className="font-semibold mb-3">Équipe Dirigeante</h4>
                         <div className="space-y-2">
                           {toArray(data.team?.keyExecutives).map((e, i) => (
-                            <div key={i} className="bg-gray-800/20 rounded-lg p-3">
+                            <div key={i} className="bg-muted/20 rounded-lg p-3 border border-border">
                               <p className="font-medium">{e.name} <span className="text-sm text-muted-foreground">- {e.role}</span></p>
                               {e.background && <p className="text-sm text-gray-400 mt-1">{e.background}</p>}
                             </div>
@@ -1346,10 +1332,10 @@ export default function DueDiligenceResult() {
 
               {/* Competition Tab */}
               <TabsContent value="competition" className="mt-4">
-                <Card className="bg-card/80 border-gray-700/50">
+                <Card className="bg-card border-border">
                   <CardHeader className="pb-4">
                     <CardTitle className="flex items-center gap-2 text-lg">
-                      <Shield className="w-5 h-5 text-orange-400" />
+                      <Shield className="w-5 h-5 text-muted-foreground" />
                       Analyse Concurrentielle
                     </CardTitle>
                   </CardHeader>
@@ -1357,10 +1343,10 @@ export default function DueDiligenceResult() {
                     {data.competition?.landscape && (
                       <p className="text-foreground/90 leading-relaxed">{stripInlineSources(data.competition.landscape)}</p>
                     )}
-                    
+
                     {data.competition?.competitiveAdvantage && (
-                      <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-4">
-                        <h4 className="font-semibold text-orange-400 mb-2">Avantage Concurrentiel</h4>
+                      <div className="bg-muted/30 border border-border rounded-lg p-4">
+                        <h4 className="font-semibold text-foreground mb-2">Avantage Concurrentiel</h4>
                         <p className="text-foreground/90">{stripInlineSources(data.competition.competitiveAdvantage)}</p>
                       </div>
                     )}
@@ -1377,7 +1363,7 @@ export default function DueDiligenceResult() {
                         <h4 className="font-semibold mb-3">Concurrents Principaux</h4>
                         <div className="space-y-3">
                           {toArray(data.competition?.competitors).map((c, i) => (
-                            <div key={i} className="bg-gray-800/30 rounded-lg p-4 border border-gray-700/50">
+                            <div key={i} className="bg-muted/20 rounded-lg p-4 border border-border">
                               <div className="flex justify-between items-start mb-2">
                                 <p className="font-semibold">{c.name}</p>
                                 {c.funding && <Badge variant="outline">{c.funding}</Badge>}
@@ -1414,10 +1400,10 @@ export default function DueDiligenceResult() {
 
               {/* Traction Tab */}
               <TabsContent value="traction" className="mt-4">
-                <Card className="bg-card/80 border-gray-700/50">
+                <Card className="bg-card border-border">
                   <CardHeader className="pb-4">
                     <CardTitle className="flex items-center gap-2 text-lg">
-                      <TrendingUp className="w-5 h-5 text-green-400" />
+                      <TrendingUp className="w-5 h-5 text-muted-foreground" />
                       Traction & Milestones
                     </CardTitle>
                   </CardHeader>
@@ -1429,9 +1415,9 @@ export default function DueDiligenceResult() {
                     {data.traction?.customers && (
                       <div className="grid md:grid-cols-2 gap-4">
                         {data.traction.customers.count && (
-                          <div className="bg-green-500/10 rounded-lg p-4">
+                          <div className="bg-muted/30 rounded-lg p-4 border border-border">
                             <p className="text-xs text-muted-foreground mb-1">Clients</p>
-                            <p className="text-xl font-semibold text-green-400">{data.traction.customers.count}</p>
+                            <p className="text-xl font-semibold text-foreground">{data.traction.customers.count}</p>
                           </div>
                         )}
                         {(() => {
@@ -1439,7 +1425,7 @@ export default function DueDiligenceResult() {
                           const list = Array.isArray(notable) ? notable : (typeof notable === "string" ? [notable] : []);
                           if (list.length === 0) return null;
                           return (
-                            <div className="bg-gray-800/30 rounded-lg p-4">
+                            <div className="bg-muted/20 rounded-lg p-4 border border-border">
                               <p className="text-xs text-muted-foreground mb-2">Clients Notables</p>
                               <div className="flex flex-wrap gap-2">
                                 {list.map((c, i) => (
@@ -1461,7 +1447,7 @@ export default function DueDiligenceResult() {
                           <h4 className="font-semibold mb-3">Milestones Clés</h4>
                           <div className="space-y-2">
                             {list.map((m, i) => (
-                              <div key={i} className="flex items-start gap-3 bg-gray-800/20 rounded-lg p-3">
+                              <div key={i} className="flex items-start gap-3 bg-muted/20 rounded-lg p-3 border border-border">
                                 <div className="w-2 h-2 rounded-full bg-green-400 mt-2 flex-shrink-0" />
                                 <div className="flex-1">
                                   <p className="text-sm text-gray-300">{stripInlineSources(toDisplayString(m?.milestone))}</p>
@@ -1516,11 +1502,11 @@ export default function DueDiligenceResult() {
 
               {/* Risks Tab */}
               <TabsContent value="risks" className="mt-4">
-                <Card className="bg-card/80 border-gray-700/50">
+                <Card className="bg-card border-border">
                   <CardHeader className="pb-4">
                     <CardTitle className="flex items-center justify-between text-lg">
                       <span className="flex items-center gap-2">
-                        <AlertTriangle className="w-5 h-5 text-red-400" />
+                        <AlertTriangle className="w-5 h-5 text-muted-foreground" />
                         Analyse des Risques
                       </span>
                       {getRiskBadge(data.risks?.overallRiskLevel)}
@@ -1594,11 +1580,11 @@ export default function DueDiligenceResult() {
 
               {/* Recommendation Tab */}
               <TabsContent value="recommendation" className="mt-4">
-                <Card className="bg-gradient-to-br from-amber-500/10 to-orange-500/5 border-amber-500/30">
+                <Card className="bg-card border-border">
                   <CardHeader className="pb-4">
                     <CardTitle className="flex items-center justify-between text-lg">
                       <span className="flex items-center gap-2">
-                        <Lightbulb className="w-5 h-5 text-amber-400" />
+                        <Lightbulb className="w-5 h-5 text-muted-foreground" />
                         Recommandation d'Investissement
                       </span>
                       {getRecommendationBadge(data.investmentRecommendation?.recommendation)}
@@ -1613,17 +1599,17 @@ export default function DueDiligenceResult() {
                     )}
                     
                     <div className="grid md:grid-cols-3 gap-4 my-4">
-                      <div className="bg-gray-800/50 rounded-lg p-3 text-center">
+                      <div className="bg-muted/30 rounded-lg p-3 text-center border border-border">
                         <p className="text-xs text-muted-foreground mb-1">Multiple Cible</p>
-                        <p className="text-lg font-semibold text-amber-400">{toDisplayString(data.investmentRecommendation?.targetReturn) || "Non disponible"}</p>
+                        <p className="text-lg font-semibold text-primary">{toDisplayString(data.investmentRecommendation?.targetReturn) || "Non disponible"}</p>
                       </div>
-                      <div className="bg-gray-800/50 rounded-lg p-3 text-center">
+                      <div className="bg-muted/30 rounded-lg p-3 text-center border border-border">
                         <p className="text-xs text-muted-foreground mb-1">Horizon</p>
                         <p className="text-lg font-semibold">{toDisplayString(data.investmentRecommendation?.investmentHorizon) || "Non disponible"}</p>
                       </div>
-                      <div className="bg-gray-800/50 rounded-lg p-3 text-center">
+                      <div className="bg-muted/30 rounded-lg p-3 text-center border border-border">
                         <p className="text-xs text-muted-foreground mb-1">Ticket Suggéré</p>
-                        <p className="text-lg font-semibold text-green-400">{toDisplayString(data.investmentRecommendation?.suggestedTicket) || "Non disponible"}</p>
+                        <p className="text-lg font-semibold text-primary">{toDisplayString(data.investmentRecommendation?.suggestedTicket) || "Non disponible"}</p>
                       </div>
                     </div>
                     
@@ -1652,8 +1638,8 @@ export default function DueDiligenceResult() {
                     </div>
                     
                     {toArray(data.investmentRecommendation?.keyQuestions).length > 0 && (
-                      <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-4">
-                        <h4 className="font-semibold text-blue-400 mb-2">Questions à Creuser</h4>
+                      <div className="bg-muted/30 border border-border rounded-lg p-4">
+                        <h4 className="font-semibold text-foreground mb-2">Questions à Creuser</h4>
                         <ul className="space-y-1 text-sm">
                           {toArray(data.investmentRecommendation?.keyQuestions).map((q, i) => (
                             <li key={i} className="text-gray-300">• {toDisplayString(q)}</li>
@@ -1683,11 +1669,11 @@ export default function DueDiligenceResult() {
 
               {/* Sources Tab */}
               <TabsContent value="sources" className="mt-4">
-                <Card className="bg-card/80 border-gray-700/50">
+                <Card className="bg-card border-border">
                   <CardHeader className="pb-4">
                     <CardTitle className="flex items-center justify-between text-lg">
                       <span className="flex items-center gap-2">
-                        <LinkIcon className="w-5 h-5 text-gray-400" />
+                        <LinkIcon className="w-5 h-5 text-muted-foreground" />
                         Toutes les Sources
                       </span>
                       <Badge variant="outline" className="text-xs">{allSourcesAggregated.length || data.allSources?.length || 0} sources</Badge>
@@ -1695,7 +1681,7 @@ export default function DueDiligenceResult() {
                   </CardHeader>
                   <CardContent className="pt-2">
                     {data.dataQuality && (
-                      <div className="mb-6 p-4 bg-gray-800/30 rounded-lg border border-gray-700/30">
+                      <div className="mb-6 p-4 bg-muted/20 rounded-lg border border-border">
                         <div className="flex items-center justify-between mb-3">
                           <span className="text-sm font-medium text-gray-200">Qualité des Données</span>
                           <Badge variant={
@@ -1706,7 +1692,7 @@ export default function DueDiligenceResult() {
                           </Badge>
                         </div>
                         {toArray(data.dataQuality?.limitations).length > 0 && (
-                          <div className="text-xs text-muted-foreground mt-3 pt-3 border-t border-gray-700/30">
+                          <div className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border">
                             <p className="font-medium mb-2 text-gray-300">Limitations:</p>
                             <ul className="space-y-1">
                               {toArray(data.dataQuality?.limitations).map((l, i) => (
@@ -1729,12 +1715,12 @@ export default function DueDiligenceResult() {
                             href={source.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="block p-3 bg-gray-800/30 rounded-lg hover:bg-gray-800/50 border border-gray-700/30 hover:border-amber-500/30 transition-all group"
+                            className="block p-3 bg-muted/20 rounded-lg hover:bg-muted/40 border border-border hover:border-border transition-all group"
                           >
                             <div className="flex items-start justify-between gap-3">
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 mb-1">
-                                  <p className="text-sm font-medium text-gray-200 group-hover:text-amber-400 transition-colors truncate">
+                                  <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors truncate">
                                     {source.name}
                                   </p>
                                   {source.type && (
@@ -1750,7 +1736,7 @@ export default function DueDiligenceResult() {
                                   <p className="text-xs text-gray-400 mt-1.5 line-clamp-2">{source.relevance}</p>
                                 )}
                               </div>
-                              <ExternalLink className="w-4 h-4 text-muted-foreground group-hover:text-amber-400 transition-colors flex-shrink-0 mt-0.5" />
+                              <ExternalLink className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0 mt-0.5" />
                             </div>
                           </a>
                         ))}
@@ -1762,7 +1748,7 @@ export default function DueDiligenceResult() {
 
               {/* Assistant IA — approfondir des points du rapport */}
               <TabsContent value="assistant" className="mt-4">
-                <div className="rounded-xl border border-primary/40 bg-card/80 backdrop-blur-sm overflow-hidden w-full shadow-lg">
+                <div className="rounded-xl border border-border bg-card overflow-hidden w-full">
                   <div className="h-[580px] overflow-hidden w-full">
                     <AIQAChat
                       startupData={{
@@ -1783,10 +1769,10 @@ export default function DueDiligenceResult() {
             {/* Bloc Sources en bas de page — liens cliquables, toujours visible */}
             <section id="sources-du-rapport" aria-label="Sources du rapport">
             {allSourcesAggregated.length > 0 ? (
-              <Card className="rounded-xl border border-primary/30 bg-card/80 backdrop-blur-sm shadow-lg overflow-hidden">
-                <CardHeader className="pb-3 border-b border-gray-700/50">
+              <Card className="rounded-xl border border-border bg-card overflow-hidden">
+                <CardHeader className="pb-3 border-b border-border">
                   <CardTitle className="flex items-center gap-2 text-lg">
-                    <LinkIcon className="w-5 h-5 text-primary" />
+                    <LinkIcon className="w-5 h-5 text-muted-foreground" />
                     Sources du rapport
                     <Badge variant="outline" className="ml-2 text-xs font-normal">
                       {allSourcesAggregated.length} source{allSourcesAggregated.length > 1 ? "s" : ""}
@@ -1804,7 +1790,7 @@ export default function DueDiligenceResult() {
                         href={source.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm bg-gray-800/50 hover:bg-primary/20 border border-gray-700/50 hover:border-primary/40 text-foreground/90 hover:text-primary transition-all"
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm bg-muted/40 hover:bg-muted border border-border text-foreground/90 hover:text-primary transition-all"
                         title={source.url}
                       >
                         <LinkIcon className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
@@ -1816,7 +1802,7 @@ export default function DueDiligenceResult() {
                 </CardContent>
               </Card>
             ) : (
-              <Card className="rounded-xl border border-gray-700/50 bg-card/60 backdrop-blur-sm overflow-hidden">
+              <Card className="rounded-xl border border-border bg-card overflow-hidden">
                 <CardHeader className="pb-2">
                   <CardTitle className="flex items-center gap-2 text-base text-muted-foreground">
                     <LinkIcon className="w-4 h-4" />
@@ -1832,7 +1818,7 @@ export default function DueDiligenceResult() {
 
             {/* Footer metadata */}
             {data.metadata && (
-              <div className="text-center text-xs text-muted-foreground pt-6 border-t border-gray-700/50">
+              <div className="text-center text-xs text-muted-foreground pt-6 border-t border-border">
                 <p>
                   Rapport généré le {new Date(data.metadata.generatedAt || "").toLocaleString("fr-FR")}
                   {data.metadata.searchResultsCount && ` • ${data.metadata.searchResultsCount} résultats de recherche analysés`}

@@ -253,7 +253,7 @@ export default function PipelineProgress() {
             <Sparkles className="w-3.5 h-3.5" />
             Pipeline Auto — 1 clic
           </div>
-          <h1 className="text-3xl sm:text-4xl font-bold text-foreground tracking-tight mb-2 bg-gradient-to-r from-foreground to-primary bg-clip-text text-transparent">
+          <h1 className="text-3xl sm:text-4xl font-bold text-foreground tracking-tight mb-2">
             {isDone ? "Analyse complète !" : isError ? "Erreur pipeline" : "Analyse en cours…"}
           </h1>
           {status?.thesisSummary?.sectors && (
@@ -265,7 +265,7 @@ export default function PipelineProgress() {
         </div>
 
         {/* Steps */}
-        <Card className="bg-card/70 border border-primary/30 backdrop-blur-sm shadow-lg mb-6">
+        <Card className="bg-card border border-border mb-6">
           <CardHeader className="pb-3">
             <CardTitle className="text-base text-foreground">
               Progression{" "}
@@ -326,7 +326,7 @@ export default function PipelineProgress() {
 
         {/* Picked startup card */}
         {status?.pickedStartup && (
-          <Card className="bg-card/70 border border-primary/40 backdrop-blur-sm shadow-lg mb-6 glow-ai-vc">
+          <Card className="bg-card border border-border mb-6">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base text-foreground flex items-center gap-2">
@@ -413,7 +413,7 @@ export default function PipelineProgress() {
 
         {/* Shortlist : autres startups identifiées */}
         {status?.shortlist && status.shortlist.length > 1 && (
-          <Card className="bg-card/70 border border-primary/20 backdrop-blur-sm shadow-lg mb-6">
+          <Card className="bg-card border border-border mb-6">
             <CardHeader className="pb-3">
               <CardTitle className="text-base text-foreground flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-primary" />
@@ -454,7 +454,7 @@ export default function PipelineProgress() {
 
         {/* Error state */}
         {isError && (
-          <Card className="bg-card/70 border border-destructive/30 backdrop-blur-sm shadow-lg mb-6">
+          <Card className="bg-card border border-destructive/30 mb-6">
             <CardContent className="pt-6 space-y-4">
               <div className="flex items-start gap-3">
                 <AlertTriangle className="w-5 h-5 text-destructive mt-0.5 shrink-0" />
@@ -483,7 +483,7 @@ export default function PipelineProgress() {
         {/* CTA : due diligence de la startup recommandée */}
         {isDone && status?.pickedStartup && (
           <Button
-            className="w-full h-12 bg-primary hover:bg-primary/90 text-primary-foreground glow-ai-vc"
+            className="w-full h-12 bg-primary hover:bg-primary/90 text-primary-foreground"
             onClick={() => goToDD(status.pickedStartup!.name, status.pickedStartup!.url, status.finalResult)}
           >
             {status.finalResult ? "Voir le rapport de " : "Due diligence de "}

@@ -260,9 +260,9 @@
     box-shadow: var(--shadow-glow-accent);
   }
   
-  /* Glow jaune AI-VC */
+  /* Glow jaune AI-VC — supprimé (éléments statiques) */
   .glow-ai-vc {
-    box-shadow: 0 0 20px hsl(48 100% 55% / 0.3);
+    box-shadow: none;
   }
 
   /* Data pulse animation */
