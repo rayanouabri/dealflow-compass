@@ -518,16 +518,46 @@ Réponds UNIQUEMENT avec du JSON valide.`;
         return end > start ? noMarkdown.slice(start, end + 1) : null;
       };
       let enrichedAnalyzeContext = analyzeContext;
+
+      // ——— SYSTÉMATIQUE : Requêtes équipe obligatoires (car souvent manquantes) ———
+      const teamQueries = [
+        `${companyName} founding team members`,
+        `site:linkedin.com ${companyName} company`,
+        `${companyName} CEO founder background`,
+        `${companyName} CTO VP Engineering`,
+        `${companyName} team hiring employees`,
+      ];
+      const teamLines: string[] = [];
+      const seenTeamUrl = new Set<string>();
+      try {
+        const teamResults = await Promise.all(teamQueries.map(q => braveSearch(q, 6).catch(() => [])));
+        for (const results of teamResults) {
+          for (const r of results) {
+            if (r?.url && !seenTeamUrl.has(r.url)) {
+              seenTeamUrl.add(r.url);
+              const line = `${r.title || ""}: ${r.description || ""} | ${r.url}`.trim();
+              if (line.length > 20) teamLines.push(line);
+            }
+          }
+        }
+        if (teamLines.length > 0) {
+          enrichedAnalyzeContext = `${analyzeContext}\n\n=== RECHERCHES ÉQUIPE (5 requêtes systématiques — PRIORITÉ) ===\n${teamLines.join("\n").slice(0, 3000)}`;
+          console.log(`[DueDiligence] Équipe systématique: ${teamLines.length} résultats trouvés`);
+        }
+      } catch (teamErr) {
+        console.warn("[DueDiligence] Requêtes équipe sistématiques ignorées:", teamErr);
+      }
+
       try {
         const aiEndpointGap = await getAIEndpoint();
-        const contextExtract = typeof analyzeContext === "string" ? analyzeContext.slice(0, 7000) : "";
+        const contextExtract = typeof enrichedAnalyzeContext === "string" ? enrichedAnalyzeContext.slice(0, 7000) : "";
         const gapPrompt = `Tu es un analyste VC. Contexte de recherche pour une due diligence sur "${companyName}".
 
 CONTEXTE :
 ${contextExtract}
 
-TÂCHE : Identifie 2 à 4 thèmes où les infos sont INSUFFISANTES pour remplir le rapport. Priorité : (1) équipe/fondateurs (LinkedIn, parcours, formation), (2) marché (TAM/SAM, évolution, tendances, acteurs), (3) clients/traction (customers, partenariats, chiffres), (4) financements/métriques. Pour chaque thème, 1 à 2 requêtes web en ANGLAIS, courtes ; inclure "${companyName}" (ex: "${companyName} founder LinkedIn", "${companyName} market size TAM").
-Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 4 gaps, 2 queries par gap. Si suffisant : {"gaps":[]}.`;
+TÂCHE : Identifie 1 à 3 thèmes où les infos sont ENCORE INSUFFISANTES pour remplir le rapport (si l'équipe est complète, mets-la en bas de priorité). Priorité : (1) marché (TAM/SAM, évolution, tendances, acteurs), (2) clients/traction (customers, partenariats, chiffres), (3) financements/métriques. Pour chaque thème, 1 à 2 requêtes web en ANGLAIS, courtes ; inclure "${companyName}".
+Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 3 gaps, 2 queries par gap. Si suffisant : {"gaps":[]}.`;
 
         const gapBody = { contents: [{ parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 2048, responseMimeType: "application/json" as const, ...GEMINI_THINKING } };
         await reserveAiCall();
