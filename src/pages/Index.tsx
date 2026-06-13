@@ -21,17 +21,14 @@ export default function Index() {
     return () => clearTimeout(t);
   }, [user, authLoading, showAuthDialog, navigate]);
 
+  // Connecté → l'app ; sinon → inscription (compte gratuit, analyses illimitées).
   const handleStartTrial = () => {
-    if (hasTrialRemaining) {
+    if (user) {
       navigate("/analyser");
       return;
     }
-    if (!user) {
-      setAuthView("signup");
-      setShowAuthDialog(true);
-    } else {
-      setShowPaywall(true);
-    }
+    setAuthView("signup");
+    setShowAuthDialog(true);
   };
 
   const handleLogin = () => {

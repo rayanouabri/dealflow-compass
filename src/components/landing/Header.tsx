@@ -62,7 +62,7 @@ export function Header({ onStartTrial, onLogin }: HeaderProps) {
             onClick={onStartTrial}
             className="h-9 px-4 text-[13px] font-medium bg-foreground text-background hover:bg-foreground/90"
           >
-            Essai gratuit
+            Créer un compte
           </Button>
         </div>
 
@@ -97,7 +97,7 @@ export function Header({ onStartTrial, onLogin }: HeaderProps) {
                 className="w-full h-9 text-sm bg-foreground text-background hover:bg-foreground/90"
                 onClick={onStartTrial}
               >
-                Essai gratuit
+                Créer un compte
               </Button>
             </div>
           </div>

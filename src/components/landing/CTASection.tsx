@@ -14,8 +14,8 @@ export function CTASection({ onStartTrial }: CTASectionProps) {
             Votre prochain deal est déjà dans les signaux.
           </h2>
           <p className="text-[15px] text-muted-foreground leading-relaxed mb-8 max-w-lg">
-            Entrez le nom de votre fonds. En cinq minutes, vous avez une startup alignée avec
-            votre thèse et son rapport de due diligence sourcé.
+            Cochez vos secteurs et stades, précisez votre thèse. En quelques minutes, vous avez
+            une startup alignée avec vos critères et son rapport de due diligence sourcé.
           </p>
           <div className="flex flex-col sm:flex-row items-start gap-4">
             <Button
@@ -23,11 +23,11 @@ export function CTASection({ onStartTrial }: CTASectionProps) {
               onClick={onStartTrial}
               className="gap-2 h-11 px-6 text-sm font-medium bg-foreground text-background hover:bg-foreground/90"
             >
-              Lancer une analyse
+              Créer mon compte gratuit
               <ArrowRight className="w-4 h-4" />
             </Button>
             <p className="text-[13px] text-muted-foreground sm:pt-3">
-              5 analyses offertes, sans carte bancaire.
+              Analyses illimitées, sans carte bancaire.
             </p>
           </div>
         </div>

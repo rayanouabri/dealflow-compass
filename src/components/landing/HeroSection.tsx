@@ -48,9 +48,7 @@ export function HeroSection({ onStartTrial, onWatchDemo, trialRemaining }: HeroS
             </div>
 
             <p className="text-[13px] text-muted-foreground">
-              {trialRemaining > 0
-                ? `${trialRemaining} analyses gratuites restantes, sans carte bancaire.`
-                : "5 analyses gratuites, sans carte bancaire."}
+              Compte gratuit · analyses illimitées · sans carte bancaire.
             </p>
           </div>
 
