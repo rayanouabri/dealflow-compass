@@ -13,7 +13,7 @@ SaaS for VCs/angel investors to analyze startups against their thesis. Features:
 - **Frontend**: React 18 (Vite) + TypeScript + TailwindCSS + shadcn/ui
 - **Backend**: Supabase (PostgreSQL, Auth, Edge Functions)
 - **AI**: Google Gemini 2.5-pro (Gemini API or Vertex AI — configured via Supabase secrets)
-- **Search**: Brave Search API (web sourcing)
+- **Search**: Oxylabs Real-time API (Bing SERP) for web sourcing
 - **Hosting**: Vercel (auto-deploy on main)
 
 ## Key Files

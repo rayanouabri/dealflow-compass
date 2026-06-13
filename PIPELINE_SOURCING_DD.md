@@ -1,609 +1,195 @@
-# Pipeline Sourcing + Due Diligence - Documentation Complète
+# Pipeline Sourcing + Due Diligence — Documentation
 
 ## Vue d'ensemble
 
-AI-VC exécute une pipeline complexe en 5 étapes pour transformer une thèse d'investissement en rapports due diligence détaillés :
+AI-VC transforme les **critères de recherche saisis par l'utilisateur** en un rapport
+de due diligence complet, via un pipeline chaîné (une étape = une invocation Edge
+Function, pour rester sous le wall-time Supabase ~150s par étape).
 
 ```
-Analyse Thèse → Sourcing Multi-Source → Picking/Scoring → DD Search → DD Analyze
-     (45s)          (180s max)            (120s)         (150s)       (300s)
+Structuration thèse → Sourcing multi-source → Picking/Scoring → DD Search → DD Analyze
+      (~15s)               (~45-60s)             (~10s)         (~35s)      (~50s)
 ```
+
+Fonction principale : `supabase/functions/pipeline-orchestrator/index.ts`
+(self-invocation `action: "continue"` entre chaque étape).
+
+> **Changement clé (juin 2026)** : l'utilisateur ne donne plus un nom de fonds à
+> rechercher. Il saisit directement ses critères (secteurs, stades, géographie,
+> ticket, texte libre). On ne dépense plus de budget de recherche pour deviner la
+> thèse d'un fonds — ce budget est réalloué au sourcing.
 
 ---
 
-## Exemple: Supernova Invest
+## Entrée : critères utilisateur
 
-Pour illustrer la pipeline complète, on va suivre un sourcing réel pour **Supernova Invest** (fonds deep tech français).
-
-### Thèse Supernova Invest (fictive pour cet exemple)
+Formulaire `src/pages/Analyser.tsx` + `src/components/CustomThesisInput.tsx`.
+L'utilisateur **coche** (multi-sélection) et précise :
 
 ```json
 {
-  "fundName": "Supernova Invest",
-  "sectors": ["deep tech", "quantum computing", "materials science"],
-  "stage": {
-    "min": "pre-seed",
-    "max": "series-a"
-  },
-  "geography": {
-    "primary": "France",
-    "frenchBias": true
-  },
-  "avgTicket": "500k-2M EUR",
+  "sectors": ["Deeptech", "Healthtech / Biotech"],   // multi
+  "stages": ["Pre-seed", "Seed"],                     // multi
+  "geography": "Europe",                              // 1 zone principale
+  "ticketSize": "< 500 K€",                           // optionnel
+  "description": "Startups deeptech à forte IP (façon Alice & Bob, Pasqal). Éviter ESN, conseil."
+}
+```
+
+`sectors` et `stages` sont des **cases à cocher multiples**. `description` est un
+bloc de texte **optionnel** (thèse, critères, exemples de startups / portfolio).
+Lancement : POST `pipeline-orchestrator` `{ action: "start", customThesis }`.
+
+---
+
+## ÉTAPE 1 — Structuration de la thèse (`handleThesisAnalysis`)
+
+Aucune recherche web. Un seul appel Gemini (2.5-pro) qui **structure** les critères
+de l'utilisateur en stratégie de sourcing. Les critères saisis **font autorité** :
+l'IA respecte secteurs/stades/géographie à la lettre et n'invente pas une thèse
+générique. Le texte libre est exploité pour préciser l'ICP et les mots-clés.
+
+Prompt : `_shared/prompts/thesis-analysis.ts`. Cache 7 j sur `thesis|custom|<hash>`.
+
+### Sortie (extrait)
+
+```json
+{
+  "sectors": ["Deeptech", "Healthtech", "Biotech"],
+  "stage": { "min": "pre-seed", "max": "seed" },
+  "geography": { "primary": "Europe", "frenchBias": false },
   "idealCompanyProfile": {
-    "definition": "Startups avec technologie breakthrough (brevets, IP, R&D), équipes fondateurs issus de la recherche ou grandes tech",
-    "mustHaveKeywords": ["quantum", "materials", "semiconductor", "nanotechnology", "photonics", "AI chip"],
-    "exclusionKeywords": ["consulting", "service provider", "SaaS generic", "marketplace"]
-  }
+    "definition": "...",
+    "mustHaveKeywords": ["propriété intellectuelle", "brevet", "recherche scientifique", "deeptech"],
+    "exclusionKeywords": ["Agence", "ESN", "Conseil", "SaaS générique"],
+    "nafCodes": ["72.19Z"],
+    "inseeNameTokens": ["bio", "labs", "tech"]
+  },
+  "searchStrategy": { "priorityQueries": ["..."] }
 }
 ```
 
----
-
-## ÉTAPE 1: Analyse de la Thèse (analyze-fund function)
-
-### Input
-- Fund name: "Supernova Invest"
-- Ou custom thesis
-
-### Process
-
-1. **Web Search pour contexte du fonds** (Brave Search, 5-10 requêtes)
-   - "Supernova Invest funding thesis"
-   - "Supernova Invest portfolio companies"
-   - "Supernova Invest deep tech quantum"
-
-2. **Extraction des criteria par Gemini** → JSON structuré
-   - Secteurs: deep tech, quantum, materials
-   - Stage: pre-seed à Series A
-   - Géographie: France + Europe
-   - Keywords obligatoires: quantum, materials, semiconductor, photonics
-   - Exclusions: consulting, marketplace, SaaS generic
-
-3. **Analyse du marché** (optionnel)
-   - TAM du quantum computing
-   - Competitors knowns dans le portefeuille
-
-### Output
-
-```json
-{
-  "sectors": ["deep tech", "quantum computing", "materials science"],
-  "stage": {"min": "pre-seed", "max": "series-a"},
-  "geography": {"primary": "France", "frenchBias": true},
-  "avgTicket": "500k-2M EUR",
-  "searchStrategy": {
-    "priorityQueries": [
-      "quantum computing startup France",
-      "quantum chip fabrication",
-      "topological materials startup"
-    ]
-  },
-  "idealCompanyProfile": {
-    "definition": "Startups avec technologie brevetée, équipes PhD/ex-GAFAM",
-    "mustHaveKeywords": ["quantum", "materials", "semiconductor"],
-    "exclusionKeywords": ["consulting", "marketplace", "saas generic"]
-  },
-  "confidence": "high",
-  "dataQuality": "good"
-}
-```
+`min` = stade le plus précoce coché, `max` = le plus avancé. Validation de forme :
+si la réponse n'a pas `sectors[]` + `idealCompanyProfile`, l'étape échoue (retry).
 
 ---
 
-## ÉTAPE 2: Sourcing Multi-Source (handleSourcingStart)
+## ÉTAPE 2 — Sourcing multi-source (`handleSourcingStart`)
 
-### Input
-- Thesis: {sectors, stage, geography, mustHaveKeywords, exclusionKeywords}
-- targetCount: 1-3 startups
+### Sources interrogées en parallèle
 
-### Process
+| Source | Coût | Rôle |
+|--------|------|------|
+| **Oxylabs (Bing SERP)** | payant | recherche web principale (`searchAll`) |
+| INSEE SIRENE | gratuit | immatriculations FR récentes par code NAF |
+| Hacker News (Algolia) | gratuit | Show HN = signal produit |
+| GitHub | gratuit | orgs tech (thèses logicielles) |
+| **Listicle mining** (Oxylabs) | payant | extraction de startups depuis F6S/Seedtable/EU-Startups… |
 
-Le sourcing lance **7 couches de recherche EN PARALLÈLE** :
+> Google bloque Oxylabs → on utilise **Bing** (`source: "bing_search", parse: true`),
+> réponse JSON structurée ~2.7 s/req. Timeout dur 9 s, batch 10.
 
-#### A. Recherche Web (Brave Search) — 80 requêtes max
-**Requêtes générées** depuis la thèse (buildFrenchBiasedQueries):
+### Requêtes
+
+`buildFrenchBiasedQueries(sectors, stage, geography)` + priorityQueries de l'IA +
+signaux LinkedIn société + signaux IP/brevets. **Cap : 50 requêtes** (relevé de 40
+grâce au budget libéré par la suppression de la recherche de thèse), avec un garde-fou
+temps de **60 s** (on arrête de lancer des batches au-delà).
+
+### Listicle mining (`_shared/listicle-miner.ts`)
+
+Les pages d'agrégateurs (F6S, Seedtable, EU-Startups, ai-startups.pro…) listent de
+vraies startups finançables. Au lieu de les jeter, on récupère leur texte via Oxylabs
+et on en **extrait les noms** via un appel IA filtré sur la thèse. Catégorie
+`web_curated` — c'est la source des candidats réels et reconnaissables.
+
+### Premier classement — PILOTÉ PAR LES CRITÈRES (`deduplicateAndRank`)
+
+L'ancienne formule `(weighted_mentions × signal_types_count) + recency + cross_signal`
+classait par **volume de signal** — inadaptée (une coquille très mentionnée passait
+devant une startup on-thesis). Nouvelle formule, pilotée par l'**adéquation aux
+critères de l'utilisateur** :
+
 ```
-Categories:
-- Stage-aware: "pre-seed quantum startup France", "Series A deep tech"
-- Sector: "quantum computing startups", "materials science innovation"
-- Precision: "photonic integrated circuits startup", "topological insulator"
-- Geographic: "Paris deep tech", "Île-de-France quantum"
+criteriaFit (0-100)  = match textuel des mustHaveKeywords + secteurs (jusqu'à 70)
+                       + bonus géographie (15)
+                       − pénalité si terme d'exclusion présent (30)
 
-Example for Supernova:
-- "quantum startup France pre-seed 2024"
-- "quantum chip startup EUR"
-- "materials science deeptech France"
-- "photonics startup Series A"
-- "topological computing startup"
-```
-
-**Per-query processing**:
-```
-1. Execute Brave Search (5 results per query)
-2. Extract all URLs + titles + descriptions
-3. Deduplicate by normalized URL
-4. Filter out aggregators (LinkedIn company, GitHub org, Crunchbase, etc.)
-5. Filter out known noise (agencies, media, directories)
-```
-
-#### B. INSEE Search (France Registry) — If geography has "france"
-```
-NAF codes for quantum/materials:
-- 7220Z: R&D in natural sciences & engineering
-- 4799B: Sale of other specialized goods
-
-Output: ~15-25 newly registered companies (past 120-270 days, depending on stage)
-```
-
-#### C. GitHub Search — If sectors contain tech/AI/ML keywords
-```
-Queries:
-- "quantum computing" (org:*) stars:>5
-- "topological materials" in:readme stars:>10
-- "quantum simulator" user:founders
+score = criteriaFit × 1.4                      ← moteur principal (pertinence thèse)
+      + min(35, signalStrength × 0.5)          ← corroboration multi-sources (plafonnée)
+      + recencyScore (0-10)
+      + crossSignalBonus (0-25)
 ```
 
-#### D. Hacker News (Show HN) — 540/365 days lookback
-```
-Queries: ["quantum", "deeptech", "materials"]
-Example match: "Show HN: I built a quantum simulator in Rust"
-```
+`signalStrength = Σ poids(catégories) × min(mentions, 15)`. La force de signal ne fait
+plus que **départager** à pertinence égale. Les startups minées (`web_curated`,
+déjà on-thesis) sont injectées en tête via `mergeMinedCandidates`.
 
-#### E. LinkedIn Company Signals
-```
-Queries targeting:
-- "linkedin.com/company" + quantum
-- Company hiring bursts (Job Board signals)
-- New hires: CTOs, VPs Engineering, Research leads
-```
-
-#### F. IP & Patent Signals
-```
-- Google Patents: quantum computing + photonics
-- INPI (French patent office)
-- Inventor → founder mapping (is the CTO a known inventor?)
-```
-
-#### G. Weak Signals Layer
-```
-- Product Hunt: quantum computing product launches
-- Wellfound: quantum startups in fundraising
-- Y Combinator: quantum computing cohorts
-- Incubators: Station F quantum companies
-```
-
-### Deduplication & Ranking (dedup-ranker.ts)
-
-**Output: Top 50-100 candidates with scores**
-
-```typescript
-interface SourcingCandidate {
-  name: "QuantumX" // startup name
-  url: "quantumx.fr" // website
-  mentionCount: 15 // total mentions across all sources
-  categories: Set["web", "github", "linkedin", "patent"] // signal types
-  sources: ["quantumx.fr", "github.com/quantumx", "linkedin.com/company/quantumx"]
-  score: 78 // weighted score (mentions × signal diversity × recency)
-  crossSignalBonus: 12 // bonus if mentioned in 3+ different sources
-}
-```
-
-**Scoring formula**:
-```
-score = (weighted_mentions × signal_types_count) + recency_bonus + cross_signal_bonus
-
-Example:
-- 5 web mentions (×2 weight each) = 10
-- 3 GitHub mentions (×4 weight) = 12
-- 1 patent mention (×4 weight) = 4
-- Signal diversity (3 types) = +8
-- Recent signal (year=2024) = +2
-- Cross-signal (patent + GitHub + web) = +12
-= 48 raw score → normalized to 0-100
-```
-
-### Output: 10-20 qualified candidates
-```
-[
-  {
-    "name": "QuantumX",
-    "url": "quantumx.fr",
-    "score": 78,
-    "descriptions": [
-      "QuantumX develops quantum simulation software for drug discovery",
-      "Founded 2023, based in Paris, 8-person team",
-      "Patent filed: quantum molecular simulation algorithm"
-    ]
-  },
-  ...
-]
-```
+Puis `filterByICP` (rejet des acteurs hors-profil) → `resolveEntities` (1 appel IA :
+nettoie les noms, écarte le bruit, note la pertinence) → mémoire utilisateur (écarte
+les sociétés déjà proposées).
 
 ---
 
-## ÉTAPE 3: Picking (Scoring & Selection)
+## ÉTAPE 3 — Picking & Scoring (`handlePicking`)
 
-### Input
-- Top 10 candidates from sourcing
-- Thesis analysis
+Top candidats scorés en **un seul appel IA batché** (`buildBatchScoringPrompt`),
+8 critères pondérés (`scoring-engine.ts`) :
 
-### Process
-
-#### 1. Pre-enrichment of registry candidates
 ```
-For INSEE-only startups (no web presence):
-- Perform 1 web search: "[Company Name] startup France"
-- Extract 3 results → descriptions
-- Try to find official website domain
-→ This gives the IA scorer some actual signal, not just a KBIS line
+thesisFit 0.45 (FR) / 0.50 (hors FR)   ← dominant
+signalDiversity 0.12 · sourceCorroboration 0.08 · frenchEcosystem 0.13
+timing 0.08 · teamQuality 0.10 · competitivePosition 0.04 · recency 0.00
+totalWeighted = Σ(scores[k] × poids[k])
 ```
 
-#### 2. Batch Scoring avec Gemini
-```
-Call: buildBatchScoringPrompt(candidates, thesis)
+Garde-fous :
+- **Coquille registre** (seul signal = immatriculation INSEE, sans produit/équipe/
+  traction) → thesisFit plafonné ≤ 45 + redFlag : un nom n'est pas une preuve.
+- Quota diversité : max 3 candidats purement registre dans la shortlist.
+- `thesisFit ≥ 55` = gate strict ; sinon repli sur les vraies entreprises.
+- Score viable minimal 20 (sinon erreur → retry).
 
-Prompt structure:
-- Thesis: sectors, stage, geography, must-have keywords
-- Per-candidate: name, url, descriptions, signal types, mentions count
-
-IA returns:
-{
-  "rankings": [
-    {
-      "index": 0,
-      "scores": {
-        "thesisFit": 72,        ← Most important (45-50% of total)
-        "signalDiversity": 80,  ← Multiple signal types
-        "sourceCorroboration": 65, ← Mentioned in multiple sources
-        "frenchEcosystem": 90,  ← Paris/France bonus
-        "timing": 50,           ← "Why now" resonance
-        "teamQuality": 75,      ← Founder background signals
-        "competitivePosition": 60, ← Moat/differentiation
-        "recency": 85           ← Recent signals (2024)
-      },
-      "whyThisStartup": "Strong quantum IP signal + ex-GAFAM CTO",
-      "whyNow": "Quantum hardware race accelerating, good timing",
-      "redFlags": ["Newly registered, limited traction data"],
-      "comparables": ["IonQ", "Rigetti Computing"],
-      "riskLevel": "medium"
-    }
-  ]
-}
-```
-
-#### 3. Compute weighted score
-```
-totalWeighted = ∑(scores[key] × weights[key])
-
-Weights (French geography):
-- thesisFit: 0.45         ← DOMINANT
-- signalDiversity: 0.12
-- sourceCorroboration: 0.08
-- frenchEcosystem: 0.13
-- timing: 0.08
-- teamQuality: 0.10
-- competitivePosition: 0.04
-- recency: 0.00           ← Don't reward old signals
-
-Example:
-totalWeighted = (72×0.45) + (80×0.12) + (65×0.08) + (90×0.13) + (50×0.08) + (75×0.10) + (60×0.04) + (85×0)
-             = 32.4 + 9.6 + 5.2 + 11.7 + 4 + 7.5 + 2.4 + 0
-             = 72.8 / 100
-```
-
-#### 4. Filtering
-```
-// Remove noise (articles, conferences, non-companies)
-realCompanies = candidates.filter(s => !s.redFlags.includes("not a company"))
-
-// Remove poorly-aligned startups
-wellAligned = realCompanies.filter(s => s.scores.thesisFit >= 55)
-
-// Fallback if too aggressive
-finalShortlist = wellAligned.length > 0 ? wellAligned : realCompanies
-
-// Viability gate: if best score < 20, sourcing failed → retry
-if (finalShortlist[0].score < 20) throw Error("Sourcing insufficient")
-```
-
-#### 5. Result: Pick winner + shortlist
-```
-PICKED: QuantumX (score: 72.8)
-SHORTLIST (alternatives):
-- QBit Technologies (score: 68)
-- PhotonicLabs (score: 65)
-- TopoMaterials (score: 62)
-```
+Le meilleur candidat est retenu (`picked_startup`), le reste forme la `shortlist`.
 
 ---
 
-## ÉTAPE 4: DD Search (due-diligence phase 1)
+## ÉTAPE 4 & 5 — Due Diligence (`due-diligence` function)
 
-### Input
-- Company name: "QuantumX"
-- Company website: "quantumx.fr" (if found)
-- Thesis: sectors, stage, etc.
+**DD Search** : recherche web (Oxylabs) sur la startup retenue — produit, marché,
+équipe (5 requêtes équipe systématiques), financement, concurrence.
 
-### Process
+**DD Analyze** : un appel Gemini produit le rapport JSON complet
+(`maxOutputTokens` 16384). Exigences de profondeur (prompt) : ≥ 4 highlights/risks,
+≥ 3 points par catégorie de risque, 3-5 concurrents **chacun** avec funding +
+forces/faiblesses, market.analysis ≥ 150 mots avec comparables nommés, rationale VC
+structurée. Anti-hallucination : pas d'URL dans le texte (uniquement dans `sources`),
+estimations explicitement marquées.
 
-#### 1. Parallel research queries (~30-40 total)
-```
-Category 1: Company fundamentals (5-6 queries)
-- "QuantumX funding"
-- "QuantumX team founders"
-- "QuantumX valuation"
-- "QuantumX investors"
-- "QuantumX LinkedIn"
-- "QuantumX Crunchbase"
+### Rendu : `src/components/InvestmentMemo.tsx`
 
-Category 2: Product & Technology (5-6 queries)
-- "QuantumX quantum simulator"
-- "QuantumX product demo"
-- "QuantumX technology patent"
-- "QuantumX customers users"
-- "QuantumX software architecture"
-
-Category 3: Market & Traction (5-6 queries)
-- "QuantumX Series A funding round"
-- "QuantumX partnerships"
-- "QuantumX press release"
-- "QuantumX CEO interview"
-- "QuantumX awards recognition"
-
-Category 4: Competition (5 queries)
-- "QuantumX vs IonQ"
-- "QuantumX vs Rigetti"
-- "quantum simulation software comparison"
-- "quantum computing startups 2024"
-
-Category 5: Risks & Controversy (5 queries)
-- "QuantumX layoffs"
-- "QuantumX legal issues"
-- "QuantumX failed pivot"
-- "quantum computing hype cycle risk"
-- "hardware development risks quantum"
-
-Category 6: Team Deep Dive (8-10 queries) ← THIS IS IMPORTANT
-- "QuantumX founder John Doe"
-- "site:linkedin.com QuantumX engineering"
-- "QuantumX team members"
-- "QuantumX CTO background"
-- "John Doe quantum research PhD"
-- "QuantumX hiring jobs"
-- "QuantumX key hires 2024"
-```
-
-#### 2. Cache + dedup
-```
-- Cache all results by (company_name, query) → 7-day TTL
-- Deduplicate URLs → keep only 1 result per domain per topic
-- Extract unique URL list → ~80-120 results
-
-Output searchResults:
-[
-  {
-    "title": "QuantumX Raises $5M Series A from Supernova Invest",
-    "description": "QuantumX, a quantum simulation startup...",
-    "url": "techcrunch.com/quantumx-series-a"
-  },
-  {
-    "title": "Meet the Team: QuantumX Quantum Simulator",
-    "description": "John Doe (CEO), Marie Dupont (CTO, ex-IBM), ...",
-    "url": "quantumx.fr/team"
-  },
-  ...
-]
-```
-
-### Output: searchContext (passed to DD Analyze phase)
-```json
-{
-  "jobId": "dd-12345",
-  "companyName": "QuantumX",
-  "searchResults": [...80 results...],
-  "searchResultsCount": 87,
-  "status": "done"
-}
-```
+Mémo continu (plus d'onglets) : sommaire sticky avec scroll-spy, blocs qui ne
+tronquent jamais le texte (`break-words`), sections résumé → produit → marché →
+concurrence → équipe → traction → financements → risques → opportunités →
+recommandation → sources → assistant IA.
 
 ---
 
-## ÉTAPE 5: DD Analyze (due-diligence phase 2)
+## Performance & coûts
 
-### Input
-- searchContext: {searchResults, companyName}
-- Thesis for context
+- Pipeline complet : ~150 s (chaque étape sous le wall-time edge).
+- Oxylabs : plan Starter 20 $/mois (3000 req). ~50 req sourcing + ~3 pages minées +
+  ~30 req DD par run.
+- Gemini : structuration thèse (1) + mining (1) + résolution (1) + scoring batch (1)
+  + DD analyze (1) ≈ 5 appels / run.
 
-### Process
+## Résultats validés (exemples réels)
 
-#### 1. Build mega-prompt for Gemini
-```
-System: "Tu es analyste VC senior avec 15+ ans d'expérience"
+| Critères saisis | Pick | Shortlist |
+|-----------------|------|-----------|
+| Fintech + SaaS B2B, Seed+A, France | — | Cryptio, Kestra, Meelo, Cobl.ai, Edana |
+| Deeptech + Healthtech, Pre-seed+Seed, Europe | Diamfab (fit 95) | Healshape, Unseenlabs, Vera Genetics, Latitude |
 
-Prompt structure:
-- Instructions détaillées pour chaque section
-- Liste des 12 weak signals à chercher (patents, GitHub, product traction, etc.)
-- Critères de validation (2 sources min par fact)
-- Format JSON requis avec 7 sections:
-  1. Company profile
-  2. Executive Summary
-  3. Product & Technology
-  4. Market & TAM
-  5. Competition
-  6. Financials & Metrics
-  7. Team
-  8. Traction
-  9. Risks
-  10. Investment Recommendation
-  11. Analysis metadata
-
-Example for Team section:
-"ÉQUIPE : OBLIGATOIRE
-- Founders: nom, background, LinkedIn, previous exits
-- Key executives: CTO, VP Eng, etc.
-- Team size + growth
-- Advisors + board
-- RED FLAG: no team info found or suspicious info → mention in confidence"
-```
-
-#### 2. Call Gemini 2.5-pro
-```
-Temperature: 0.1 (deterministic)
-maxTokens: 12000
-
-Processing:
-1. Gemini reads searchContext (87 results)
-2. Extracts data per section
-3. For each metric: prioritize real data → estimation → N/A
-4. Validates with "2 sources min" rule
-5. Returns JSON
-
-Example output for Team:
-{
-  "team": {
-    "overview": "Experienced deeptech team with strong academic background",
-    "founders": [
-      {
-        "name": "John Doe",
-        "role": "CEO & Co-founder",
-        "background": "PhD Physics, MIT; 5 years at Google Quantum AI",
-        "linkedin": "linkedin.com/in/johndoe",
-        "source": "quantumx.fr/team, LinkedIn profile"
-      },
-      {
-        "name": "Marie Dupont",
-        "role": "CTO & Co-founder",
-        "background": "PhD Materials Science, Stanford; ex-IBM Quantum",
-        "linkedin": "linkedin.com/in/mariedupont",
-        "source": "quantumx.fr/team"
-      }
-    ],
-    "keyExecutives": [
-      {
-        "name": "Bob Smith",
-        "role": "VP Business Development",
-        "background": "Previously at Rigetti Computing, 10 years enterprise sales"
-      }
-    ],
-    "teamSize": "12 full-time engineers + 3 advisors",
-    "hiringTrends": "Actively hiring for quantum algorithms engineer role",
-    "sources": [
-      {"name": "QuantumX team page", "url": "quantumx.fr/team"},
-      {"name": "LinkedIn search", "url": "linkedin.com/search/..."}
-    ]
-  }
-}
-```
-
-#### 3. Validation & deterministic corrections
-```
-- Check for hallucinations: all URLs must be findable in searchResults
-- If "John Doe salary" mentioned but not in sources → flag in confidence
-- For missing data: provide intelligent estimate + note it's estimate
-  "Team size: 12-15 engineers (estimate from 8 job openings + 4 mentioned on website)"
-```
-
-### Output: Complete DD Report (JSON)
-```json
-{
-  "company": {
-    "name": "QuantumX",
-    "tagline": "Quantum simulation software for drug discovery",
-    "website": "quantumx.fr",
-    "sector": "Deep Tech / Quantum Computing",
-    "stage": "Series A",
-    "founded": "2023",
-    "headquarters": "Paris, France",
-    "employeeCount": "12"
-  },
-  "executiveSummary": {
-    "overview": "QuantumX is a quantum simulation startup...",
-    "keyHighlights": [...],
-    "keyRisks": [...],
-    "recommendation": "INVEST",
-    "confidenceLevel": "high"
-  },
-  "product": {...},
-  "market": {...},
-  "competition": {...},
-  "financials": {...},
-  "team": {...},
-  "traction": {...},
-  "risks": {...},
-  "investmentRecommendation": {
-    "recommendation": "INVEST",
-    "riskLevel": "medium",
-    "targetReturn": "50-100x",
-    "suggestedTicket": "1.5M EUR"
-  }
-}
-```
-
----
-
-## PROBLÈMES IDENTIFIÉS & SOLUTIONS
-
-### Problème 1: Scores bas (35-40/100) même avec thèse claire
-**Cause**: thesisFit sous-pondéré (30%), ou extraction de thèse imprécise
-**Solution**:
-- thesisFit augmenté à 45-50% ✓ (déjà fait)
-- Améliorer l'extraction de thèse pour être plus PRÉCISE (voir issue)
-
-### Problème 2: DD ne trouve pas l'équipe
-**Cause**: Pas assez de requêtes Team-focused (seulement 2-3 sur 30)
-**Solution**:
-- Ajouter 8-10 requêtes dédiées à l'équipe (LinkedIn, fondateurs, hirings)
-- Forcer la section Team dans le prompt Gemini (OBLIGATOIRE)
-- Valider que chaque founder a ≥2 sources
-
-### Problème 3: Sections manquantes (Traction, Risks, Competition detail)
-**Cause**: Refonte design avait réduit les sections
-**Solution**: ✓ Revert à la version complète (1827 lignes)
-
-### Problème 4: Hallucinations d'URL
-**Cause**: Gemini invente des URLs qui n'existent pas
-**Solution**: 
-- Valider toutes les URLs contre searchResults (la liste réelle)
-- Si URL non trouvée → laisser vide ou mettre null
-
----
-
-## Recommandations pour prochaine amélioration
-
-1. **Améliorer l'extraction de thèse** (Gemini 2.5-pro avec temperature 0.0, strict format)
-2. **Ajouter 8-10 requêtes Team** au DD search
-3. **Valider les URLs** contre les sources réelles trouvées
-4. **Augmenter le threshold de viabilité** : de 20 → 35-40/100 (sourcing faible = retry)
-5. **Tester avec Supernova Invest réellement** et itérer
-6. **Documenter les scores par composant** (pourquoi score bas si thesisFit=72? Bug? Poids mal calibrés?)
-
----
-
-## Exemple complet: Pipeline Supernova Invest
-
-### Input
-```
-Fund: "Supernova Invest"
-Target: 1 startup in deep tech quantum
-```
-
-### ÉTAPE 1: Analyze
-→ Output: Thesis with sectors=[quantum, materials], stage=[pre-seed, Series A]
-
-### ÉTAPE 2: Sourcing
-→ Finds: QuantumX (score 78), QBit (68), PhotonicLabs (65)
-
-### ÉTAPE 3: Picking
-→ Winner: QuantumX (72.8/100)
-→ Reason: Strong quantum IP + ex-GAFAM team + funded
-
-### ÉTAPE 4: DD Search
-→ 87 results found about QuantumX (funding, team, product, risks)
-
-### ÉTAPE 5: DD Analyze
-→ Full report: QuantumX with all 11 sections filled, INVEST recommendation
-
----
-
-*This document should be updated as the pipeline evolves.*
+La thèse structurée respecte exactement les secteurs/stades cochés, le texte libre
+oriente l'ICP et les exclusions, et le classement remonte des startups réelles
+on-thesis (et non des coquilles très mentionnées).
