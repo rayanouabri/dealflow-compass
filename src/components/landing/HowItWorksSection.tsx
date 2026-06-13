@@ -1,9 +1,9 @@
 const steps = [
   {
     number: "01",
-    title: "Définissez la thèse",
+    title: "Définissez vos critères",
     description:
-      "Entrez le nom de votre fonds : l'IA reconstruit votre thèse à partir de votre portfolio réel. Ou décrivez-la directement, secteurs, stade, géographie, ticket.",
+      "Cochez vos secteurs et stades, choisissez la géographie, et précisez votre thèse en texte libre (exemples de startups, portfolio). L'IA structure le tout en stratégie de sourcing.",
   },
   {
     number: "02",
@@ -35,7 +35,7 @@ export function HowItWorksSection() {
               Méthode
             </p>
             <h2 className="font-display text-3xl md:text-[2.25rem] font-medium tracking-tight text-foreground leading-tight">
-              Du nom d'un fonds à un mémo d'investissement.
+              De vos critères à un mémo d'investissement.
             </h2>
             <p className="text-[15px] text-muted-foreground leading-relaxed mt-4 max-w-sm">
               Le pipeline enchaîne quatre étapes sans intervention. Vous gardez la main sur la
