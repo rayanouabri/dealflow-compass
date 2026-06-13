@@ -9,36 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
-import { 
-  ArrowLeft, 
-  FileSearch, 
-  Building2, 
-  TrendingUp, 
-  Users, 
-  Target, 
-  Shield, 
-  DollarSign, 
-  Globe,
-  Linkedin,
-  ExternalLink,
-  CheckCircle2,
-  AlertTriangle,
-  XCircle,
-  Loader2,
-  RefreshCcw,
-  Download,
-  ChevronRight,
-  Briefcase,
-  Award,
-  AlertCircle,
-  Lightbulb,
-  BarChart3,
-  Link as LinkIcon,
-  MessageCircle
+import {
+  ArrowLeft, Building2, TrendingUp, Users, Target, Shield, DollarSign,
+  Globe, Linkedin, ExternalLink, CheckCircle2, AlertTriangle, XCircle,
+  Loader2, RefreshCcw, Download
 } from "lucide-react";
-import { AIQAChat } from "@/components/AIQAChat";
 
 interface DueDiligenceData {
   company?: {
@@ -64,9 +40,7 @@ interface DueDiligenceData {
     description?: string;
     valueProposition?: string;
     technology?: string;
-    patents?: string;
     keyFeatures?: string[];
-    sources?: { name: string; url: string }[];
   };
   market?: {
     tam?: string;
@@ -75,127 +49,73 @@ interface DueDiligenceData {
     cagr?: string;
     trends?: string[];
     analysis?: string;
-    sources?: { name: string; url: string }[];
   };
   competition?: {
     landscape?: string;
-    competitors?: {
+    competitors?: Array<{
       name: string;
       description?: string;
       funding?: string;
       strengths?: string[];
       weaknesses?: string[];
-    }[];
+    }>;
     competitiveAdvantage?: string;
     moat?: string;
-    sources?: { name: string; url: string }[];
   };
   financials?: {
-    fundingHistory?: {
+    fundingHistory?: Array<{
       round?: string;
       amount?: string;
       date?: string;
       investors?: string[];
       valuation?: string;
-      source?: string;
-    }[];
-    totalFunding?: string;
-    latestValuation?: string;
-    metrics?: Record<string, string>;
-    sources?: { name: string; url: string }[];
+    }>;
+    metrics?: {
+      arr?: string;
+      mrr?: string;
+      customers?: string;
+      burnRate?: string;
+      runway?: string;
+      nrr?: string;
+      cac?: string;
+      ltv?: string;
+    };
   };
   team?: {
-    overview?: string;
-    founders?: {
+    founders?: Array<{
       name?: string;
-      role?: string;
+      title?: string;
+      background?: string;
       linkedin?: string;
-      background?: string;
-      source?: string;
-    }[];
-    keyExecutives?: {
+    }>;
+    advisors?: Array<{
       name?: string;
-      role?: string;
-      background?: string;
-    }[];
-    teamSize?: string;
-    culture?: string;
-    hiringTrends?: string;
-    sources?: { name: string; url: string }[];
-  };
-  traction?: {
-    overview?: string;
-    keyMilestones?: {
-      date?: string;
-      milestone?: string;
-      source?: string;
-    }[];
-    customers?: {
-      count?: string;
-      notable?: string[];
-      segments?: string;
-    };
-    partnerships?: string[];
-    awards?: string[];
-    sources?: { name: string; url: string }[];
-  };
-  risks?: {
-    marketRisks?: string[];
-    executionRisks?: string[];
-    financialRisks?: string[];
-    competitiveRisks?: string[];
-    regulatoryRisks?: string[];
-    mitigations?: string[];
-    overallRiskLevel?: string;
-    sources?: { name: string; url: string }[];
-  };
-  opportunities?: {
-    growthOpportunities?: string[];
-    marketExpansion?: string;
-    productExpansion?: string;
-    strategicValue?: string;
-    sources?: { name: string; url: string }[];
+      title?: string;
+      linkedin?: string;
+    }>;
+    size?: string;
   };
   investmentRecommendation?: {
-    recommendation?: string;
-    rationale?: string;
-    strengths?: string[];
-    weaknesses?: string[];
-    keyQuestions?: string[];
-    suggestedNextSteps?: string[];
+    recommendation?: "INVEST" | "WATCH" | "PASS";
     targetReturn?: string;
-    investmentHorizon?: string;
+    riskLevel?: "low" | "medium" | "high";
     suggestedTicket?: string;
-  };
-  allSources?: {
-    name: string;
-    url: string;
-    type?: string;
-    relevance?: string;
-  }[];
-  dataQuality?: {
-    overallScore?: string;
-    dataAvailability?: Record<string, string>;
-    limitations?: string[];
-    sourcesCount?: string;
-  };
-  metadata?: {
-    companyName?: string;
-    generatedAt?: string;
-    searchResultsCount?: number;
+    rationale?: string;
   };
 }
 
-export default function DueDiligenceResult() {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const { user, loading: authLoading, signOut } = useAuth();
-  const { trialRemaining, hasTrialRemaining, useTrialCredit } = useTrial();
-  const { toast } = useToast();
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export default function DueDiligenceResult() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { toast } = useToast();
+  const { user, loading: authLoading, signOut } = useAuth();
+  const { trialRemaining, hasTrialRemaining } = useTrial();
+
   const [data, setData] = useState<DueDiligenceData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState("Initialisation...");
 
@@ -217,8 +137,6 @@ export default function DueDiligenceResult() {
   }, []);
 
   const fetchDueDiligence = async () => {
-    // Rapport déjà généré par le pipeline auto : affichage direct, aucun appel
-    // API (la DD a déjà été payée pendant les étapes 4-5 du pipeline).
     if (requestPayload?.preloadedResult) {
       setData(requestPayload.preloadedResult as DueDiligenceData);
       setProgress(100);
@@ -230,12 +148,10 @@ export default function DueDiligenceResult() {
     setError(null);
     setProgress(0);
 
-    // Progress simulation (phase 1 = 0–45%, phase 2 = 45–90%)
     const progressInterval = setInterval(() => {
       setProgress(prev => {
         if (prev >= 90) return prev;
-        const increment = Math.random() * 6 + 2;
-        return Math.min(prev + increment, 90);
+        return Math.min(prev + Math.random() * 6 + 2, 90);
       });
     }, 600);
 
@@ -243,8 +159,9 @@ export default function DueDiligenceResult() {
       const { data: { session } } = await supabase.auth.getSession();
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
+
       if (!supabaseUrl || !supabaseKey) {
-        throw new Error("Configuration Supabase manquante. Vérifiez les variables d'environnement.");
+        throw new Error("Configuration Supabase manquante.");
       }
 
       const headers = {
@@ -253,10 +170,10 @@ export default function DueDiligenceResult() {
         "apikey": supabaseKey,
       };
 
-      // ——— Phase 1 : recherche (reste sous 150s côté serveur) ———
-      setStatusMessage("Recherche d'informations (sources, financements, équipe…)…");
+      setStatusMessage("Recherche d'informations…");
       const controller1 = new AbortController();
       const timeout1 = setTimeout(() => controller1.abort(), 160_000);
+
       const resSearch = await fetch(`${supabaseUrl}/functions/v1/due-diligence`, {
         method: "POST",
         signal: controller1.signal,
@@ -268,167 +185,117 @@ export default function DueDiligenceResult() {
           additionalContext: requestPayload.additionalContext,
         }),
       });
+
       clearTimeout(timeout1);
-      const textSearch = await resSearch.text();
-      let searchData: { jobId?: string; error?: string; searchResultsCount?: number } = {};
-      try {
-        searchData = textSearch ? JSON.parse(textSearch) : {};
-      } catch {
-        if (!resSearch.ok) throw new Error(textSearch || `Erreur ${resSearch.status}`);
-      }
+      const searchData = await resSearch.json();
+
       if (!resSearch.ok) {
         throw new Error(searchData.error || `Erreur ${resSearch.status}`);
       }
+
       const jobId = searchData.jobId;
       if (!jobId) {
-        throw new Error("Réponse recherche invalide (jobId manquant).");
+        throw new Error("Réponse recherche invalide.");
       }
-      setProgress(50);
-      setStatusMessage("Analyse IA en cours (génération du rapport)…");
 
-      // ——— Phase 2 : analyse IA ———
-      // Wrap the analyze fetch in a retry loop for Gemini transient 503 ("model overloaded").
-      // Backend already retries 3x with backoff; this gives one more attempt after a longer wait.
+      setProgress(50);
+      setStatusMessage("Analyse IA en cours…");
+
       let resAnalyze: Response;
       let analyzeAttempt = 0;
-      const MAX_ANALYZE_ATTEMPTS = 2;
-      while (true) {
+
+      while (analyzeAttempt < 2) {
         analyzeAttempt++;
         const controller2 = new AbortController();
         const timeout2 = setTimeout(() => controller2.abort(), 200_000);
+
         resAnalyze = await fetch(`${supabaseUrl}/functions/v1/due-diligence`, {
           method: "POST",
           signal: controller2.signal,
           headers,
           body: JSON.stringify({ phase: "analyze", jobId }),
         });
+
         clearTimeout(timeout2);
-        // Retry on 503 (model overloaded) — Gemini spikes are usually short-lived
-        if (resAnalyze.status === 503 && analyzeAttempt < MAX_ANALYZE_ATTEMPTS) {
-          setStatusMessage(`Modèle IA surchargé — nouvelle tentative dans 20s (essai ${analyzeAttempt + 1}/${MAX_ANALYZE_ATTEMPTS})…`);
-          await new Promise((r) => setTimeout(r, 20_000));
+
+        if (resAnalyze.status === 503 && analyzeAttempt < 2) {
+          setStatusMessage("Modèle IA surchargé — nouvelle tentative…");
+          await sleep(20_000);
           continue;
         }
         break;
       }
+
       clearInterval(progressInterval);
 
       const text = await resAnalyze.text();
       let result: DueDiligenceData | null = null;
-      let errorData: any = {};
+
       try {
         const parsed = text ? JSON.parse(text) : null;
         if (resAnalyze.ok) {
           result = parsed;
-        } else {
-          errorData = parsed || {};
-          const isLikelyReport =
-            parsed &&
-            !parsed.error &&
-            (parsed.company != null || parsed.executiveSummary != null);
-          if ((resAnalyze.status === 546 || resAnalyze.status === 500) && isLikelyReport) {
-            result = parsed;
-          }
         }
       } catch {
         if (!resAnalyze.ok) {
-          if (resAnalyze.status >= 500) {
-            throw new Error(`Erreur serveur (${resAnalyze.status}). Le service est temporairement indisponible.`);
-          } else if (resAnalyze.status === 429) {
-            throw new Error("Trop de requêtes. Veuillez patienter avant de réessayer.");
-          } else if (resAnalyze.status === 401 || resAnalyze.status === 403) {
-            throw new Error("Erreur d'authentification. Veuillez vous reconnecter.");
-          }
           throw new Error(`Erreur ${resAnalyze.status}`);
         }
       }
 
-      if (!resAnalyze.ok && result == null) {
-        if (resAnalyze.status === 504) {
-          throw new Error("Timeout (504) : l'analyse a pris trop de temps. Réessayez dans quelques minutes ou avec une entreprise plus simple.");
-        }
-        throw new Error(errorData.error || errorData.message || `Erreur ${resAnalyze.status}`);
-      }
-
-      if (result == null) {
+      if (!result) {
         throw new Error("Réponse serveur invalide.");
       }
-      setData(deepStripSourceInText(result));
-      setProgress(100);
-      setStatusMessage("Rapport terminé !");
 
-      if (typeof useTrialCredit === "function") {
-        useTrialCredit();
-      }
+      setData(result);
+      setProgress(100);
+      setLoading(false);
 
     } catch (err) {
       clearInterval(progressInterval);
-      console.error("Due Diligence error:", err);
-      
-      let errorMessage = "Une erreur est survenue";
-      
-      // Timeout côté client (AbortController)
-      const isAbort = err instanceof DOMException && err.name === "AbortError";
-      if (isAbort) {
-        errorMessage = "L'analyse a pris trop de temps (timeout côté client). Le serveur peut être surchargé ou l'entreprise est très complexe.\n\nRéessayez dans quelques minutes ou choisissez une entreprise plus simple à analyser.";
-      } else if (err instanceof Error) {
-        const errMsg = err.message.toLowerCase();
-        
-        // Détecter les erreurs CORS, réseau ou timeout (504 souvent affiché comme "Failed to fetch")
-        if (errMsg.includes("failed to fetch") || errMsg.includes("networkerror") || errMsg.includes("cors")) {
-          errorMessage = "Impossible de joindre le serveur (Failed to fetch). Causes fréquentes :\n\n• Timeout (504) : l'analyse a pris trop de temps. Réessayez dans un moment ou avec une entreprise plus simple.\n• Réseau ou serveur temporairement indisponible.\n• Problème de configuration côté hébergeur.\n\nVeuillez réessayer dans quelques minutes.";
-        } else if (errMsg.includes("timeout") || errMsg.includes("timed out")) {
-          errorMessage = "La requête a expiré. L'analyse prend du temps, veuillez réessayer.";
-        } else if (errMsg.includes("429") || errMsg.includes("too many requests")) {
-          errorMessage = "Trop de requêtes simultanées. Veuillez patienter quelques instants avant de réessayer.";
-        } else if (errMsg.includes("401") || errMsg.includes("403") || errMsg.includes("unauthorized")) {
-          errorMessage = "Erreur d'authentification. Veuillez vous reconnecter.";
-        } else if (errMsg.includes("500") || errMsg.includes("502") || errMsg.includes("503") || errMsg.includes("504")) {
-          errorMessage = `Erreur serveur (${err.message}). Le service rencontre des difficultés. Veuillez réessayer dans quelques instants.`;
-        } else {
-          errorMessage = err.message;
-        }
-      }
-      
-      setError(errorMessage);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      setError(errMsg);
+      setLoading(false);
       toast({
         title: "Erreur d'analyse",
-        description: errorMessage.split('\n')[0], // Afficher seulement la première ligne dans le toast
+        description: errMsg.split('\n')[0],
         variant: "destructive",
         duration: 10000,
       });
-    } finally {
-      setLoading(false);
     }
   };
 
   const getRecommendationBadge = (rec?: string) => {
-    switch (rec?.toUpperCase()) {
-      case "INVEST":
-        return <Badge variant="outline" className="border-success/40 text-success bg-success/5 font-medium tracking-wide"><CheckCircle2 className="w-3 h-3 mr-1.5" /> INVEST</Badge>;
-      case "WATCH":
-        return <Badge variant="outline" className="border-primary/40 text-primary bg-primary/5 font-medium tracking-wide"><AlertTriangle className="w-3 h-3 mr-1.5" /> WATCH</Badge>;
-      case "PASS":
-        return <Badge variant="outline" className="border-destructive/40 text-destructive bg-destructive/5 font-medium tracking-wide"><XCircle className="w-3 h-3 mr-1.5" /> PASS</Badge>;
-      default:
-        return <Badge variant="outline">{rec || "N/A"}</Badge>;
-    }
+    const colors = {
+      INVEST: "border-success/40 text-success bg-success/5",
+      WATCH: "border-primary/40 text-primary bg-primary/5",
+      PASS: "border-destructive/40 text-destructive bg-destructive/5",
+    };
+    const icons = { INVEST: CheckCircle2, WATCH: AlertTriangle, PASS: XCircle };
+    const key = rec?.toUpperCase() as keyof typeof colors;
+    const IconComp = icons[key];
+
+    return (
+      <Badge variant="outline" className={`font-medium ${colors[key] || "border-border"}`}>
+        {IconComp && <IconComp className="w-3 h-3 mr-1.5" />}
+        {rec || "N/A"}
+      </Badge>
+    );
   };
 
   const getRiskBadge = (level?: string) => {
-    switch (level?.toLowerCase()) {
-      case "low":
-        return <Badge variant="outline" className="border-success/40 text-success bg-success/5 font-normal">Risque faible</Badge>;
-      case "medium":
-        return <Badge variant="outline" className="border-primary/40 text-primary bg-primary/5 font-normal">Risque modéré</Badge>;
-      case "high":
-        return <Badge variant="outline" className="border-destructive/40 text-destructive bg-destructive/5 font-normal">Risque élevé</Badge>;
-      default:
-        return null;
-    }
+    const colors = {
+      low: "border-success/40 text-success bg-success/5",
+      medium: "border-primary/40 text-primary bg-primary/5",
+      high: "border-destructive/40 text-destructive bg-destructive/5",
+    };
+    const key = level?.toLowerCase() as keyof typeof colors;
+    return (
+      <Badge variant="outline" className={colors[key] || "border-border"}>
+        {level || "N/A"}
+      </Badge>
+    );
   };
 
-  // Safely convert any value to an array (AI sometimes returns string instead of array)
   const toArray = (value: unknown): any[] => {
     if (Array.isArray(value)) return value;
     if (value == null) return [];
@@ -436,1392 +303,350 @@ export default function DueDiligenceResult() {
     return [];
   };
 
-  // Éviter [object Object] : extraire une chaîne affichable depuis n'importe quelle valeur (string, number, object)
-  const toDisplayString = (value: unknown): string => {
-    if (value == null) return "";
-    if (typeof value === "string") return value;
-    if (typeof value === "number") return String(value);
-    if (Array.isArray(value)) return value.map(toDisplayString).filter(Boolean).join(", ") || "";
-    if (typeof value === "object") {
-      const o = value as Record<string, unknown>;
-      const s = o.milestone ?? o.name ?? o.title ?? o.description ?? o.text ?? o.label ?? o.value ?? o.amount ?? o.round;
-      if (s != null && typeof s === "string") return s;
-      if (s != null) return String(s);
-      try { return JSON.stringify(value).slice(0, 150); } catch { return ""; }
-    }
-    return String(value);
-  };
-
-  // Retirer TOUS les "(Source: ...)" du texte (même URLs avec parenthèses) — utilisé à l'affichage
-  const stripInlineSources = (text: string | undefined | null): string => {
-    if (!text || typeof text !== "string") return "";
-    let s = text;
-    let prev = "";
-    while (prev !== s) {
-      prev = s;
-      const idx = s.toLowerCase().indexOf("(source:");
-      if (idx === -1) break;
-      const end = s.indexOf(")", idx);
-      if (end === -1) break;
-      s = (s.slice(0, idx).trimEnd() + " " + s.slice(end + 1).trimStart()).replace(/\s{2,}/g, " ").trim();
-    }
-    return s.replace(/\s{2,}/g, " ").trim();
-  };
-
-  // Nettoyer tout l'objet rapport à la réception (au cas où le backend n'a pas tout strippé)
-  function deepStripSourceInText(obj: any): any {
-    if (obj == null) return obj;
-    if (typeof obj === "string") {
-      let s = obj;
-      if (s.startsWith("http")) return s;
-      let prev = "";
-      while (prev !== s) {
-        prev = s;
-        const idx = s.toLowerCase().indexOf("(source:");
-        if (idx === -1) break;
-        const end = s.indexOf(")", idx);
-        if (end === -1) break;
-        s = (s.slice(0, idx).trimEnd() + " " + s.slice(end + 1).trimStart()).replace(/\s{2,}/g, " ").trim();
-      }
-      return s.replace(/\s{2,}/g, " ").trim();
-    }
-    if (Array.isArray(obj)) return obj.map(deepStripSourceInText);
-    if (typeof obj === "object") {
-      const out: Record<string, unknown> = {};
-      for (const k of Object.keys(obj)) {
-        if (k === "sources" || k === "allSources") {
-          out[k] = obj[k];
-          continue;
-        }
-        out[k] = deepStripSourceInText(obj[k]);
-      }
-      return out;
-    }
-    return obj;
-  }
-
-  // Agrégat de toutes les sources (allSources + sections) pour affichage en bas de page
-  const allSourcesAggregated = (() => {
-    if (!data) return [];
-    const byUrl = new Map<string, { name: string; url: string; type?: string; relevance?: string }>();
-    const add = (s: { name?: string; url?: string; type?: string; relevance?: string } | null) => {
-      if (!s?.url) return;
-      if (byUrl.has(s.url)) return;
-      byUrl.set(s.url, {
-        name: s.name || shortenUrl(s.url),
-        url: s.url,
-        type: s.type,
-        relevance: s.relevance,
-      });
-    };
-    (data.allSources || []).forEach(add);
-    [data.product?.sources, data.market?.sources, data.financials?.sources, data.team?.sources, data.competition?.sources, data.traction?.sources, data.risks?.sources, data.opportunities?.sources].forEach(arr => {
-      (arr || []).forEach((s: { name?: string; url?: string }) => add(s));
-    });
-    return Array.from(byUrl.values());
-  })();
-
-  // Fonction pour raccourcir les URLs
-  const shortenUrl = (url: string, maxLength: number = 40): string => {
-    try {
-      const urlObj = new URL(url);
-      const domain = urlObj.hostname.replace('www.', '');
-      const path = urlObj.pathname;
-      const full = domain + path;
-      
-      if (full.length <= maxLength) return full;
-      
-      // Si le chemin est trop long, garder juste le domaine
-      if (domain.length <= maxLength) return domain;
-      
-      // Sinon, tronquer le domaine
-      return domain.substring(0, maxLength - 3) + '...';
-    } catch {
-      // Si ce n'est pas une URL valide, tronquer directement
-      return url.length > maxLength ? url.substring(0, maxLength - 3) + '...' : url;
-    }
-  };
-
-  const SourceLink = ({ url, name }: { url?: string; name?: string }) => {
-    if (!url) return null;
-    const displayName = name || shortenUrl(url);
-    return (
-      <a 
-        href={url} 
-        target="_blank" 
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground border border-border transition-colors"
-        title={url}
-      >
-        <LinkIcon className="w-3 h-3 flex-shrink-0" />
-        <span className="truncate max-w-[120px]">{displayName}</span>
-        <ExternalLink className="w-3 h-3 flex-shrink-0 opacity-60" />
-      </a>
-    );
-  };
-
-  /** Exporte l'intégralité du rapport (analyse + sources) en fichier Markdown */
-  const exportFullReport = () => {
-    if (!data) return;
-    const companyName = data.company?.name || requestPayload?.companyName || "Rapport";
-    const safeName = companyName.replace(/[^\w\s-]/g, "").replace(/\s+/g, "-").slice(0, 60);
-    const date = new Date().toISOString().slice(0, 10);
-    const lines: string[] = [];
-
-    const h1 = (t: string) => lines.push("\n# " + t + "\n");
-    const h2 = (t: string) => lines.push("\n## " + t + "\n");
-    const h3 = (t: string) => lines.push("\n### " + t + "\n");
-    const p = (t: string) => { if (t) lines.push(stripInlineSources(t) + "\n"); };
-    const li = (t: string) => { if (t) lines.push("- " + stripInlineSources(t)); };
-    const src = (sources?: { name: string; url: string }[]) => {
-      if (!sources?.length) return;
-      lines.push("\n*Sources :*");
-      sources.forEach((s) => lines.push(`- [${s.name || s.url}](${s.url})`));
-      lines.push("");
-    };
-
-    h1(`Due Diligence — ${companyName}`);
-    lines.push(`*Exporté le ${new Date().toLocaleDateString("fr-FR", { dateStyle: "long" })}*\n`);
-
-    h2("Entreprise");
-    p(data.company?.tagline);
-    if (data.company?.website) lines.push(`- **Site :** ${data.company.website}`);
-    if (data.company?.linkedinUrl) lines.push(`- **LinkedIn :** ${data.company.linkedinUrl}`);
-    if (data.company?.founded) lines.push(`- **Fondée :** ${stripInlineSources(data.company.founded)}`);
-    if (data.company?.headquarters) lines.push(`- **Siège :** ${stripInlineSources(data.company.headquarters)}`);
-    if (data.company?.sector) lines.push(`- **Secteur :** ${stripInlineSources(data.company.sector)}`);
-    if (data.company?.stage) lines.push(`- **Stage :** ${stripInlineSources(data.company.stage)}`);
-    if (data.company?.employeeCount) lines.push(`- **Effectifs :** ${stripInlineSources(data.company.employeeCount)}`);
-    lines.push("");
-
-    h2("Résumé exécutif");
-    p(data.executiveSummary?.overview);
-    if (data.executiveSummary?.recommendation) lines.push(`**Recommandation :** ${stripInlineSources(data.executiveSummary.recommendation)}`);
-    if (data.executiveSummary?.confidenceLevel) lines.push(`**Niveau de confiance :** ${stripInlineSources(data.executiveSummary.confidenceLevel)}`);
-    if (toArray(data.executiveSummary?.keyHighlights).length) { h3("Points forts"); toArray(data.executiveSummary?.keyHighlights).forEach(li); }
-    if (toArray(data.executiveSummary?.keyRisks).length) { h3("Risques clés"); toArray(data.executiveSummary?.keyRisks).forEach(li); }
-    lines.push("");
-
-    h2("Financements");
-    p(data.financials?.totalFunding ? `**Financement total :** ${stripInlineSources(data.financials.totalFunding)}` : undefined);
-    if (data.financials?.latestValuation) lines.push(`**Dernière valorisation :** ${stripInlineSources(data.financials.latestValuation)}`);
-    if (toArray(data.financials?.fundingHistory).length) {
-      h3("Historique des levées");
-      toArray(data.financials?.fundingHistory).forEach((r) => {
-        const parts = [r.round, r.amount, r.date].filter(Boolean).map((x) => stripInlineSources(String(x)));
-        if (toArray(r.investors).length) parts.push("Investisseurs : " + toArray(r.investors).map((inv) => stripInlineSources(toDisplayString(inv))).join(", "));
-        lines.push("- " + parts.join(" — "));
-      });
-    }
-    if (data.financials?.metrics && Object.keys(data.financials.metrics).length) {
-      h3("Métriques");
-      Object.entries(data.financials.metrics).forEach(([k, v]) => lines.push(`- **${k} :** ${stripInlineSources(v)}`));
-    }
-    src(data.financials?.sources);
-
-    h2("Produit");
-    p(data.product?.description);
-    if (data.product?.valueProposition) { h3("Proposition de valeur"); p(data.product.valueProposition); }
-    if (data.product?.technology) { h3("Technologie"); p(data.product.technology); }
-    if (data.product?.patents) { h3("Brevets"); p(data.product.patents); }
-    if (toArray(data.product?.keyFeatures).length) { h3("Fonctionnalités clés"); toArray(data.product?.keyFeatures).forEach(li); }
-    src(data.product?.sources);
-
-    h2("Marché");
-    if (data.market?.tam) lines.push(`- **TAM :** ${stripInlineSources(data.market.tam)}`);
-    if (data.market?.sam) lines.push(`- **SAM :** ${stripInlineSources(data.market.sam)}`);
-    if (data.market?.som) lines.push(`- **SOM :** ${stripInlineSources(data.market.som)}`);
-    if (data.market?.cagr) lines.push(`- **CAGR :** ${stripInlineSources(data.market.cagr)}`);
-    if (toArray(data.market?.trends).length) { h3("Tendances"); toArray(data.market?.trends).forEach(li); }
-    p(data.market?.analysis);
-    src(data.market?.sources);
-
-    h2("Équipe");
-    p(data.team?.overview);
-    if (data.team?.teamSize) lines.push(`**Taille :** ${stripInlineSources(data.team.teamSize)}`);
-    if (toArray(data.team?.founders).length) {
-      h3("Fondateurs");
-      toArray(data.team?.founders).forEach((f) => {
-        lines.push(`- **${stripInlineSources(f.name || "")}** — ${stripInlineSources(f.role || "")}`);
-        if (f.background) p(f.background);
-        if (f.linkedin) lines.push(`  LinkedIn : ${f.linkedin}`);
-      });
-    }
-    if (toArray(data.team?.keyExecutives).length) {
-      h3("Dirigeants clés");
-      toArray(data.team?.keyExecutives).forEach((e) => lines.push(`- **${stripInlineSources(e.name || "")}** — ${stripInlineSources(e.role || "")} — ${stripInlineSources(e.background || "")}`));
-    }
-    if (data.team?.culture) { h3("Culture"); p(data.team.culture); }
-    if (data.team?.hiringTrends) { h3("Recrutement"); p(data.team.hiringTrends); }
-    src(data.team?.sources);
-
-    h2("Concurrence");
-    p(data.competition?.landscape);
-    if (data.competition?.competitiveAdvantage) { h3("Avantage concurrentiel"); p(data.competition.competitiveAdvantage); }
-    if (data.competition?.moat) { h3("Moat"); p(data.competition.moat); }
-    if (toArray(data.competition?.competitors).length) {
-      h3("Concurrents");
-      toArray(data.competition?.competitors).forEach((c) => {
-        lines.push(`- **${stripInlineSources(c.name)}**${c.funding ? ` — ${stripInlineSources(c.funding)}` : ""}`);
-        if (c.description) p("  " + c.description);
-      });
-    }
-    src(data.competition?.sources);
-
-    h2("Traction & Jalons");
-    p(data.traction?.overview);
-    if (data.traction?.customers) {
-      const c = data.traction.customers;
-      if (c.count) lines.push(`- **Clients :** ${stripInlineSources(c.count)}`);
-      if (toArray(c.notable).length) lines.push(`- **Clients notables :** ${toArray(c.notable).map((n) => stripInlineSources(toDisplayString(n))).join(", ")}`);
-      if (c.segments) lines.push(`- **Segments :** ${stripInlineSources(c.segments)}`);
-    }
-    if (toArray(data.traction?.keyMilestones).length) {
-      h3("Jalons clés");
-      toArray(data.traction?.keyMilestones).forEach((m) => lines.push(`- ${stripInlineSources(m.date || "")} — ${stripInlineSources(m.milestone || "")}`));
-    }
-    if (toArray(data.traction?.partnerships).length) { h3("Partenariats"); toArray(data.traction?.partnerships).forEach(li); }
-    if (toArray(data.traction?.awards).length) { h3("Prix / Récompenses"); toArray(data.traction?.awards).forEach(li); }
-    src(data.traction?.sources);
-
-    h2("Risques");
-    (["marketRisks", "executionRisks", "financialRisks", "competitiveRisks", "regulatoryRisks"] as const).forEach((key) => {
-      const arr = data.risks?.[key];
-      if (Array.isArray(arr) && arr.length) {
-        h3(key.replace(/([A-Z])/g, " $1").trim());
-        (arr as string[]).forEach(li);
-      }
-    });
-    if (toArray(data.risks?.mitigations).length) { h3("Mitigations"); toArray(data.risks?.mitigations).forEach(li); }
-    if (data.risks?.overallRiskLevel) lines.push(`**Niveau de risque global :** ${stripInlineSources(data.risks.overallRiskLevel)}`);
-    src(data.risks?.sources);
-
-    if (data.opportunities) {
-      h2("Opportunités");
-      if (toArray(data.opportunities?.growthOpportunities).length) { h3("Croissance"); toArray(data.opportunities?.growthOpportunities).forEach(li); }
-      p(data.opportunities.marketExpansion ? "**Expansion marché :** " + stripInlineSources(data.opportunities.marketExpansion) : undefined);
-      p(data.opportunities.productExpansion ? "**Expansion produit :** " + stripInlineSources(data.opportunities.productExpansion) : undefined);
-      p(data.opportunities.strategicValue);
-      src(data.opportunities.sources);
-    }
-
-    h2("Recommandation d'investissement");
-    const rec = data.investmentRecommendation;
-    if (rec?.recommendation) lines.push(`**Recommandation :** ${stripInlineSources(rec.recommendation)}`);
-    if (rec?.rationale) p(rec.rationale);
-    if (toArray(rec?.strengths).length) { h3("Points forts"); toArray(rec?.strengths).forEach(li); }
-    if (toArray(rec?.weaknesses).length) { h3("Points faibles"); toArray(rec?.weaknesses).forEach(li); }
-    if (toArray(rec?.keyQuestions).length) { h3("Questions clés"); toArray(rec?.keyQuestions).forEach(li); }
-    if (toArray(rec?.suggestedNextSteps).length) { h3("Prochaines étapes"); toArray(rec?.suggestedNextSteps).forEach(li); }
-    if (rec?.targetReturn) lines.push(`- **Rendement cible :** ${stripInlineSources(rec.targetReturn)}`);
-    if (rec?.investmentHorizon) lines.push(`- **Horizon :** ${stripInlineSources(rec.investmentHorizon)}`);
-    if (rec?.suggestedTicket) lines.push(`- **Ticket suggéré :** ${stripInlineSources(rec.suggestedTicket)}`);
-    lines.push("");
-
-    h2("Toutes les sources du rapport");
-    lines.push(`*${allSourcesAggregated.length} source(s) utilisée(s) pour cette analyse.*\n`);
-    (allSourcesAggregated.length > 0 ? allSourcesAggregated : (data.allSources || [])).forEach((s, i) => {
-      if (s?.url) lines.push(`${i + 1}. [${s.name || s.url}](${s.url})`);
-    });
-
-    const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `Due-Diligence-${safeName}-${date}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast({ title: "Export effectué", description: "Le rapport complet a été téléchargé (Markdown).", variant: "default" });
-  };
-
-  // Composant pour afficher les sources en bas de section
-  const SourcesFooter = ({ sources }: { sources?: { name: string; url: string }[] }) => {
-    if (!sources || sources.length === 0) return null;
-    
-    return (
-      <div className="mt-6 pt-4 border-t border-border">
-        <div className="flex items-center gap-2 mb-3">
-          <LinkIcon className="w-3.5 h-3.5 text-muted-foreground" />
-          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Sources</span>
-          <span className="text-xs text-muted-foreground/60">({sources.length})</span>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {sources.map((s, i) => (
-            <SourceLink key={i} url={s.url} name={s.name} />
-          ))}
-        </div>
-      </div>
-    );
-  };
-
   if (authLoading) return null;
 
-  return (
-    <AppLayout
-      user={user}
-      trialRemaining={trialRemaining}
-      hasTrialRemaining={hasTrialRemaining}
-      onLogin={() => {}}
-      onSignOut={signOut}
-    >
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 max-w-full overflow-x-hidden px-4 md:px-6" data-page="due-diligence-result">
-        <nav aria-label="Fil d'Ariane" className="lg:col-span-12 flex items-center gap-2 text-sm text-foreground/80 mb-6 min-w-0 overflow-x-auto py-1">
-          <Link to="/" className="hover:text-foreground transition-all duration-300 flex-shrink-0">Accueil</Link>
-          <span className="flex-shrink-0 text-foreground/50">/</span>
-          <Link to="/due-diligence" className="hover:text-foreground transition-all duration-300 flex-shrink-0">Due Diligence</Link>
-          <span className="flex-shrink-0 text-foreground/50">/</span>
-          <span className="text-foreground font-medium truncate min-w-0">
-            {requestPayload?.companyName || "Résultat"}
-          </span>
-        </nav>
+  if (!requestPayload?.companyName) {
+    return (
+      <AppLayout user={user} trialRemaining={trialRemaining} hasTrialRemaining={hasTrialRemaining} onLogin={() => {}} onSignOut={signOut}>
+        <div className="text-center py-8">Paramètres manquants.</div>
+      </AppLayout>
+    );
+  }
 
-        {/* Loading State */}
-        {loading && (
-          <div className="lg:col-span-12">
-            <div className="max-w-xl mx-auto border border-border rounded-lg bg-card overflow-hidden mt-8">
-              <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-[0.18em]">
-                  Due diligence en cours
-                </p>
-                <span className="text-xs text-muted-foreground tabular-nums">{Math.round(progress)} %</span>
-              </div>
-              <div className="px-6 py-8">
-                <h2 className="font-display text-2xl font-medium text-foreground mb-2">
-                  {requestPayload?.companyName}
-                </h2>
-                <p className="text-sm text-muted-foreground mb-6 flex items-center gap-2">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-                  {statusMessage}
-                </p>
-                <Progress value={progress} className="h-1" />
-                <p className="text-xs text-muted-foreground mt-4 leading-relaxed">
-                  Collecte des sources, vérification des informations puis rédaction du rapport.
-                  Comptez 1 à 3 minutes.
-                </p>
+  return (
+    <AppLayout user={user} trialRemaining={trialRemaining} hasTrialRemaining={hasTrialRemaining} onLogin={() => {}} onSignOut={signOut}>
+      <div className="mb-4">
+        <Link to="/due-diligence" className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="w-3.5 h-3.5" />
+          Retour
+        </Link>
+      </div>
+
+      {loading && (
+        <Card className="mb-6 border-primary/20 bg-primary/5">
+          <CardContent className="pt-6">
+            <div className="space-y-3">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium">{statusMessage}</p>
+                  <span className="text-xs text-muted-foreground">{Math.round(progress)}%</span>
+                </div>
+                <Progress value={progress} className="h-2" />
               </div>
             </div>
-          </div>
-        )}
+          </CardContent>
+        </Card>
+      )}
 
-        {/* Error State */}
-        {!loading && error && (
-          <div className="lg:col-span-12">
-          <Card className="bg-card border-destructive/30">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-destructive">
-                <AlertCircle className="w-5 h-5" />
-                Erreur d'analyse
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="bg-destructive/5 border border-destructive/20 rounded-lg p-4">
-                <p className="text-sm text-foreground/85 leading-relaxed whitespace-pre-line">{error}</p>
-              </div>
-              
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground font-medium">Solutions possibles :</p>
-                <ul className="text-sm text-muted-foreground space-y-1 ml-4 list-disc">
-                  <li>Vérifiez votre connexion internet</li>
-                  <li>Attendez quelques instants et réessayez</li>
-                  <li>Vérifiez que les clés API sont correctement configurées</li>
-                  <li>Contactez le support si le problème persiste</li>
-                </ul>
-              </div>
+      {error && (
+        <Card className="mb-6 border-destructive/30 bg-destructive/5">
+          <CardContent className="pt-6">
+            <p className="text-sm text-destructive">{error}</p>
+            <Button size="sm" variant="outline" className="mt-3" onClick={fetchDueDiligence}>
+              <RefreshCcw className="w-3.5 h-3.5 mr-2" />
+              Réessayer
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
-              <div className="flex gap-3 pt-2">
-                <Button onClick={fetchDueDiligence} variant="default" className="gap-2">
-                  <RefreshCcw className="w-4 h-4" />
-                  Réessayer
-                </Button>
-                <Button onClick={() => navigate("/due-diligence")} variant="outline" className="gap-2">
-                  <ArrowLeft className="w-4 h-4" />
-                  Nouvelle analyse
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-          </div>
-        )}
+      {data && (
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Left Sidebar — Essentials */}
+          <div className="lg:col-span-1">
+            <div className="space-y-5 sticky top-20">
+              {/* Company Header */}
+              <Card>
+                <CardContent className="pt-6 space-y-4">
+                  <div>
+                    <h2 className="font-display text-lg font-semibold text-foreground leading-tight">
+                      {data.company?.name}
+                    </h2>
+                    {data.company?.tagline && (
+                      <p className="text-xs text-muted-foreground mt-1">{data.company.tagline}</p>
+                    )}
+                  </div>
 
-        {/* Results */}
-        {!loading && !error && data && (
-          <>
-          {/* Sidebar — style Analyse */}
-          <aside className="lg:col-span-4 xl:col-span-3 space-y-5 lg:col-start-1 lg:row-start-2 order-2 lg:order-1">
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Link
-                to="/due-diligence"
-                className="inline-flex items-center justify-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-all hover:bg-muted px-3 py-1.5 rounded-lg border border-border"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                Nouvelle analyse
-              </Link>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={exportFullReport}
-                className="gap-1.5 border-border hover:border-primary/50 text-foreground/90"
-              >
-                <Download className="w-4 h-4" />
-                Exporter le rapport
+                  {/* Quick Facts */}
+                  <div className="space-y-2 text-xs">
+                    {data.company?.sector && (
+                      <div><span className="text-muted-foreground">Secteur:</span> {data.company.sector}</div>
+                    )}
+                    {data.company?.stage && (
+                      <div><span className="text-muted-foreground">Stade:</span> {data.company.stage}</div>
+                    )}
+                    {data.company?.founded && (
+                      <div><span className="text-muted-foreground">Fondée:</span> {data.company.founded}</div>
+                    )}
+                    {data.company?.headquarters && (
+                      <div><span className="text-muted-foreground">Siège:</span> {data.company.headquarters}</div>
+                    )}
+                    {data.company?.employeeCount && (
+                      <div><span className="text-muted-foreground">Équipe:</span> {data.company.employeeCount}</div>
+                    )}
+                  </div>
+
+                  {/* Links */}
+                  <div className="flex gap-2 flex-wrap">
+                    {data.company?.website && (
+                      <Button size="sm" variant="outline" className="h-8 gap-1.5" asChild>
+                        <a href={data.company.website} target="_blank" rel="noopener noreferrer">
+                          <Globe className="w-3 h-3" />
+                          <span className="hidden sm:inline">Site</span>
+                        </a>
+                      </Button>
+                    )}
+                    {data.company?.linkedinUrl && (
+                      <Button size="sm" variant="outline" className="h-8 gap-1.5" asChild>
+                        <a href={data.company.linkedinUrl} target="_blank" rel="noopener noreferrer">
+                          <Linkedin className="w-3 h-3" />
+                          <span className="hidden sm:inline">LinkedIn</span>
+                        </a>
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Recommendation */}
+                  {data.investmentRecommendation && (
+                    <div className="pt-3 border-t border-border space-y-2">
+                      <div className="text-xs text-muted-foreground">Recommandation</div>
+                      {getRecommendationBadge(data.investmentRecommendation.recommendation)}
+                      {data.investmentRecommendation.riskLevel && (
+                        <div className="pt-1">
+                          <div className="text-xs text-muted-foreground mb-1">Risque</div>
+                          {getRiskBadge(data.investmentRecommendation.riskLevel)}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Export */}
+              <Button variant="outline" size="sm" className="w-full gap-2">
+                <Download className="w-3.5 h-3.5" />
+                Exporter
               </Button>
             </div>
-            <Card className="rounded-xl border border-border bg-card p-5 space-y-3">
-              <h3 className="text-sm font-semibold text-foreground">{data.company?.name || requestPayload?.companyName}</h3>
-              <div className="flex flex-wrap gap-2">
-                {getRecommendationBadge(data.executiveSummary?.recommendation)}
-                {data.company?.sector && <Badge variant="outline" className="text-xs font-normal">{stripInlineSources(data.company.sector)}</Badge>}
-                {data.company?.stage && <Badge variant="secondary" className="text-xs">{stripInlineSources(data.company.stage)}</Badge>}
-              </div>
-              <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
-                {data.company?.website && (
-                  <Button variant="outline" size="sm" asChild className="border-border hover:border-primary/50 text-xs">
-                    <a href={data.company.website} target="_blank" rel="noopener noreferrer"><Globe className="w-3 h-3 mr-1" /> Site</a>
-                  </Button>
-                )}
-                {data.company?.linkedinUrl && (
-                  <Button variant="outline" size="sm" asChild className="border-border hover:border-primary/50 text-xs">
-                    <a href={data.company.linkedinUrl} target="_blank" rel="noopener noreferrer"><Linkedin className="w-3 h-3 mr-1" /> LinkedIn</a>
-                  </Button>
-                )}
-              </div>
-            </Card>
-            {/* Sources du rapport — toujours visible dans la sidebar */}
-            {allSourcesAggregated.length > 0 && (
-              <Card className="rounded-xl border border-border bg-card overflow-hidden">
-                <CardHeader className="pb-2 border-b border-border">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <LinkIcon className="w-4 h-4 text-muted-foreground" />
-                    Sources du rapport
-                    <Badge variant="outline" className="text-xs font-normal">{allSourcesAggregated.length}</Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-3 pt-3">
-                  <ScrollArea className="h-[280px] w-full pr-3">
-                    <div className="flex flex-col gap-1.5">
-                      {allSourcesAggregated.map((source, i) => (
-                        <a
-                          key={i}
-                          href={source.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs bg-muted/40 hover:bg-muted border border-border hover:border-border text-foreground/90 hover:text-primary transition-all truncate"
-                          title={source.url}
-                        >
-                          <LinkIcon className="w-3 h-3 flex-shrink-0 text-muted-foreground" />
-                          <span className="truncate flex-1 min-w-0">{source.name}</span>
-                          <ExternalLink className="w-3 h-3 flex-shrink-0 opacity-60" />
-                        </a>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                </CardContent>
-              </Card>
-            )}
-          </aside>
+          </div>
 
-          <div className="lg:col-span-8 xl:col-span-9 lg:row-start-2 min-w-0 max-w-full overflow-x-hidden space-y-8 order-1 lg:order-2">
-            {/* Masthead — style mémo d'investissement */}
-            <header className="border-b border-border pb-6">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-[0.18em] mb-3">
-                Rapport de due diligence
-              </p>
-              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <h1 className="font-display text-3xl md:text-4xl font-medium tracking-tight text-foreground break-words">
-                      {data.company?.name || requestPayload?.companyName}
-                    </h1>
-                    {getRecommendationBadge(data.executiveSummary?.recommendation)}
-                  </div>
-                  {data.company?.tagline && (
-                    <p className="text-muted-foreground leading-relaxed max-w-2xl mt-2">
-                      {stripInlineSources(data.company.tagline)}
-                    </p>
-                  )}
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-4 text-[13px] text-muted-foreground">
-                    {[
-                      data.company?.sector,
-                      data.company?.stage,
-                      data.company?.headquarters,
-                      data.company?.founded && `Fondée en ${data.company.founded}`,
-                      data.company?.employeeCount && `${data.company.employeeCount} employés`,
-                    ]
-                      .filter(Boolean)
-                      .map((item, i, arr) => (
-                        <span key={i} className="flex items-center gap-4">
-                          {stripInlineSources(String(item))}
-                          {i < arr.length - 1 && <span className="text-border">·</span>}
-                        </span>
-                      ))}
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2 flex-shrink-0">
-                  <Button
-                    variant="default"
-                    size="sm"
-                    onClick={exportFullReport}
-                    className="gap-2 bg-foreground text-background hover:bg-foreground/90"
-                  >
-                    <Download className="w-4 h-4" />
-                    Exporter
-                  </Button>
-                  {data.company?.website && (
-                    <Button variant="outline" size="sm" asChild className="border-border">
-                      <a href={data.company.website} target="_blank" rel="noopener noreferrer">
-                        <Globe className="w-4 h-4 mr-2" />
-                        Site web
-                      </a>
-                    </Button>
-                  )}
-                  {data.company?.linkedinUrl && (
-                    <Button variant="outline" size="sm" asChild className="border-border">
-                      <a href={data.company.linkedinUrl} target="_blank" rel="noopener noreferrer">
-                        <Linkedin className="w-4 h-4 mr-2" />
-                        LinkedIn
-                      </a>
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </header>
-
-            {/* Executive Summary Card */}
-            <Card className="rounded-xl border border-border bg-card overflow-hidden">
-              <CardHeader className="pb-4 border-b border-border">
-                <CardTitle className="flex items-center gap-2 text-foreground text-lg">
-                  <FileSearch className="w-5 h-5 text-muted-foreground" />
-                  Résumé Exécutif
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-5 pt-6">
-                <p className="text-foreground/90 leading-relaxed">
-                  {stripInlineSources(data.executiveSummary?.overview)}
-                </p>
-                
-                <div className="grid md:grid-cols-2 gap-4 mt-4">
-                  {/* Key Highlights */}
-                  {toArray(data.executiveSummary?.keyHighlights).length > 0 && (
-                    <div className="rounded-lg border border-border bg-muted/20 p-4">
-                      <h4 className="text-xs font-medium text-success uppercase tracking-wider mb-3 flex items-center gap-2">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        Points forts
-                      </h4>
-                      <ul className="space-y-2">
-                        {toArray(data.executiveSummary?.keyHighlights).map((h, i) => (
-                          <li key={i} className="text-sm text-foreground/90 flex items-start gap-2.5 leading-relaxed">
-                            <span className="w-1 h-1 rounded-full bg-success mt-2 shrink-0" />
-                            {stripInlineSources(h)}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Key Risks */}
-                  {toArray(data.executiveSummary?.keyRisks).length > 0 && (
-                    <div className="rounded-lg border border-border bg-muted/20 p-4">
-                      <h4 className="text-xs font-medium text-destructive uppercase tracking-wider mb-3 flex items-center gap-2">
-                        <AlertTriangle className="w-3.5 h-3.5" />
-                        Risques clés
-                      </h4>
-                      <ul className="space-y-2">
-                        {toArray(data.executiveSummary?.keyRisks).map((r, i) => (
-                          <li key={i} className="text-sm text-foreground/90 flex items-start gap-2.5 leading-relaxed">
-                            <span className="w-1 h-1 rounded-full bg-destructive mt-2 shrink-0" />
-                            {stripInlineSources(r)}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Tabs for detailed sections — style aligné Analyse */}
-            <Tabs defaultValue="financials" className="w-full">
-              <TabsList className="w-full flex flex-wrap justify-start gap-0 rounded-none bg-transparent border-b border-border p-0 h-auto">
-                <TabsTrigger value="financials" className="text-xs px-3 py-2.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-all text-muted-foreground hover:text-foreground">
-                  <DollarSign className="w-3.5 h-3.5 mr-1.5" />
-                  Financements
-                </TabsTrigger>
-                <TabsTrigger value="product" className="text-xs px-3 py-2.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-all text-muted-foreground hover:text-foreground">
-                  <Target className="w-3.5 h-3.5 mr-1.5" />
-                  Produit
-                </TabsTrigger>
-                <TabsTrigger value="market" className="text-xs px-3 py-2.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-all text-muted-foreground hover:text-foreground">
-                  <BarChart3 className="w-3.5 h-3.5 mr-1.5" />
-                  Marché
-                </TabsTrigger>
-                <TabsTrigger value="team" className="text-xs px-3 py-2.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-all text-muted-foreground hover:text-foreground">
-                  <Users className="w-3.5 h-3.5 mr-1.5" />
-                  Équipe
-                </TabsTrigger>
-                <TabsTrigger value="competition" className="text-xs px-3 py-2.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-all text-muted-foreground hover:text-foreground">
-                  <Shield className="w-3.5 h-3.5 mr-1.5" />
-                  Concurrence
-                </TabsTrigger>
-                <TabsTrigger value="traction" className="text-xs px-3 py-2.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-all text-muted-foreground hover:text-foreground">
-                  <TrendingUp className="w-3.5 h-3.5 mr-1.5" />
-                  Traction
-                </TabsTrigger>
-                <TabsTrigger value="risks" className="text-xs px-3 py-2.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-all text-muted-foreground hover:text-foreground">
-                  <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
-                  Risques
-                </TabsTrigger>
-                <TabsTrigger value="recommendation" className="text-xs px-3 py-2.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-all text-muted-foreground hover:text-foreground">
-                  <Lightbulb className="w-3.5 h-3.5 mr-1.5" />
-                  Recommandation
-                </TabsTrigger>
-                <TabsTrigger value="sources" className="text-xs px-3 py-2.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-all text-muted-foreground hover:text-foreground">
-                  <LinkIcon className="w-3.5 h-3.5 mr-1.5" />
-                  Sources
-                </TabsTrigger>
-                <TabsTrigger value="assistant" className="text-xs px-3 py-2.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-all text-muted-foreground hover:text-foreground">
-                  <MessageCircle className="w-3.5 h-3.5 mr-1.5" />
-                  Assistant IA
-                </TabsTrigger>
+          {/* Right Content — Tabs */}
+          <div className="lg:col-span-3">
+            <Tabs defaultValue="executive" className="w-full">
+              <TabsList className="w-full grid grid-cols-3 lg:grid-cols-5 h-auto">
+                <TabsTrigger value="executive" className="text-xs">Résumé</TabsTrigger>
+                <TabsTrigger value="product" className="text-xs">Produit</TabsTrigger>
+                <TabsTrigger value="market" className="text-xs">Marché</TabsTrigger>
+                <TabsTrigger value="financials" className="text-xs">Finances</TabsTrigger>
+                <TabsTrigger value="team" className="text-xs">Équipe</TabsTrigger>
               </TabsList>
 
-              {/* Financials Tab */}
-              <TabsContent value="financials" className="mt-4">
-                <Card className="bg-card border-border">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="flex items-center gap-2 text-lg">
-                      <DollarSign className="w-5 h-5 text-muted-foreground" />
-                      Financements & Métriques
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-6 pt-2">
-                    {/* Summary metrics */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div className="bg-muted/30 rounded-lg p-4 border border-border">
-                        <p className="text-xs text-muted-foreground mb-1.5 uppercase tracking-wider">Total Levé</p>
-                        <p className="text-xl font-bold text-foreground">
-                          {data.financials?.totalFunding || "N/A"}
-                        </p>
-                      </div>
-                      <div className="bg-muted/30 rounded-lg p-4 border border-border">
-                        <p className="text-xs text-muted-foreground mb-1.5 uppercase tracking-wider">Valorisation</p>
-                        <p className="text-xl font-bold text-foreground">
-                          {data.financials?.latestValuation || "N/A"}
-                        </p>
-                      </div>
-                      {data.financials?.metrics?.arr && (
-                        <div className="bg-muted/30 rounded-lg p-4 border border-border">
-                          <p className="text-xs text-muted-foreground mb-1.5 uppercase tracking-wider">ARR</p>
-                          <p className="text-xl font-bold">{data.financials.metrics.arr}</p>
-                        </div>
-                      )}
-                      {data.financials?.metrics?.customers && (
-                        <div className="bg-muted/30 rounded-lg p-4 border border-border">
-                          <p className="text-xs text-muted-foreground mb-1.5 uppercase tracking-wider">Clients</p>
-                          <p className="text-xl font-bold">{data.financials.metrics.customers}</p>
-                        </div>
-                      )}
-                    </div>
+              {/* Executive Summary */}
+              <TabsContent value="executive" className="space-y-4 mt-4">
+                {data.executiveSummary?.overview && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Vue d'ensemble</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-foreground leading-relaxed">{data.executiveSummary.overview}</p>
+                    </CardContent>
+                  </Card>
+                )}
 
-                    {/* Funding History */}
-                    {toArray(data.financials?.fundingHistory).length > 0 && (
-                      <div>
-                        <h4 className="font-semibold mb-4 text-base">Historique des Levées</h4>
-                        <div className="space-y-3">
-                          {toArray(data.financials?.fundingHistory).map((round, i) => (
-                            <div key={i} className="bg-muted/20 rounded-lg p-4 border border-border hover:border-border transition-colors">
-                              <div className="flex justify-between items-start mb-2">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <Badge variant="outline" className="text-xs">{round.round}</Badge>
-                                  <span className="text-lg font-bold text-primary">{round.amount}</span>
-                                </div>
-                                {round.date && <span className="text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded">{round.date}</span>}
-                              </div>
-                              {round.valuation && (
-                                <p className="text-sm text-muted-foreground mb-2 font-medium">Valorisation: {round.valuation}</p>
-                              )}
-                              {round.investors && (
-                                <p className="text-sm text-muted-foreground">
-                                  <span className="font-medium text-foreground/85">Investisseurs:</span> {Array.isArray(round.investors) ? round.investors.join(", ") : (typeof round.investors === "string" ? round.investors : String(round.investors ?? ""))}
-                                </p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Other metrics */}
-                    {data.financials?.metrics && typeof data.financials.metrics === 'object' && Object.keys(data.financials.metrics).length > 0 && (
-                      <div>
-                        <h4 className="font-semibold mb-4 text-base">Métriques Détaillées</h4>
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                          {Object.entries(data.financials.metrics).map(([key, value]) => (
-                            <div key={key} className="bg-muted/20 rounded-lg p-3 border border-border">
-                              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 font-medium">
-                                {key.replace(/([A-Z])/g, ' $1').trim()}
-                              </p>
-                              <p className="text-sm font-semibold text-foreground">{value}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Sources */}
-                    <SourcesFooter sources={data.financials?.sources} />
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              {/* Product Tab */}
-              <TabsContent value="product" className="mt-4">
-                <Card className="bg-card border-border">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="flex items-center gap-2 text-lg">
-                      <Target className="w-5 h-5 text-muted-foreground" />
-                      Produit & Technologie
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-5 pt-2">
-                    {data.product?.description && (
-                      <div>
-                        <h4 className="font-semibold mb-2">Description</h4>
-                        <p className="text-foreground/90 leading-relaxed">{stripInlineSources(data.product.description)}</p>
-                      </div>
-                    )}
-                    {data.product?.valueProposition && (
-                      <div className="bg-muted/30 border border-border rounded-lg p-4">
-                        <h4 className="font-semibold text-foreground mb-2">Proposition de Valeur</h4>
-                        <p className="text-foreground/90">{stripInlineSources(data.product.valueProposition)}</p>
-                      </div>
-                    )}
-                    {data.product?.technology && (
-                      <div>
-                        <h4 className="font-semibold mb-2">Technologie</h4>
-                        <p className="text-foreground/90">{stripInlineSources(data.product.technology)}</p>
-                      </div>
-                    )}
-                    {toArray(data.product?.keyFeatures).length > 0 && (
-                      <div>
-                        <h4 className="font-semibold mb-2">Fonctionnalités Clés</h4>
-                        <div className="flex flex-wrap gap-2">
-                          {toArray(data.product?.keyFeatures).map((f, i) => (
-                            <Badge key={i} variant="secondary">{stripInlineSources(f)}</Badge>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {/* Sources */}
-                    <SourcesFooter sources={data.product?.sources} />
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              {/* Market Tab */}
-              <TabsContent value="market" className="mt-4">
-                <Card className="bg-card border-border">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="flex items-center gap-2 text-lg">
-                      <BarChart3 className="w-5 h-5 text-muted-foreground" />
-                      Analyse du Marché
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-5 pt-2">
-                    {/* TAM/SAM/SOM */}
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="bg-muted/30 rounded-lg p-4 text-center border border-border">
-                        <p className="text-xs text-muted-foreground mb-1">TAM</p>
-                        <p className="text-lg font-semibold text-foreground">{data.market?.tam || "N/A"}</p>
-                      </div>
-                      <div className="bg-muted/30 rounded-lg p-4 text-center border border-border">
-                        <p className="text-xs text-muted-foreground mb-1">SAM</p>
-                        <p className="text-lg font-semibold text-foreground">{data.market?.sam || "N/A"}</p>
-                      </div>
-                      <div className="bg-muted/30 rounded-lg p-4 text-center border border-border">
-                        <p className="text-xs text-muted-foreground mb-1">SOM</p>
-                        <p className="text-lg font-semibold text-foreground">{data.market?.som || "N/A"}</p>
-                      </div>
-                    </div>
-                    
-                    {data.market?.cagr && (
-                      <p className="text-sm"><strong>CAGR:</strong> {data.market.cagr}</p>
-                    )}
-                    
-                    {data.market?.analysis && (
-                      <div>
-                        <h4 className="font-semibold mb-2">Analyse</h4>
-                        <p className="text-foreground/90 leading-relaxed">{stripInlineSources(data.market.analysis)}</p>
-                      </div>
-                    )}
-                    
-                    {toArray(data.market?.trends).length > 0 && (
-                      <div>
-                        <h4 className="font-semibold mb-2">Tendances</h4>
-                        <ul className="space-y-1">
-                          {toArray(data.market?.trends).map((t, i) => (
-                            <li key={i} className="text-sm text-foreground/90 flex items-start gap-2">
-                              <TrendingUp className="w-3 h-3 mt-1 text-muted-foreground flex-shrink-0" />
-                              {stripInlineSources(t)}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                    {/* Sources */}
-                    <SourcesFooter sources={data.market?.sources} />
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              {/* Team Tab */}
-              <TabsContent value="team" className="mt-4">
-                <Card className="bg-card border-border">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="flex items-center gap-2 text-lg">
-                      <Users className="w-5 h-5 text-muted-foreground" />
-                      Équipe & Fondateurs
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-5 pt-2">
-                    {data.team?.overview && (
-                      <p className="text-foreground/90 leading-relaxed">{stripInlineSources(data.team.overview)}</p>
-                    )}
-
-                    {data.team?.teamSize && (
-                      <div className="bg-muted/30 border border-border rounded-lg p-3 inline-block">
-                        <p className="text-sm"><strong>Taille de l'équipe:</strong> {stripInlineSources(data.team.teamSize)}</p>
-                      </div>
-                    )}
-                    
-                    {toArray(data.team?.founders).length > 0 && (
-                      <div>
-                        <h4 className="font-semibold mb-3">Fondateurs</h4>
-                        <div className="grid md:grid-cols-2 gap-4">
-                          {toArray(data.team?.founders).map((f, i) => (
-                            <div key={i} className="bg-muted/20 rounded-lg p-4 border border-border">
-                              <div className="flex justify-between items-start mb-2">
-                                <div>
-                                  <p className="font-semibold">{f.name}</p>
-                                  <p className="text-sm text-muted-foreground">{f.role}</p>
-                                </div>
-                                {f.linkedin && (
-                                  <a href={f.linkedin} target="_blank" rel="noopener noreferrer">
-                                    <Linkedin className="w-4 h-4 text-muted-foreground hover:text-foreground" />
-                                  </a>
-                                )}
-                              </div>
-                              {f.background && <p className="text-sm text-muted-foreground">{f.background}</p>}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {toArray(data.team?.keyExecutives).length > 0 && (
-                      <div>
-                        <h4 className="font-semibold mb-3">Équipe Dirigeante</h4>
-                        <div className="space-y-2">
-                          {toArray(data.team?.keyExecutives).map((e, i) => (
-                            <div key={i} className="bg-muted/20 rounded-lg p-3 border border-border">
-                              <p className="font-medium">{e.name} <span className="text-sm text-muted-foreground">- {e.role}</span></p>
-                              {e.background && <p className="text-sm text-muted-foreground mt-1">{e.background}</p>}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {/* Sources */}
-                    <SourcesFooter sources={data.team?.sources} />
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              {/* Competition Tab */}
-              <TabsContent value="competition" className="mt-4">
-                <Card className="bg-card border-border">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="flex items-center gap-2 text-lg">
-                      <Shield className="w-5 h-5 text-muted-foreground" />
-                      Analyse Concurrentielle
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-5 pt-2">
-                    {data.competition?.landscape && (
-                      <p className="text-foreground/90 leading-relaxed">{stripInlineSources(data.competition.landscape)}</p>
-                    )}
-
-                    {data.competition?.competitiveAdvantage && (
-                      <div className="bg-muted/30 border border-border rounded-lg p-4">
-                        <h4 className="font-semibold text-foreground mb-2">Avantage Concurrentiel</h4>
-                        <p className="text-foreground/90">{stripInlineSources(data.competition.competitiveAdvantage)}</p>
-                      </div>
-                    )}
-                    
-                    {data.competition?.moat && (
-                      <div>
-                        <h4 className="font-semibold mb-2">Moat</h4>
-                        <p className="text-foreground/90">{stripInlineSources(data.competition.moat)}</p>
-                      </div>
-                    )}
-                    
-                    {toArray(data.competition?.competitors).length > 0 && (
-                      <div>
-                        <h4 className="font-semibold mb-3">Concurrents Principaux</h4>
-                        <div className="space-y-3">
-                          {toArray(data.competition?.competitors).map((c, i) => (
-                            <div key={i} className="bg-muted/20 rounded-lg p-4 border border-border">
-                              <div className="flex justify-between items-start mb-2">
-                                <p className="font-semibold">{c.name}</p>
-                                {c.funding && <Badge variant="outline">{c.funding}</Badge>}
-                              </div>
-                              {c.description && <p className="text-sm text-muted-foreground mb-2">{c.description}</p>}
-                              <div className="grid md:grid-cols-2 gap-2 text-xs">
-                                {toArray(c.strengths).length > 0 && (
-                                  <div>
-                                    <p className="text-success font-medium mb-1 uppercase tracking-wider text-[11px]">Forces</p>
-                                    <ul className="text-muted-foreground space-y-0.5">
-                                      {toArray(c.strengths).map((s, j) => <li key={j}>• {toDisplayString(s)}</li>)}
-                                    </ul>
-                                  </div>
-                                )}
-                                {toArray(c.weaknesses).length > 0 && (
-                                  <div>
-                                    <p className="text-destructive font-medium mb-1 uppercase tracking-wider text-[11px]">Faiblesses</p>
-                                    <ul className="text-muted-foreground space-y-0.5">
-                                      {toArray(c.weaknesses).map((w, j) => <li key={j}>• {toDisplayString(w)}</li>)}
-                                    </ul>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {/* Sources */}
-                    <SourcesFooter sources={data.competition?.sources} />
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              {/* Traction Tab */}
-              <TabsContent value="traction" className="mt-4">
-                <Card className="bg-card border-border">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="flex items-center gap-2 text-lg">
-                      <TrendingUp className="w-5 h-5 text-muted-foreground" />
-                      Traction & Milestones
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-5 pt-2">
-                    {data.traction?.overview && (
-                      <p className="text-foreground/90 leading-relaxed">{stripInlineSources(data.traction.overview)}</p>
-                    )}
-                    
-                    {data.traction?.customers && (
-                      <div className="grid md:grid-cols-2 gap-4">
-                        {data.traction.customers.count && (
-                          <div className="bg-muted/30 rounded-lg p-4 border border-border">
-                            <p className="text-xs text-muted-foreground mb-1">Clients</p>
-                            <p className="text-xl font-semibold text-foreground">{data.traction.customers.count}</p>
-                          </div>
-                        )}
-                        {(() => {
-                          const notable = data.traction?.customers?.notable;
-                          const list = Array.isArray(notable) ? notable : (typeof notable === "string" ? [notable] : []);
-                          if (list.length === 0) return null;
-                          return (
-                            <div className="bg-muted/20 rounded-lg p-4 border border-border">
-                              <p className="text-xs text-muted-foreground mb-2">Clients Notables</p>
-                              <div className="flex flex-wrap gap-2">
-                                {list.map((c, i) => (
-                                  <Badge key={i} variant="secondary">{toDisplayString(c)}</Badge>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    )}
-                    
-                    {(() => {
-                      const km = data.traction?.keyMilestones;
-                      const list = Array.isArray(km) ? km : [];
-                      if (list.length === 0) return null;
-                      return (
-                        <div>
-                          <h4 className="font-semibold mb-3">Milestones Clés</h4>
-                          <div className="space-y-2">
-                            {list.map((m, i) => (
-                              <div key={i} className="flex items-start gap-3 bg-muted/20 rounded-lg p-3 border border-border">
-                                <div className="w-1.5 h-1.5 rounded-full bg-success mt-2 flex-shrink-0" />
-                                <div className="flex-1">
-                                  <p className="text-sm text-foreground/85">{stripInlineSources(toDisplayString(m?.milestone))}</p>
-                                  {m?.date && <p className="text-xs text-muted-foreground mt-1">{m.date}</p>}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })()}
-                    
-                    {(() => {
-                      const p = data.traction?.partnerships;
-                      const list = Array.isArray(p) ? p : (typeof p === "string" ? [p] : []);
-                      if (list.length === 0) return null;
-                      return (
-                        <div>
-                          <h4 className="font-semibold mb-2">Partenariats</h4>
-                          <div className="flex flex-wrap gap-2">
-                            {list.map((item, i) => (
-                              <Badge key={i} variant="outline">{toDisplayString(item)}</Badge>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })()}
-                    
-                    {(() => {
-                      const aw = data.traction?.awards;
-                      const list = Array.isArray(aw) ? aw : (typeof aw === "string" ? [aw] : []);
-                      if (list.length === 0) return null;
-                      return (
-                        <div>
-                          <h4 className="font-semibold mb-2 flex items-center gap-2">
-                            <Award className="w-4 h-4 text-muted-foreground" />
-                            Récompenses
-                          </h4>
-                          <ul className="space-y-1">
-                            {list.map((a, i) => (
-                              <li key={i} className="text-sm text-foreground/85">• {toDisplayString(a)}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      );
-                    })()}
-                    {/* Sources */}
-                    <SourcesFooter sources={data.traction?.sources} />
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              {/* Risks Tab */}
-              <TabsContent value="risks" className="mt-4">
-                <Card className="bg-card border-border">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="flex items-center justify-between text-lg">
-                      <span className="flex items-center gap-2">
-                        <AlertTriangle className="w-5 h-5 text-muted-foreground" />
-                        Analyse des Risques
-                      </span>
-                      {getRiskBadge(data.risks?.overallRiskLevel)}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-5 pt-2">
-                    <div className="grid md:grid-cols-2 gap-4">
-                      {([
-                        { key: "marketRisks", label: "Risques marché" },
-                        { key: "executionRisks", label: "Risques d'exécution" },
-                        { key: "financialRisks", label: "Risques financiers" },
-                        { key: "competitiveRisks", label: "Risques concurrentiels" },
-                      ] as const).map(({ key, label }) =>
-                        toArray(data.risks?.[key]).length > 0 ? (
-                          <div key={key} className="rounded-lg border border-border bg-muted/20 p-4">
-                            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-                              {label}
-                            </h4>
-                            <ul className="space-y-2 text-sm">
-                              {toArray(data.risks?.[key]).map((r, i) => (
-                                <li key={i} className="text-foreground/85 flex items-start gap-2.5 leading-relaxed">
-                                  <span className="w-1 h-1 rounded-full bg-destructive mt-2 shrink-0" />
-                                  {r}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        ) : null
-                      )}
-                    </div>
-
-                    {toArray(data.risks?.mitigations).length > 0 && (
-                      <div className="rounded-lg border border-border bg-muted/20 p-4">
-                        <h4 className="text-xs font-medium text-success uppercase tracking-wider mb-3">
-                          Facteurs atténuants
-                        </h4>
-                        <ul className="space-y-2 text-sm">
-                          {toArray(data.risks?.mitigations).map((m, i) => (
-                            <li key={i} className="text-foreground/85 flex items-start gap-2.5 leading-relaxed">
-                              <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 text-success flex-shrink-0" />
-                              {m}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                    {/* Sources */}
-                    <SourcesFooter sources={data.risks?.sources} />
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              {/* Recommendation Tab */}
-              <TabsContent value="recommendation" className="mt-4">
-                <Card className="bg-card border-border">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="flex items-center justify-between text-lg">
-                      <span className="flex items-center gap-2">
-                        <Lightbulb className="w-5 h-5 text-muted-foreground" />
-                        Recommandation d'Investissement
-                      </span>
-                      {getRecommendationBadge(data.investmentRecommendation?.recommendation)}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-5 pt-2">
-                    {data.investmentRecommendation?.rationale && (
-                      <div>
-                        <h4 className="font-semibold mb-2">Justification</h4>
-                        <p className="text-foreground/90 leading-relaxed">{stripInlineSources(data.investmentRecommendation.rationale)}</p>
-                      </div>
-                    )}
-                    
-                    <div className="grid md:grid-cols-3 gap-4 my-4">
-                      <div className="bg-muted/30 rounded-lg p-3 text-center border border-border">
-                        <p className="text-xs text-muted-foreground mb-1">Multiple Cible</p>
-                        <p className="text-lg font-semibold text-primary">{toDisplayString(data.investmentRecommendation?.targetReturn) || "Non disponible"}</p>
-                      </div>
-                      <div className="bg-muted/30 rounded-lg p-3 text-center border border-border">
-                        <p className="text-xs text-muted-foreground mb-1">Horizon</p>
-                        <p className="text-lg font-semibold">{toDisplayString(data.investmentRecommendation?.investmentHorizon) || "Non disponible"}</p>
-                      </div>
-                      <div className="bg-muted/30 rounded-lg p-3 text-center border border-border">
-                        <p className="text-xs text-muted-foreground mb-1">Ticket Suggéré</p>
-                        <p className="text-lg font-semibold text-primary">{toDisplayString(data.investmentRecommendation?.suggestedTicket) || "Non disponible"}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="grid md:grid-cols-2 gap-4">
-                      {toArray(data.investmentRecommendation?.strengths).length > 0 && (
-                        <div className="rounded-lg border border-border bg-muted/20 p-4">
-                          <h4 className="text-xs font-medium text-success uppercase tracking-wider mb-3">Forces</h4>
-                          <ul className="space-y-2 text-sm">
-                            {toArray(data.investmentRecommendation?.strengths).map((s, i) => (
-                              <li key={i} className="text-foreground/85 flex items-start gap-2.5 leading-relaxed">
-                                <span className="w-1 h-1 rounded-full bg-success mt-2 shrink-0" />
-                                {toDisplayString(s)}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      {toArray(data.investmentRecommendation?.weaknesses).length > 0 && (
-                        <div className="rounded-lg border border-border bg-muted/20 p-4">
-                          <h4 className="text-xs font-medium text-destructive uppercase tracking-wider mb-3">Faiblesses</h4>
-                          <ul className="space-y-2 text-sm">
-                            {toArray(data.investmentRecommendation?.weaknesses).map((w, i) => (
-                              <li key={i} className="text-foreground/85 flex items-start gap-2.5 leading-relaxed">
-                                <span className="w-1 h-1 rounded-full bg-destructive mt-2 shrink-0" />
-                                {toDisplayString(w)}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {toArray(data.investmentRecommendation?.keyQuestions).length > 0 && (
-                      <div className="bg-muted/30 border border-border rounded-lg p-4">
-                        <h4 className="font-semibold text-foreground mb-2">Questions à Creuser</h4>
-                        <ul className="space-y-1 text-sm">
-                          {toArray(data.investmentRecommendation?.keyQuestions).map((q, i) => (
-                            <li key={i} className="text-foreground/85">• {toDisplayString(q)}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                    
-                    {toArray(data.investmentRecommendation?.suggestedNextSteps).length > 0 && (
-                      <div>
-                        <h4 className="font-semibold mb-2">Prochaines Étapes Suggérées</h4>
-                        <ol className="space-y-2">
-                          {toArray(data.investmentRecommendation?.suggestedNextSteps).map((s, i) => (
-                            <li key={i} className="flex items-start gap-3 text-sm text-foreground/85">
-                              <span className="w-6 h-6 rounded-full border border-border bg-muted/40 text-muted-foreground flex items-center justify-center text-xs font-semibold flex-shrink-0">
-                                {i + 1}
-                              </span>
-                              {toDisplayString(s)}
-                            </li>
-                          ))}
-                        </ol>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              {/* Sources Tab */}
-              <TabsContent value="sources" className="mt-4">
-                <Card className="bg-card border-border">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="flex items-center justify-between text-lg">
-                      <span className="flex items-center gap-2">
-                        <LinkIcon className="w-5 h-5 text-muted-foreground" />
-                        Toutes les Sources
-                      </span>
-                      <Badge variant="outline" className="text-xs">{allSourcesAggregated.length || data.allSources?.length || 0} sources</Badge>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-2">
-                    {data.dataQuality && (
-                      <div className="mb-6 p-4 bg-muted/20 rounded-lg border border-border">
-                        <div className="flex items-center justify-between mb-3">
-                          <span className="text-sm font-medium text-foreground">Qualité des Données</span>
-                          <Badge variant={
-                            data.dataQuality.overallScore === "excellent" ? "default" :
-                            data.dataQuality.overallScore === "good" ? "secondary" : "outline"
-                          } className="text-xs">
-                            {data.dataQuality.overallScore}
-                          </Badge>
-                        </div>
-                        {toArray(data.dataQuality?.limitations).length > 0 && (
-                          <div className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border">
-                            <p className="font-medium mb-2 text-foreground/85">Limitations:</p>
-                            <ul className="space-y-1">
-                              {toArray(data.dataQuality?.limitations).map((l, i) => (
-                                <li key={i} className="flex items-start gap-2">
-                                  <span className="text-muted-foreground/60 mt-0.5">•</span>
-                                  <span>{l}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    
-                    <ScrollArea className="h-[500px] pr-4">
-                      <div className="space-y-2">
-                        {(allSourcesAggregated.length > 0 ? allSourcesAggregated : data.allSources || []).filter((s) => !!s?.url).map((source, i) => (
-                          <a
-                            key={i}
-                            href={source.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="block p-3 bg-muted/20 rounded-lg hover:bg-muted/40 border border-border hover:border-border transition-all group"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors truncate">
-                                    {source.name}
-                                  </p>
-                                  {source.type && (
-                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 flex-shrink-0">
-                                      {source.type}
-                                    </Badge>
-                                  )}
-                                </div>
-                                <p className="text-xs text-muted-foreground truncate" title={source.url}>
-                                  {source.url ? shortenUrl(source.url, 60) : ""}
-                                </p>
-                                {source.relevance && (
-                                  <p className="text-xs text-muted-foreground mt-1.5 line-clamp-2">{source.relevance}</p>
-                                )}
-                              </div>
-                              <ExternalLink className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0 mt-0.5" />
-                            </div>
-                          </a>
+                {toArray(data.executiveSummary?.keyHighlights).length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Points clés</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ul className="space-y-2">
+                        {toArray(data.executiveSummary?.keyHighlights).map((h, i) => (
+                          <li key={i} className="flex gap-2 text-sm">
+                            <CheckCircle2 className="w-4 h-4 text-success shrink-0 mt-0.5" />
+                            <span>{h}</span>
+                          </li>
                         ))}
-                      </div>
-                    </ScrollArea>
-                  </CardContent>
-                </Card>
+                      </ul>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {toArray(data.executiveSummary?.keyRisks).length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Risques</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ul className="space-y-2">
+                        {toArray(data.executiveSummary?.keyRisks).map((r, i) => (
+                          <li key={i} className="flex gap-2 text-sm">
+                            <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                            <span>{r}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </CardContent>
+                  </Card>
+                )}
               </TabsContent>
 
-              {/* Assistant IA — approfondir des points du rapport */}
-              <TabsContent value="assistant" className="mt-4">
-                <div className="rounded-xl border border-border bg-card overflow-hidden w-full">
-                  <div className="h-[580px] overflow-hidden w-full">
-                    <AIQAChat
-                      startupData={{
-                        name: data.company?.name || requestPayload?.companyName || "",
-                        sector: data.company?.sector,
-                        stage: data.company?.stage,
-                        location: data.company?.headquarters,
-                        founded: data.company?.founded,
-                        teamSize: data.company?.employeeCount,
-                      }}
-                      dueDiligenceData={data}
-                    />
-                  </div>
-                </div>
+              {/* Product */}
+              <TabsContent value="product" className="space-y-4 mt-4">
+                {data.product?.description && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Description</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-foreground leading-relaxed">{data.product.description}</p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {data.product?.valueProposition && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Proposition de valeur</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-foreground leading-relaxed">{data.product.valueProposition}</p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {toArray(data.product?.keyFeatures).length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Fonctionnalités clés</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ul className="space-y-1 text-sm">
+                        {toArray(data.product?.keyFeatures).map((f, i) => (
+                          <li key={i} className="flex gap-2">
+                            <span className="text-primary">•</span>
+                            <span>{f}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </CardContent>
+                  </Card>
+                )}
+              </TabsContent>
+
+              {/* Market */}
+              <TabsContent value="market" className="space-y-4 mt-4">
+                {(data.market?.tam || data.market?.sam || data.market?.som) && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Taille de marché</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      {data.market?.tam && <div><span className="text-muted-foreground">TAM:</span> {data.market.tam}</div>}
+                      {data.market?.sam && <div><span className="text-muted-foreground">SAM:</span> {data.market.sam}</div>}
+                      {data.market?.som && <div><span className="text-muted-foreground">SOM:</span> {data.market.som}</div>}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {data.market?.analysis && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Analyse</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-foreground leading-relaxed">{data.market.analysis}</p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {toArray(data.market?.trends).length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Tendances</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ul className="space-y-1 text-sm">
+                        {toArray(data.market?.trends).map((t, i) => (
+                          <li key={i} className="flex gap-2">
+                            <span className="text-primary">→</span>
+                            <span>{t}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </CardContent>
+                  </Card>
+                )}
+              </TabsContent>
+
+              {/* Financials */}
+              <TabsContent value="financials" className="space-y-4 mt-4">
+                {data.financials?.metrics && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Métriques clés</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      {Object.entries(data.financials.metrics).map(([key, val]) =>
+                        val ? <div key={key}><span className="text-muted-foreground capitalize">{key}:</span> {val}</div> : null
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {toArray(data.financials?.fundingHistory).length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Historique de financement</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {toArray(data.financials?.fundingHistory).map((round, i) => (
+                        <div key={i} className="pb-3 border-b border-border last:border-0 last:pb-0">
+                          <div className="font-medium text-sm">{round.round}</div>
+                          {round.amount && <div className="text-xs text-muted-foreground">{round.amount}</div>}
+                          {round.date && <div className="text-xs text-muted-foreground">{round.date}</div>}
+                          {round.investors && <div className="text-xs text-muted-foreground">{toArray(round.investors).join(", ")}</div>}
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                )}
+              </TabsContent>
+
+              {/* Team */}
+              <TabsContent value="team" className="space-y-4 mt-4">
+                {toArray(data.team?.founders).length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Fondateurs</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {toArray(data.team?.founders).map((f, i) => (
+                        <div key={i} className="pb-3 border-b border-border last:border-0 last:pb-0">
+                          <div className="font-medium text-sm">{f.name}</div>
+                          {f.title && <div className="text-xs text-muted-foreground">{f.title}</div>}
+                          {f.background && <div className="text-xs text-foreground mt-1">{f.background}</div>}
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {data.team?.size && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Taille d'équipe</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm">{data.team.size}</p>
+                    </CardContent>
+                  </Card>
+                )}
               </TabsContent>
             </Tabs>
-
-            {/* Bloc Sources en bas de page — liens cliquables, toujours visible */}
-            <section id="sources-du-rapport" aria-label="Sources du rapport">
-            {allSourcesAggregated.length > 0 ? (
-              <Card className="rounded-xl border border-border bg-card overflow-hidden">
-                <CardHeader className="pb-3 border-b border-border">
-                  <CardTitle className="flex items-center gap-2 text-lg">
-                    <LinkIcon className="w-5 h-5 text-muted-foreground" />
-                    Sources du rapport
-                    <Badge variant="outline" className="ml-2 text-xs font-normal">
-                      {allSourcesAggregated.length} source{allSourcesAggregated.length > 1 ? "s" : ""}
-                    </Badge>
-                  </CardTitle>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Toutes les sources utilisées pour cette analyse, en un seul endroit.
-                  </p>
-                </CardHeader>
-                <CardContent className="pt-4">
-                  <div className="flex flex-wrap gap-2">
-                    {allSourcesAggregated.map((source, i) => (
-                      <a
-                        key={i}
-                        href={source.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm bg-muted/40 hover:bg-muted border border-border text-foreground/90 hover:text-primary transition-all"
-                        title={source.url}
-                      >
-                        <LinkIcon className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
-                        <span className="truncate max-w-[200px]">{source.name}</span>
-                        <ExternalLink className="w-3 h-3 flex-shrink-0 opacity-60" />
-                      </a>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card className="rounded-xl border border-border bg-card overflow-hidden">
-                <CardHeader className="pb-2">
-                  <CardTitle className="flex items-center gap-2 text-base text-muted-foreground">
-                    <LinkIcon className="w-4 h-4" />
-                    Sources du rapport
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-2">
-                  <p className="text-sm text-muted-foreground">Aucune source listée pour ce rapport.</p>
-                </CardContent>
-              </Card>
-            )}
-            </section>
-
-            {/* Footer metadata */}
-            {data.metadata && (
-              <div className="text-center text-xs text-muted-foreground pt-6 border-t border-border">
-                <p>
-                  Rapport généré le {new Date(data.metadata.generatedAt || "").toLocaleString("fr-FR")}
-                  {data.metadata.searchResultsCount && ` • ${data.metadata.searchResultsCount} résultats de recherche analysés`}
-                </p>
-              </div>
-            )}
           </div>
-          </>
-        )}
-      </div>
+        </div>
+      )}
     </AppLayout>
   );
 }

@@ -608,13 +608,16 @@ async function handlePicking(
 
   scoredCandidates.sort((a, b) => b.totalWeighted - a.totalWeighted);
 
-  // Défense en profondeur : si le scoring a identifié du bruit (article,
-  // programme, réseau — redFlag "pas une entreprise"), on l'écarte de la
-  // shortlist tant qu'il reste au moins un vrai candidat.
+  // Défense en profondeur 1 : éliminer le bruit (articles, programmes, réseaux)
   const realCompanies = scoredCandidates.filter(
     (s) => !(s.redFlags ?? []).some((f: string) => /pas une entreprise/i.test(String(f))),
   );
-  const finalShortlist = realCompanies.length > 0 ? realCompanies : scoredCandidates;
+
+  // Défense en profondeur 2 : éliminer les startups mal alignées (thesisFit < 55)
+  // thesisFit est maintenant dominant (45-50%) donc c'est un gate keeper strict.
+  const wellAligned = realCompanies.filter((s) => (s.scores?.thesisFit ?? 0) >= 55);
+
+  const finalShortlist = wellAligned.length > 0 ? wellAligned : realCompanies.length > 0 ? realCompanies : scoredCandidates;
 
   // Seuil de viabilité : si le meilleur candidat score < 35, le sourcing a
   // échoué à trouver des entreprises pertinentes (résultats retail, bruit).
