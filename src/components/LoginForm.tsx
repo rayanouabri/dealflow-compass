@@ -67,6 +67,7 @@ export function LoginForm({ onSuccess, onSwitchToSignup }: LoginFormProps) {
           id="email"
           type="email"
           placeholder="votre@email.com"
+          autoComplete="email"
           {...register("email")}
           disabled={isLoading}
         />
@@ -81,6 +82,7 @@ export function LoginForm({ onSuccess, onSwitchToSignup }: LoginFormProps) {
           id="password"
           type="password"
           placeholder="••••••••"
+          autoComplete="current-password"
           {...register("password")}
           disabled={isLoading}
         />

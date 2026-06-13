@@ -62,22 +62,26 @@ export async function mineListicles(
   if (usable.length === 0) return [];
 
   const icp = thesis?.idealCompanyProfile ?? {};
+  const stageMax = thesis?.stage?.max ?? "serie-b";
   const systemPrompt =
-    `Tu es analyste VC. On te donne le TEXTE BRUT de pages web qui listent des startups. ` +
+    `Tu es analyste VC dans un fonds EARLY-STAGE. On te donne le TEXTE BRUT de pages web qui listent des startups. ` +
     `Extrais les VRAIES startups/scale-ups nommées (entreprises autonomes finançables en equity). ` +
-    `EXCLURE : investisseurs/VC, agrégateurs, médias, catégories, grands groupes cotés. ` +
-    `Ne garde que celles cohérentes avec le profil cible.
+    `EXCLURE : investisseurs/VC, agrégateurs, médias, catégories, grands groupes cotés.
 
 Profil cible : ${JSON.stringify({
       sectors: thesis?.sectors,
+      stageMin: thesis?.stage?.min,
+      stageMax,
       definition: icp.definition,
       mustHave: icp.mustHaveKeywords,
       exclusion: icp.exclusionKeywords,
     })}
 
+RÈGLE STADE (cruciale) : on veut des startups ÉMERGENTES au stade "${stageMax}" ou en dessous. EXCLUS (ou relevance <= 15) toute société manifestement plus avancée : licornes, entreprises cotées, valorisation > 1 Md, levées > 100 M€, noms mondialement connus du grand public (ex pour IA/deeptech FR : Mistral AI, Doctolib, Dataiku, BlaBlaCar, Contentsquare, Back Market). La notoriété n'est PAS un critère : préfère les pépites discrètes au bon stade aux stars déjà financées.
+
 Réponds UNIQUEMENT en JSON :
 {"companies":[{"name":"<nom commercial>","description":"<1 phrase>","relevance":<0-100>}]}
-Maximum 25 entreprises, les plus pertinentes d'abord.`;
+Maximum 25 entreprises, priorité aux startups émergentes au stade cible.`;
 
   const userPrompt = usable
     .map((p, i) => `=== Page ${i + 1} (${p.url}) ===\n${p.text}`)

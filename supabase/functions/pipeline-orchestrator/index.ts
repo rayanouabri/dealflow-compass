@@ -618,11 +618,26 @@ async function handlePicking(
     (s) => !(s.redFlags ?? []).some((f: string) => /pas une entreprise/i.test(String(f))),
   );
 
-  // Défense en profondeur 2 : éliminer les startups mal alignées (thesisFit < 55)
-  // thesisFit est maintenant dominant (45-50%) donc c'est un gate keeper strict.
-  const wellAligned = realCompanies.filter((s) => (s.scores?.thesisFit ?? 0) >= 55);
+  // Défense en profondeur 2 : GATE STADE déterministe. Pour une thèse early
+  // (stage.max <= serie-b), on écarte toute société trop avancée — soit signalée
+  // par l'IA (redFlag hors-stade), soit trahie par sa description (licorne, série
+  // C+, méga-levée, cotation). Évite qu'une Mistral/licorne gagne par hasard.
+  const stageMax = String(thesis?.stage?.max ?? "serie-b").toLowerCase();
+  const earlyThesis = !/serie-c|série-c|serie-d|growth|late/.test(stageMax);
+  const looksTooLate = (s: any): boolean => {
+    const flags = (s.redFlags ?? []).join(" ").toLowerCase();
+    if (/hors-stade|trop avanc|trop financ/.test(flags)) return true;
+    const text = String((s.descriptions ?? []).join(" ")).toLowerCase();
+    return /\bseries\s+[c-z]\b|\bs[ée]rie\s+[c-z]\b|s[ée]rie\s*c\+|\bunicorn\b|\blicorne\b|\bipo\b|cot[ée]e?\s+en\s+bourse|nasdaq|euronext|valuation\s*\$?\s*\d+(\.\d+)?\s*(b|bn|billion|milliard)|\b\d{3,}\s*(m€|m\$|\s*million)/.test(text);
+  };
+  const stageFiltered = earlyThesis ? realCompanies.filter((s) => !looksTooLate(s)) : realCompanies;
+  const stageBase = stageFiltered.length > 0 ? stageFiltered : realCompanies;
 
-  const finalShortlist = wellAligned.length > 0 ? wellAligned : realCompanies.length > 0 ? realCompanies : scoredCandidates;
+  // Défense en profondeur 3 : éliminer les startups mal alignées (thesisFit < 55)
+  // thesisFit est maintenant dominant (45-50%) donc c'est un gate keeper strict.
+  const wellAligned = stageBase.filter((s) => (s.scores?.thesisFit ?? 0) >= 55);
+
+  const finalShortlist = wellAligned.length > 0 ? wellAligned : stageBase.length > 0 ? stageBase : scoredCandidates;
 
   // Seuil de viabilité : si le meilleur candidat score < 35, le sourcing a
   // échoué à trouver des entreprises pertinentes (résultats retail, bruit).
@@ -1159,6 +1174,41 @@ async function handleStatus(
 }
 
 // ============================================================
+// ACTION: history — liste les analyses passées de l'utilisateur
+// ============================================================
+async function handleHistory(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  req: Request,
+): Promise<Response> {
+  const userId = await getUserId(supabase, req);
+  if (!userId) return jsonResp({ jobs: [] }, 200, req);
+
+  const { data, error } = await supabase
+    .from("pipeline_jobs")
+    .select("id, status, picked_startup, thesis_analysis, created_at, completed_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(30);
+
+  if (error) {
+    logger.warn("handleHistory erreur", { error: error.message });
+    return jsonResp({ jobs: [] }, 200, req);
+  }
+
+  const jobs = (data ?? []).map((j: any) => ({
+    id: j.id,
+    status: j.status,
+    company: j.picked_startup?.name ?? null,
+    sectors: j.thesis_analysis?.sectors ?? [],
+    stage: j.thesis_analysis?.stage ?? null,
+    geography: j.thesis_analysis?.geography?.primary ?? null,
+    createdAt: j.created_at,
+    hasReport: j.status === "dd_done",
+  }));
+  return jsonResp({ jobs }, 200, req);
+}
+
+// ============================================================
 // SERVE
 // ============================================================
 serve(async (req: Request) => {
@@ -1199,6 +1249,8 @@ serve(async (req: Request) => {
       return handleContinue(supabase, body, req);
     case "status":
       return handleStatus(supabase, body, req);
+    case "history":
+      return handleHistory(supabase, req);
     case "sweep":
       return handleSweep(supabase, req);
     default:

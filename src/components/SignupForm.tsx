@@ -81,6 +81,7 @@ export function SignupForm({ onSuccess, onSwitchToLogin }: SignupFormProps) {
           id="fullName"
           type="text"
           placeholder="Jean Dupont"
+          autoComplete="name"
           {...register("fullName")}
           disabled={isLoading}
         />
@@ -95,6 +96,7 @@ export function SignupForm({ onSuccess, onSwitchToLogin }: SignupFormProps) {
           id="email"
           type="email"
           placeholder="votre@email.com"
+          autoComplete="email"
           {...register("email")}
           disabled={isLoading}
         />
@@ -109,6 +111,7 @@ export function SignupForm({ onSuccess, onSwitchToLogin }: SignupFormProps) {
           id="password"
           type="password"
           placeholder="••••••••"
+          autoComplete="new-password"
           {...register("password")}
           disabled={isLoading}
         />

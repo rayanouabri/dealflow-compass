@@ -5,21 +5,21 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/components/AuthProvider";
 import { AppLayout } from "@/components/AppLayout";
 import { CustomThesisInput, CustomThesis } from "@/components/CustomThesisInput";
-import { AnalysisHistory } from "@/components/AnalysisHistory";
 import { AuthDialog } from "@/components/AuthDialog";
 import { PaywallModal } from "@/components/PaywallModal";
 import { useTrial } from "@/hooks/useTrial";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Loader2, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Loader2, CheckCircle2, FileText, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 
 interface HistoryItem {
   id: string;
-  fund_name: string;
-  startup_name: string;
-  investment_thesis: any;
-  pitch_deck: any[];
-  created_at: string;
+  status: string;
+  company: string | null;
+  sectors: string[];
+  geography: string | null;
+  createdAt: string;
+  hasReport: boolean;
 }
 
 const HOW_IT_WORKS = [
@@ -49,13 +49,19 @@ export default function Analyser() {
 
   const fetchHistory = async () => {
     if (!user) return;
-    const { data, error } = await supabase
-      .from("analysis_history")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(10);
-    if (!error && data) setHistory(data as HistoryItem[]);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const resp = await fetch(`${supabaseUrl}/functions/v1/pipeline-orchestrator`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session?.access_token || supabaseKey}` },
+        body: JSON.stringify({ action: "history" }),
+      });
+      if (!resp.ok) return;
+      const { jobs } = await resp.json();
+      if (Array.isArray(jobs)) setHistory(jobs as HistoryItem[]);
+    } catch { /* silencieux */ }
   };
 
   const canSubmit = !!(thesis.sectors?.length || thesis.description?.trim());
@@ -109,8 +115,10 @@ export default function Analyser() {
     }
   };
 
+  // Rouvre une analyse passée sans relancer de DD : /pipeline charge le job
+  // terminé (pick + shortlist + rapport DD déjà stocké).
   const handleHistorySelect = (item: HistoryItem) => {
-    navigate("/due-diligence", { state: { companyName: item.startup_name }, replace: false });
+    navigate(`/pipeline?id=${item.id}`);
   };
 
   const handleLogin = () => {
@@ -255,7 +263,38 @@ export default function Analyser() {
 
       {history.length > 0 && (
         <div className="mt-10 pt-8 border-t border-border">
-          <AnalysisHistory history={history} onSelect={handleHistorySelect} />
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-[0.18em] mb-4">
+            Mes analyses ({history.length})
+          </p>
+          <div className="border border-border rounded-md divide-y divide-border overflow-hidden">
+            {history.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => handleHistorySelect(item)}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-card/60 transition-colors"
+              >
+                <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-foreground truncate">
+                    {item.company || "Analyse en cours"}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {[item.sectors?.slice(0, 2).join(", "), item.geography].filter(Boolean).join(" · ")}
+                    {" · "}
+                    {new Date(item.createdAt).toLocaleDateString("fr-FR")}
+                  </p>
+                </div>
+                {item.hasReport ? (
+                  <span className="text-xs text-primary shrink-0">Rapport prêt</span>
+                ) : item.status === "error" ? (
+                  <span className="text-xs text-destructive shrink-0">Échec</span>
+                ) : (
+                  <span className="text-xs text-muted-foreground shrink-0">En cours</span>
+                )}
+                <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -263,7 +302,7 @@ export default function Analyser() {
         open={showAuthDialog}
         onOpenChange={setShowAuthDialog}
         defaultView={authView}
-        onAuthSuccess={() => setTimeout(() => setShowAuthDialog(false), 300)}
+        onAuthSuccess={() => setShowAuthDialog(false)}
       />
       <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} trialRemaining={trialRemaining} />
     </AppLayout>
