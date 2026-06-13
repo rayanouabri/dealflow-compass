@@ -13,29 +13,29 @@ export interface ScoringWeights {
 }
 
 export const DEFAULT_WEIGHTS: ScoringWeights = {
-  thesisFit: 0.30,
-  signalDiversity: 0.15,
-  sourceCorroboration: 0.10,
+  thesisFit: 0.45,
+  signalDiversity: 0.12,
+  sourceCorroboration: 0.08,
   frenchEcosystem: 0.13,
-  timing: 0.10,
-  teamQuality: 0.12,
-  competitivePosition: 0.07,
-  recency: 0.05,
+  timing: 0.08,
+  teamQuality: 0.10,
+  competitivePosition: 0.04,
+  recency: 0.00,
 };
 
 export function buildContextualWeights(geography: string): ScoringWeights {
   const isFrench = /france|french|paris|fr\b/i.test(geography);
   if (isFrench) return DEFAULT_WEIGHTS;
-  // For non-French geographies, redistribute frenchEcosystem bonus to thesisFit and teamQuality
+  // For non-French geographies, further boost thesisFit to compensate for weaker geographic signal
   return {
-    thesisFit: 0.40,
-    signalDiversity: 0.15,
-    sourceCorroboration: 0.10,
+    thesisFit: 0.50,
+    signalDiversity: 0.12,
+    sourceCorroboration: 0.08,
     frenchEcosystem: 0,
-    timing: 0.10,
-    teamQuality: 0.17,
-    competitivePosition: 0.07,
-    recency: 0.05,
+    timing: 0.08,
+    teamQuality: 0.15,
+    competitivePosition: 0.04,
+    recency: 0.03,
   };
 }
 
@@ -72,7 +72,8 @@ export function buildScoringPrompt(
   const signalTypesCount = candidate.categories.size;
   const signalSummary = signalTypesCount >= 3 ? `⚡ CROSS-SIGNAL CORROBORATION: ${signalTypesCount} types de signaux détectés` : `Signal type: ${categories || "standard"}`;
 
-  return `Tu es un analyste VC senior. Évalue cette startup par rapport à la thèse du fonds ci-dessous.
+  return `Tu es un analyste VC senior. Évalue STRICTEMENT cette startup par rapport à la thèse du fonds.
+⚠️ IMPORTANT : Un score thesisFit faible (< 40) si la startup ne matche PAS directement les critères clés (secteur, stage, géographie).
 
 ## Thèse du fonds
 ${JSON.stringify(thesis, null, 2)}
@@ -90,7 +91,7 @@ ${JSON.stringify(thesis, null, 2)}
 ${descriptions}
 
 ## Instructions
-Réponds UNIQUEMENT en JSON valide avec ce schéma :
+Réponds UNIQUEMENT en JSON valide. IMPORTANT : thesisFit DOIT être bas (20-40) si la startup ne matche pas clairement les secteurs/stage clés.
 {
   "scores": {
     "thesisFit": <0-100>,
