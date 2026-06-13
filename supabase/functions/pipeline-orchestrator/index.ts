@@ -832,17 +832,24 @@ async function getUserId(
 // Plafond de jobs actifs : borne le coût (recherche/Gemini) en cas d'abus de
 // l'anon key (publique par design). Un job dure ~2-4 min — un utilisateur
 // légitime n'atteint jamais ces seuils.
-const MAX_ACTIVE_JOBS_PER_USER = 3;
+const MAX_ACTIVE_JOBS_PER_USER = 5;
 const MAX_ACTIVE_ANONYMOUS_JOBS = 10;
+// Note : plafond de jobs CONCURRENTS (anti-abus de coût), pas un quota total.
+// Les comptes n'ont aucune limite d'analyses cumulées.
 
 async function countActiveJobs(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   userId: string | null,
 ): Promise<number> {
+  // Ne compte que les jobs RÉELLEMENT en cours (démarrés < 15 min). Un job
+  // légitime dure ~2-4 min ; au-delà il est figé/abandonné et ne doit PAS
+  // verrouiller le compte (sinon l'utilisateur ne peut plus lancer d'analyse).
+  const recent = new Date(Date.now() - 15 * 60_000).toISOString();
   let q = supabase
     .from("pipeline_jobs")
     .select("id", { count: "exact", head: true })
-    .not("status", "in", "(dd_done,error)");
+    .not("status", "in", "(dd_done,error)")
+    .gte("started_at", recent);
   q = userId === null ? q.is("user_id", null) : q.eq("user_id", userId);
   const { count, error } = await q;
   if (error) {
