@@ -1,130 +1,50 @@
-// Client de recherche unifié : Brave Search + Serper, avec déduplication et rate limiting
+// Client de recherche unifié : Oxylabs Real-time API
 import { logger } from "./logger.ts";
 import { getCachedSearch, setCachedSearch } from "./search-cache.ts";
+import {
+  oxylabsSearch as oxylabsWebSearch,
+  oxylabsLinkedInSearch,
+} from "./oxylabs-client.ts";
 
 export interface SearchResult {
   title: string;
   url: string;
   description: string;
   extra_snippets?: string[];
-  source?: "brave" | "serper" | "insee" | "hn" | "github";
+  source?: "oxylabs" | "insee" | "hn" | "github";
 }
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Brave Search API
-export async function braveSearch(
+// Oxylabs unified search with retry logic
+export async function oxylabsSearchWrapper(
   query: string,
   count = 10,
   retries = 2,
 ): Promise<SearchResult[]> {
-  const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY");
-  if (!BRAVE_API_KEY) {
-    logger.warn("BRAVE_API_KEY non configuré — skip Brave Search");
-    return [];
-  }
-
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(
-        query,
-      )}&count=${count}&text_decorations=false&result_filter=web`;
-
-      const resp = await fetch(url, {
-        headers: {
-          Accept: "application/json",
-          "X-Subscription-Token": BRAVE_API_KEY,
-        },
-      });
-
-      if (resp.status === 429) {
-        const wait = Math.pow(2, attempt) * 1000;
-        logger.warn(`Brave 429 — attente ${wait}ms`, { query });
-        await sleep(wait);
-        continue;
-      }
-
-      if (!resp.ok) {
-        logger.error("Brave Search erreur", { status: resp.status, query });
-        return [];
-      }
-
-      const data = await resp.json();
-      return (data.web?.results ?? []).map((r: any) => ({
-        title: r.title ?? "",
-        url: r.url ?? "",
-        description: r.description ?? "",
-        extra_snippets: r.extra_snippets ?? [],
-        source: "brave" as const,
+      const results = await oxylabsWebSearch(query, count);
+      return results.map((r) => ({
+        ...r,
+        source: "oxylabs" as const,
       }));
     } catch (err) {
-      logger.error("Brave Search exception", { error: String(err), query });
+      logger.error(`Oxylabs search attempt ${attempt + 1} failed:`, err);
       if (attempt === retries) return [];
-      await sleep(Math.pow(2, attempt) * 500);
+      await sleep(Math.pow(2, attempt) * 1000);
     }
   }
   return [];
 }
 
-// Serper (Google Search) API
-export async function serperSearch(
-  query: string,
-  count = 10,
-  retries = 2,
-): Promise<SearchResult[]> {
-  const SERPER_API_KEY =
-    Deno.env.get("SERPER_API_KEY") ?? Deno.env.get("serper_api");
-  if (!SERPER_API_KEY) {
-    logger.warn("SERPER_API_KEY non configuré — skip Serper Search");
-    return [];
-  }
+// Legacy names for backward compatibility
+export const braveSearch = oxylabsSearchWrapper;
+export const serperSearch = oxylabsSearchWrapper;
 
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const resp = await fetch("https://google.serper.dev/search", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-API-KEY": SERPER_API_KEY,
-        },
-        body: JSON.stringify({ q: query, num: count }),
-      });
-
-      if (resp.status === 429) {
-        const wait = Math.pow(2, attempt) * 1000;
-        logger.warn(`Serper 429 — attente ${wait}ms`, { query });
-        await sleep(wait);
-        continue;
-      }
-
-      if (!resp.ok) {
-        logger.error("Serper Search erreur", { status: resp.status, query });
-        return [];
-      }
-
-      const data = await resp.json();
-      return (data.organic ?? []).map((r: any) => ({
-        title: r.title ?? "",
-        url: r.link ?? "",
-        description: r.snippet ?? "",
-        extra_snippets: [],
-        source: "serper" as const,
-      }));
-    } catch (err) {
-      logger.error("Serper Search exception", { error: String(err), query });
-      if (attempt === retries) return [];
-      await sleep(Math.pow(2, attempt) * 500);
-    }
-  }
-  return [];
-}
-
-// Brave + Serper fusionnés, dédupliqués par URL. Servi depuis search_cache
-// quand la même requête a déjà été payée (<14 j) : mêmes résultats, 0 crédit.
-// Clé de cache distincte des fonctions legacy ("all|") car le contenu fusionné
-// diffère d'un résultat Serper-seul ou Brave-seul.
+// Oxylabs unified search with caching
 export async function searchAll(
   query: string,
   count = 10,
@@ -133,23 +53,11 @@ export async function searchAll(
   const cached = await getCachedSearch<SearchResult>(cacheQuery, count);
   if (cached) return cached;
 
-  // Les deux providers en parallèle : divise la latence par requête par 2.
-  const [braveResults, serperResults] = await Promise.all([
-    braveSearch(query, count),
-    serperSearch(query, count),
-  ]);
+  const results = await oxylabsSearchWrapper(query, count);
 
-  const seen = new Set<string>();
-  const merged: SearchResult[] = [];
-
-  for (const r of [...braveResults, ...serperResults]) {
-    const key = r.url.toLowerCase().replace(/\/$/, "");
-    if (!seen.has(key)) {
-      seen.add(key);
-      merged.push(r);
-    }
+  if (results.length > 0) {
+    await setCachedSearch(cacheQuery, count, results);
   }
 
-  if (merged.length > 0) await setCachedSearch(cacheQuery, count, merged);
-  return merged;
+  return results;
 }
