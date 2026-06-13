@@ -21,12 +21,12 @@ export default function Index() {
     return () => clearTimeout(t);
   }, [user, authLoading, showAuthDialog, navigate]);
 
-  // Connecté → l'app ; sinon → inscription (compte gratuit, analyses illimitées).
+  // « Lancer une analyse » : accès direct à l'app (analyses illimitées, sans gate).
   const handleStartTrial = () => {
-    if (user) {
-      navigate("/analyser");
-      return;
-    }
+    navigate("/analyser");
+  };
+
+  const handleSignup = () => {
     setAuthView("signup");
     setShowAuthDialog(true);
   };
@@ -43,6 +43,7 @@ export default function Index() {
     <>
       <LandingPage
         onStartTrial={handleStartTrial}
+        onSignup={handleSignup}
         onLogin={handleLogin}
         trialRemaining={trialRemaining}
       />

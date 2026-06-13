@@ -11,11 +11,12 @@ import { Footer } from "@/components/landing/Footer";
 
 interface LandingPageProps {
   onStartTrial: () => void;
+  onSignup: () => void;
   onLogin: () => void;
   trialRemaining: number;
 }
 
-export function LandingPage({ onStartTrial, onLogin, trialRemaining }: LandingPageProps) {
+export function LandingPage({ onStartTrial, onSignup, onLogin, trialRemaining }: LandingPageProps) {
   const handleWatchDemo = () => {
     // Scroll to how it works section as a demo
     const element = document.querySelector('#how-it-works');
@@ -24,7 +25,7 @@ export function LandingPage({ onStartTrial, onLogin, trialRemaining }: LandingPa
 
   return (
     <div className="min-h-screen bg-background dark">
-      <Header onStartTrial={onStartTrial} onLogin={onLogin} />
+      <Header onSignup={onSignup} onLogin={onLogin} />
       <HeroSection 
         onStartTrial={onStartTrial} 
         onWatchDemo={handleWatchDemo}

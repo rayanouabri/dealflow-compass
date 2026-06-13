@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
 
 interface HeaderProps {
-  onStartTrial: () => void;
+  onSignup: () => void;
   onLogin: () => void;
 }
 
@@ -14,7 +14,7 @@ const navLinks = [
   { label: "Tarifs", href: "#pricing" },
 ];
 
-export function Header({ onStartTrial, onLogin }: HeaderProps) {
+export function Header({ onSignup, onLogin }: HeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const scrollToSection = (href: string) => {
@@ -59,7 +59,7 @@ export function Header({ onStartTrial, onLogin }: HeaderProps) {
           </button>
           <Button
             size="sm"
-            onClick={onStartTrial}
+            onClick={onSignup}
             className="h-9 px-4 text-[13px] font-medium bg-foreground text-background hover:bg-foreground/90"
           >
             Créer un compte
@@ -95,7 +95,7 @@ export function Header({ onStartTrial, onLogin }: HeaderProps) {
               </Button>
               <Button
                 className="w-full h-9 text-sm bg-foreground text-background hover:bg-foreground/90"
-                onClick={onStartTrial}
+                onClick={onSignup}
               >
                 Créer un compte
               </Button>

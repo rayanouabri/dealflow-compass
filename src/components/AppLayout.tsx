@@ -72,13 +72,7 @@ export function AppLayout({
               </span>
             )}
 
-            <span className={`text-xs ${hasTrialRemaining ? "text-muted-foreground" : "text-destructive"}`}>
-              {user
-                ? "Accès illimité"
-                : hasTrialRemaining
-                ? `${trialRemaining} crédit${trialRemaining !== 1 ? "s" : ""}`
-                : "Quota épuisé"}
-            </span>
+            <span className="text-xs text-muted-foreground">Accès illimité</span>
 
             {user ? (
               <button
