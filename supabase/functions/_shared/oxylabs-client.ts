@@ -38,12 +38,18 @@ async function getOxylabsAuth(): Promise<string> {
 }
 
 // Main search function - replaces Brave/Serper
+// NOTE: Google blocks Oxylabs, so we use Bing instead
 export async function oxylabsSearch(query: string, count: number = 5): Promise<SearchResult[]> {
   const auth = await getOxylabsAuth();
 
+  // Use Bing since Google blocks Oxylabs
+  // Bing expects + for spaces, not %20
+  const bingQuery = query.replace(/ /g, "+");
+  const searchUrl = `https://www.bing.com/search?q=${bingQuery}`;
+
   const request: OxylabsRequest = {
-    source: "google",
-    query: query,
+    source: "bing",
+    url: searchUrl,
     render: "html",
   };
 
@@ -86,33 +92,34 @@ export async function oxylabsSearch(query: string, count: number = 5): Promise<S
   }
 }
 
-// Parse Google search results from HTML
+// Parse Bing search results from HTML
 function parseGoogleResults(html: string): SearchResult[] {
   const results: SearchResult[] = [];
 
-  // Extract results using flexible patterns
-  const resultDivs = html.match(/<div\s+class="[^"]*result[^"]*"[^>]*>[\s\S]*?(?=<div\s+class="[^"]*result|$)/gi) || [];
+  // Bing search results are in <li> with data-bm attributes
+  const listItems = html.match(/<li[^>]*data-bm[^>]*>[\s\S]*?(?=<\/li>)/gi) || [];
 
-  for (const resultDiv of resultDivs.slice(0, 20)) {
-    // Find title (h3 or a tag with result title)
-    const titleMatch = resultDiv.match(/<h3[^>]*>([^<]+)<\/h3>/i) ||
-                       resultDiv.match(/<a[^>]*>([^<]+)<\/a>/i);
+  for (const item of listItems.slice(0, 20)) {
+    // Find title in <h2> or <a>
+    const titleMatch = item.match(/<h2[^>]*>[\s\S]*?<a[^>]*>([^<]+)<\/a>/i) ||
+                       item.match(/<a[^>]*title="([^"]+)"/i) ||
+                       item.match(/<h2[^>]*>([^<]+)<\/h2>/i);
     const title = titleMatch ? titleMatch[1].trim() : "";
 
-    // Find URL
-    const urlMatch = resultDiv.match(/href="([^"]+)"/);
+    // Find URL - Bing uses href attribute
+    const urlMatch = item.match(/<a[^>]*href="([^"]+)"/);
     let url = urlMatch ? urlMatch[1] : "";
 
-    if (url.startsWith("/url?q=")) {
-      url = decodeURIComponent(url.replace("/url?q=", "").split("&")[0]);
+    // Skip Bing's own pages and tracking links
+    if (url.startsWith("/") || url.includes("bing.com") || !url.startsWith("http")) {
+      continue;
     }
 
     // Find description
-    const descMatch = resultDiv.match(/<span[^>]*class="[^"]*description[^"]*"[^>]*>([^<]+)<\/span>/i) ||
-                      resultDiv.match(/<span[^>]*>([^<]+)<\/span>/);
+    const descMatch = item.match(/<p[^>]*>([^<]+)<\/p>/i);
     const description = descMatch ? descMatch[1].trim() : "";
 
-    if (title && url && !url.includes("google.com")) {
+    if (title && url) {
       results.push({ title, url, description });
     }
   }
