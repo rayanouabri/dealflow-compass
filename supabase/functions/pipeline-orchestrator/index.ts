@@ -10,6 +10,7 @@ import { callAI } from "../_shared/ai-client.ts";
 import { searchAll } from "../_shared/search-client.ts";
 import { buildFrenchBiasedQueries } from "../_shared/sourcing-queries-fr.ts";
 import { deduplicateAndRank, filterByICP } from "../_shared/dedup-ranker.ts";
+import { mineListicles, mergeMinedCandidates } from "../_shared/listicle-miner.ts";
 import { searchNewCompanies, inseeToSearchResults } from "../_shared/insee-sirene.ts";
 import { searchHackerNews, hnToSearchResults } from "../_shared/hn-algolia.ts";
 import { searchGitHub, githubToSearchResults } from "../_shared/github-search.ts";
@@ -355,32 +356,50 @@ async function handleSourcingStart(
     allQueries.push({ category: "ip", query });
   }
 
-  // Cap relevé de 70 → 88 pour absorber LinkedIn+IP sans tronquer le reste.
-  const limited = allQueries.slice(0, 88);
-  const BATCH_SIZE = 5;
+  // Cap à 40 requêtes web. Bing/Oxylabs ~3-6s/req (timeout dur 9s), batch 10.
+  // 40/10 = 4 batches × ~9s worst-case ≈ 36s, sous le wall-time edge (~150s)
+  // avec large marge pour sources structurées + résolution IA + écritures DB.
+  // Quota Oxylabs : 40 × 30 runs = 1200/3000/mois.
+  const limited = allQueries.slice(0, 40);
+  const BATCH_SIZE = 10;
+  // Budget temps dur : on arrête de lancer de nouveaux batches au-delà de 60s
+  // pour garder du wall-time pour le mining listicle + résolution IA + DB.
+  const SEARCH_BUDGET_MS = 60000;
+  const searchStart = Date.now();
   const allResults: any[] = [];
 
   for (let i = 0; i < limited.length; i += BATCH_SIZE) {
+    if (Date.now() - searchStart > SEARCH_BUDGET_MS) {
+      logger.warn("Budget recherche dépassé — arrêt anticipé", {
+        done: i,
+        total: limited.length,
+      });
+      break;
+    }
     const batch = limited.slice(i, i + BATCH_SIZE);
     const batchResults = await Promise.all(
       batch.map(async ({ category, query }) => {
-        const results = await searchAll(query, 5);
+        const results = await searchAll(query, 8);
         return results.map((r) => ({ ...r, category }));
       }),
     );
     allResults.push(...batchResults.flat());
-
-    // Pause entre les batches
-    if (i + BATCH_SIZE < limited.length) {
-      await new Promise((r) => setTimeout(r, 500));
-    }
   }
 
+  // Mine les pages agrégateurs (F6S, Seedtable...) capturées par le web pour en
+  // extraire de vraies startups nommées — en parallèle des sources structurées.
+  const minePromise = mineListicles(
+    allResults.filter((r) => r.source === "oxylabs"),
+    thesis,
+    { maxPages: 3 },
+  );
+
   // Fusionne les candidats des sources structurées (noms fiables) avec le web
-  const [inseeCompanies, hnStartups, githubOrgs] = await Promise.all([
+  const [inseeCompanies, hnStartups, githubOrgs, mined] = await Promise.all([
     inseePromise,
     hnPromise,
     githubPromise,
+    minePromise,
   ]);
   allResults.push(...inseeToSearchResults(inseeCompanies));
   allResults.push(...hnToSearchResults(hnStartups));
@@ -389,16 +408,19 @@ async function handleSourcingStart(
     insee: inseeCompanies.length,
     hn: hnStartups.length,
     github: githubOrgs.length,
+    mined: mined.length,
   });
 
   const ranked = deduplicateAndRank(allResults);
+  // Injecte les startups minées (haute qualité, on-thesis) en tête du ranking.
+  const rankedWithMined = mergeMinedCandidates(ranked, mined);
   // Filtre strict on-thesis : écarte les acteurs hors-profil, priorise l'ICP
-  const filtered = filterByICP(ranked, {
+  const filtered = filterByICP(rankedWithMined, {
     mustHave: precisionTerms,
     exclude: exclusionTerms,
   });
   // Garde-fou : si le filtre est trop agressif, on retombe sur le ranking brut
-  const prefiltered = filtered.length >= 5 ? filtered : ranked;
+  const prefiltered = filtered.length >= 5 ? filtered : rankedWithMined;
 
   // Résolution d'entités IA : nettoie noms, filtre le bruit (comptes perso,
   // labos, repos sans société), priorise les vraies startups on-thesis.

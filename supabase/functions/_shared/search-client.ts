@@ -1,10 +1,6 @@
 // Client de recherche unifié : Oxylabs Real-time API
-import { logger } from "./logger.ts";
 import { getCachedSearch, setCachedSearch } from "./search-cache.ts";
-import {
-  oxylabsSearch as oxylabsWebSearch,
-  oxylabsLinkedInSearch,
-} from "./oxylabs-client.ts";
+import { oxylabsSearch as oxylabsWebSearch } from "./oxylabs-client.ts";
 
 export interface SearchResult {
   title: string;
@@ -14,30 +10,13 @@ export interface SearchResult {
   source?: "oxylabs" | "insee" | "hn" | "github";
 }
 
-async function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// Oxylabs unified search with retry logic
+// Oxylabs unified search (retry + timeout handled inside the client)
 export async function oxylabsSearchWrapper(
   query: string,
   count = 10,
-  retries = 2,
 ): Promise<SearchResult[]> {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const results = await oxylabsWebSearch(query, count);
-      return results.map((r) => ({
-        ...r,
-        source: "oxylabs" as const,
-      }));
-    } catch (err) {
-      logger.error(`Oxylabs search attempt ${attempt + 1} failed:`, err);
-      if (attempt === retries) return [];
-      await sleep(Math.pow(2, attempt) * 1000);
-    }
-  }
-  return [];
+  const results = await oxylabsWebSearch(query, count);
+  return results.map((r) => ({ ...r, source: "oxylabs" as const }));
 }
 
 // Legacy names for backward compatibility

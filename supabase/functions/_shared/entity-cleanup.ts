@@ -62,10 +62,14 @@ Inclus TOUS les candidats dans ta réponse (même ceux avec isCompany:false).`;
   }`;
 
   try {
-    const res = (await callAI(systemPrompt, userPrompt, {
-      temperature: 0.1,
-      maxTokens: 4096,
-    })) as any;
+    // Timeout dur : l'appel IA ne doit jamais bloquer le wall-time de l'edge.
+    // En cas de dépassement, on retombe sur les candidats bruts (catch).
+    const res = (await Promise.race([
+      callAI(systemPrompt, userPrompt, { temperature: 0.1, maxTokens: 4096 }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("resolveEntities AI timeout")), 30000)
+      ),
+    ])) as any;
     const ents = res?.entities;
     if (!Array.isArray(ents) || ents.length === 0) return candidates;
 

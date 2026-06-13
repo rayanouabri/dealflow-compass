@@ -33,6 +33,7 @@ const SIGNAL_WEIGHTS: Record<string, number> = {
   show_hn: 3,
   job_board: 2,
   conference: 2,
+  web_curated: 5, // extrait d'une base/listicle curée de startups réelles
 };
 
 export function normalizeUrl(url: string): string {

@@ -1,5 +1,6 @@
 // Oxylabs Real-time Scraper API client
-// Replaces Brave, Serper - full documentation at https://developers.oxylabs.io/
+// Uses Bing SERP with structured parsing (parse:true) — Google blocks Oxylabs.
+// Returns clean JSON (no HTML regex), ~2-3s per request.
 
 import { logger } from "./logger.ts";
 
@@ -9,26 +10,32 @@ export interface SearchResult {
   description: string;
 }
 
-interface OxylabsRequest {
-  source: "universal" | "google" | "bing" | "linkedin" | "amazon";
+interface OxylabsOrganicResult {
+  title?: string;
   url?: string;
-  query?: string;
-  render?: "html" | "headless_browser";
+  desc?: string;
+  pos?: number;
+}
+
+interface OxylabsParsedContent {
+  parse_status_code?: number;
+  results?: {
+    organic?: OxylabsOrganicResult[];
+    paid?: OxylabsOrganicResult[];
+  };
 }
 
 interface OxylabsResponse {
-  job: {
-    id: string;
-    status: "pending" | "running" | "done" | "failed";
-  };
-  results?: Array<{
-    content: string;
-  }>;
+  job?: { id: string; status: string };
+  results?: Array<{ content: OxylabsParsedContent | string }>;
 }
 
 const OXYLABS_API = "https://realtime.oxylabs.io/v1/queries";
+// Hard cap per request. The pipeline fires dozens of queries; one slow Bing
+// fetch must not stall a whole batch. 9s covers the p95 (~3-6s) with margin.
+const REQUEST_TIMEOUT_MS = 9000;
 
-async function getOxylabsAuth(): Promise<string> {
+function getOxylabsAuth(): string {
   const user = Deno.env.get("OXYLABS_USER");
   const pass = Deno.env.get("OXYLABS_PASS");
   if (!user || !pass) {
@@ -37,125 +44,117 @@ async function getOxylabsAuth(): Promise<string> {
   return btoa(`${user}:${pass}`);
 }
 
-// Main search function - replaces Brave/Serper
-// NOTE: Google blocks Oxylabs, so we use Bing instead
-export async function oxylabsSearch(query: string, count: number = 5): Promise<SearchResult[]> {
-  const auth = await getOxylabsAuth();
-
-  // Use Bing since Google blocks Oxylabs
-  // Bing expects + for spaces, not %20
-  const bingQuery = query.replace(/ /g, "+");
-  const searchUrl = `https://www.bing.com/search?q=${bingQuery}`;
-
-  const request: OxylabsRequest = {
-    source: "bing",
-    url: searchUrl,
-    render: "html",
+// Main search — Bing SERP, structured JSON. Replaces Brave/Serper.
+export async function oxylabsSearch(
+  query: string,
+  count = 10,
+  retries = 0,
+): Promise<SearchResult[]> {
+  const auth = getOxylabsAuth();
+  const body = {
+    source: "bing_search",
+    query,
+    parse: true,
   };
 
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(OXYLABS_API, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Basic ${auth}`,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        logger.warn(`[Oxylabs] HTTP ${response.status}: ${errText.slice(0, 120)}`);
+        if (attempt === retries) return [];
+        await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+        continue;
+      }
+
+      const data: OxylabsResponse = await response.json();
+      const content = data.results?.[0]?.content;
+
+      if (!content || typeof content === "string") {
+        logger.warn(`[Oxylabs] No parsed content for: ${query.slice(0, 50)}`);
+        return [];
+      }
+
+      const organic = content.results?.organic ?? [];
+      const results: SearchResult[] = organic
+        .filter((r) => r.url && r.title)
+        .map((r) => ({
+          title: (r.title ?? "").trim(),
+          url: (r.url ?? "").trim(),
+          description: (r.desc ?? "").trim(),
+        }))
+        .slice(0, count);
+
+      logger.info(`[Oxylabs] ${results.length} results for: ${query.slice(0, 50)}`);
+      return results;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn(`[Oxylabs] attempt ${attempt + 1} failed for "${query.slice(0, 40)}": ${msg}`);
+      if (attempt === retries) return [];
+      await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+    }
+  }
+  return [];
+}
+
+// Batch search with bounded concurrency.
+export async function oxylabsBatchSearch(
+  queries: string[],
+  concurrency = 6,
+): Promise<Map<string, SearchResult[]>> {
+  const results = new Map<string, SearchResult[]>();
+  for (let i = 0; i < queries.length; i += concurrency) {
+    const batch = queries.slice(i, i + concurrency);
+    const settled = await Promise.all(
+      batch.map(async (q) => ({ q, r: await oxylabsSearch(q) })),
+    );
+    for (const { q, r } of settled) results.set(q, r);
+  }
+  return results;
+}
+
+// Fetch a single page's visible text via Oxylabs (universal source).
+// Used to mine startup-listing/aggregator pages for real company names.
+// Returns plain text (HTML stripped), truncated, or "" on failure.
+export async function oxylabsFetchPageText(
+  url: string,
+  maxChars = 12000,
+): Promise<string> {
+  const auth = getOxylabsAuth();
   try {
     const response = await fetch(OXYLABS_API, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Basic ${auth}`,
+        Authorization: `Basic ${auth}`,
       },
-      body: JSON.stringify(request),
-      signal: AbortSignal.timeout(45000),
+      body: JSON.stringify({ source: "universal", url }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-
-    if (!response.ok) {
-      const error = await response.text();
-      logger.error(`[Oxylabs] HTTP ${response.status}:`, error);
-      throw new Error(`Oxylabs HTTP ${response.status}`);
-    }
-
+    if (!response.ok) return "";
     const data: OxylabsResponse = await response.json();
-
-    if (data.job?.status === "failed") {
-      throw new Error("Oxylabs job failed");
-    }
-
-    if (!data.results || data.results.length === 0) {
-      logger.warn(`[Oxylabs] No results for query: ${query}`);
-      return [];
-    }
-
-    const html = data.results[0].content || "";
-    const results = parseGoogleResults(html);
-
-    logger.info(`[Oxylabs] Found ${results.length} results for: ${query.substring(0, 50)}`);
-    return results.slice(0, count);
-  } catch (err) {
-    logger.error(`[Oxylabs] Search failed for "${query}":`, err);
-    throw err;
+    const content = data.results?.[0]?.content;
+    if (typeof content !== "string") return "";
+    // Strip scripts/styles then tags, collapse whitespace.
+    const text = content
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&[a-z]+;/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return text.slice(0, maxChars);
+  } catch {
+    return "";
   }
-}
-
-// Parse Bing search results from HTML
-function parseGoogleResults(html: string): SearchResult[] {
-  const results: SearchResult[] = [];
-
-  // Bing search results are in <li> with data-bm attributes
-  const listItems = html.match(/<li[^>]*data-bm[^>]*>[\s\S]*?(?=<\/li>)/gi) || [];
-
-  for (const item of listItems.slice(0, 20)) {
-    // Find title in <h2> or <a>
-    const titleMatch = item.match(/<h2[^>]*>[\s\S]*?<a[^>]*>([^<]+)<\/a>/i) ||
-                       item.match(/<a[^>]*title="([^"]+)"/i) ||
-                       item.match(/<h2[^>]*>([^<]+)<\/h2>/i);
-    const title = titleMatch ? titleMatch[1].trim() : "";
-
-    // Find URL - Bing uses href attribute
-    const urlMatch = item.match(/<a[^>]*href="([^"]+)"/);
-    let url = urlMatch ? urlMatch[1] : "";
-
-    // Skip Bing's own pages and tracking links
-    if (url.startsWith("/") || url.includes("bing.com") || !url.startsWith("http")) {
-      continue;
-    }
-
-    // Find description
-    const descMatch = item.match(/<p[^>]*>([^<]+)<\/p>/i);
-    const description = descMatch ? descMatch[1].trim() : "";
-
-    if (title && url) {
-      results.push({ title, url, description });
-    }
-  }
-
-  return results;
-}
-
-// Batch search for multiple queries
-export async function oxylabsBatchSearch(queries: string[]): Promise<Map<string, SearchResult[]>> {
-  const results = new Map<string, SearchResult[]>();
-
-  // Process in batches to avoid overwhelming the API
-  const batchSize = 3;
-  for (let i = 0; i < queries.length; i += batchSize) {
-    const batch = queries.slice(i, i + batchSize);
-
-    const promises = batch.map(async (q) => {
-      try {
-        const searchResults = await oxylabsSearch(q);
-        return { query: q, results: searchResults };
-      } catch (err) {
-        logger.warn(`Batch search failed for "${q}":`, err);
-        return { query: q, results: [] };
-      }
-    });
-
-    const batchResults = await Promise.all(promises);
-    for (const { query: q, results: res } of batchResults) {
-      results.set(q, res);
-    }
-
-    // Delay between batches
-    if (i + batchSize < queries.length) {
-      await new Promise((r) => setTimeout(r, 2000));
-    }
-  }
-
-  return results;
 }
