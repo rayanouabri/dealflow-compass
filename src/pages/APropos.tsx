@@ -13,7 +13,7 @@ export default function APropos() {
         <h2 className="text-lg font-semibold text-foreground mt-8">Comment ça marche</h2>
         <p>
           Analysez un fond VC existant (ex. Accel, Sequoia) ou définissez votre propre thèse. 
-          Notre moteur combine recherche web (Brave), IA (Gemini) et plusieurs couches de sourcing 
+          Notre moteur combine recherche web (Bing via Oxylabs), IA (Gemini) et plusieurs couches de sourcing 
           pour sourcer des startups réelles et générer des rapports détaillés.
         </p>
         <h2 className="text-lg font-semibold text-foreground mt-8">Qui sommes-nous</h2>

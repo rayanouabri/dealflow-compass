@@ -12,7 +12,7 @@ export default function Confidentialite() {
         <p>
           Nous collectons les données nécessaires au fonctionnement du service : identifiants de connexion 
           (ex. email), historique d&apos;analyses, paramètres saisis (fonds, thèses). Les requêtes envoyées 
-          aux APIs (Gemini, Brave) sont utilisées uniquement pour générer les analyses.
+          aux APIs (Gemini, Oxylabs) sont utilisées uniquement pour générer les analyses.
         </p>
         <h2 className="text-lg font-semibold text-foreground mt-8">Finalités</h2>
         <p>

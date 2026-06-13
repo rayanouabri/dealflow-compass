@@ -257,7 +257,7 @@ export default function DueDiligence() {
           <div className="border border-border rounded-md px-4 py-3 space-y-2">
             <p className="text-xs font-medium text-foreground">Sources utilisees</p>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Recherche web Brave Search, LinkedIn, Crunchbase, PitchBook, presse specialisee, sites officiels.
+              Recherche web (Bing via Oxylabs), LinkedIn, Crunchbase, PitchBook, presse specialisee, sites officiels.
             </p>
           </div>
 
