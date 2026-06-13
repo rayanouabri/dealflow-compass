@@ -1,4 +1,4 @@
-// Query-level cache for web searches (Serper/Brave), backed by the search_cache table.
+// Query-level cache for web searches (Oxylabs), backed by the search_cache table.
 // Goal: avoid paying for identical searches across analyses (same fund thesis, same
 // market/sector queries, repeat due-diligence on the same company). Zero quality loss:
 // cached rows are the exact same search results, just served from Postgres.

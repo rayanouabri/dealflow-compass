@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { searchAll } from "../_shared/search-client.ts";
 
 const ALLOWED_ORIGINS = [
   "https://ai-vc-sourcing.vercel.app",
@@ -28,7 +29,7 @@ interface QARequest {
   conversationHistory?: Array<{ role: string; content: string }>;
 }
 
-interface BraveSearchResult {
+interface WebSearchResult {
   title: string;
   url: string;
   description: string;
@@ -80,51 +81,9 @@ function validateAndCleanUrl(url: string): string | null {
   }
 }
 
-// Search using Serper.dev (preferred) or Brave Search (fallback)
-async function braveSearch(query: string, count: number = 5): Promise<BraveSearchResult[]> {
-  const SERPER_KEY = Deno.env.get("SERPER_API_KEY") || Deno.env.get("serper_api");
-  const BRAVE_KEY = Deno.env.get("BRAVE_API_KEY");
-  
-  // Préférer Serper (2500/mois gratuit, pas de rate limit strict)
-  if (SERPER_KEY) {
-    try {
-      const res = await fetch("https://google.serper.dev/search", {
-        method: "POST",
-        headers: { "X-API-KEY": SERPER_KEY, "Content-Type": "application/json" },
-        body: JSON.stringify({ q: query, num: Math.min(count, 10) }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        return (data.organic || []).slice(0, count).map((r: any) => ({
-          title: r.title || "",
-          url: r.link || "",
-          description: r.snippet || "",
-          extra_snippets: [],
-        }));
-      }
-    } catch { /* fallback to Brave */ }
-  }
-  
-  // Fallback Brave
-  if (BRAVE_KEY) {
-    try {
-      const res = await fetch(
-        `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}`,
-        { headers: { "Accept": "application/json", "X-Subscription-Token": BRAVE_KEY } }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        return (data.web?.results || []).map((r: any) => ({
-          title: r.title || "",
-          url: r.url || "",
-          description: r.description || "",
-          extra_snippets: r.extra_snippets || [],
-        }));
-      }
-    } catch { /* return empty */ }
-  }
-  
-  return [];
+// Recherche web via Oxylabs (Bing SERP) — cache géré dans search-client.
+async function webSearch(query: string, count: number = 5): Promise<WebSearchResult[]> {
+  return await searchAll(query, count);
 }
 
 serve(async (req) => {
@@ -390,54 +349,54 @@ Description: ${investmentThesis.description || "Non spécifié"}
         ).join("\n")}\n`
       : "";
 
-    // Couches Brave : recherches ciblées selon la question
+    // Couches recherche web ciblées selon la question
     const name = companyName;
     const sector = effectiveStartupData.sector || dueDiligenceData?.company?.sector || "";
     const qLower = question.toLowerCase().trim();
     
     // Construire des requêtes intelligentes basées sur la question
-    const braveQueries: string[] = [];
+    const webQueries: string[] = [];
     
     // Requête principale basée sur la question
     if (qLower.length > 5) {
-      braveQueries.push(`${name} ${question.slice(0, 80).trim()}`);
+      webQueries.push(`${name} ${question.slice(0, 80).trim()}`);
     }
     
     // Requêtes contextuelles selon le type de question
     if (qLower.includes("arr") || qLower.includes("mrr") || qLower.includes("revenu") || qLower.includes("chiffre")) {
-      braveQueries.push(`${name} revenue ARR MRR 2024 2025`);
+      webQueries.push(`${name} revenue ARR MRR 2024 2025`);
     }
     if (qLower.includes("funding") || qLower.includes("levée") || qLower.includes("investisseur") || qLower.includes("valorisation")) {
-      braveQueries.push(`${name} funding round investors valuation 2024 2025`);
+      webQueries.push(`${name} funding round investors valuation 2024 2025`);
     }
     if (qLower.includes("équipe") || qLower.includes("fondateur") || qLower.includes("ceo") || qLower.includes("team")) {
-      braveQueries.push(`${name} founders CEO team LinkedIn`);
+      webQueries.push(`${name} founders CEO team LinkedIn`);
     }
     if (qLower.includes("produit") || qLower.includes("technologie") || qLower.includes("tech")) {
-      braveQueries.push(`${name} product technology stack features`);
+      webQueries.push(`${name} product technology stack features`);
     }
     if (qLower.includes("concurrent") || qLower.includes("marché") || qLower.includes("competition")) {
-      braveQueries.push(`${name} competitors market ${sector}`);
+      webQueries.push(`${name} competitors market ${sector}`);
     }
     if (qLower.includes("client") || qLower.includes("traction") || qLower.includes("growth")) {
-      braveQueries.push(`${name} customers traction growth 2024`);
+      webQueries.push(`${name} customers traction growth 2024`);
     }
     
     // Requête générale si pas assez de requêtes spécifiques
-    if (braveQueries.length < 2) {
-      braveQueries.push(`${name} startup news 2024 2025`);
-      braveQueries.push(`${name} ${sector} company`);
+    if (webQueries.length < 2) {
+      webQueries.push(`${name} startup news 2024 2025`);
+      webQueries.push(`${name} ${sector} company`);
     }
     
-    let braveContext = "";
-    const allBraveResults: BraveSearchResult[] = [];
-    for (const q of braveQueries.slice(0, 4)) {
-      const results = await braveSearch(q, 5);
-      allBraveResults.push(...results);
-      await new Promise((r) => setTimeout(r, 1200)); // Rate limit Brave Free: 1 req/sec
+    let webContext = "";
+    const allWebResults: WebSearchResult[] = [];
+    for (const q of webQueries.slice(0, 4)) {
+      const results = await webSearch(q, 5);
+      allWebResults.push(...results);
+      await new Promise((r) => setTimeout(r, 1200)); // petite pause entre requêtes
     }
-    if (allBraveResults.length > 0) {
-      braveContext = `\n\nRECHERCHE WEB (Brave) - données récentes sur ${name}:\n${allBraveResults
+    if (allWebResults.length > 0) {
+      webContext = `\n\nRECHERCHE WEB - données récentes sur ${name}:\n${allWebResults
         .slice(0, 10)
         .map((r) => `[${r.title}] ${r.description} | ${r.url}`)
         .join("\n")}`;
@@ -449,7 +408,7 @@ TON RÔLE :
 Tu réponds aux questions sur l'entreprise "${companyName}" en t'appuyant sur :
 1. Le rapport de due diligence fourni (sections entreprise, résumé, produit, marché, financements, équipe, traction, risques, recommandation) - priorité à ce contenu pour approfondir les points
 2. Les données d'analyse additionnelles (métriques, thèse) si fournies
-3. Les résultats de recherche web (Brave) - cite TOUJOURS les URLs
+3. Les résultats de recherche web - cite TOUJOURS les URLs
 4. L'historique de conversation pour maintenir le contexte
 
 RÈGLES CRITIQUES :
@@ -485,7 +444,7 @@ EXEMPLE DE MAUVAISE RÉPONSE :
 ${dueDiligenceContext}
 ${metricsContext}
 ${thesisContext}
-${braveContext}
+${webContext}
 ${historyContext}
 
 QUESTION: ${question}`;
@@ -564,9 +523,9 @@ QUESTION: ${question}`;
       }
     }
 
-    // PRIORITÉ : Ajouter des sources Brave valides (au moins 5-8 sources)
-    if (allBraveResults.length > 0) {
-      for (const r of allBraveResults.slice(0, 10)) {
+    // PRIORITÉ : Ajouter des sources web valides (au moins 5-8 sources)
+    if (allWebResults.length > 0) {
+      for (const r of allWebResults.slice(0, 10)) {
         if (r.url && sources.length < 10) {
           const cleanUrl = validateAndCleanUrl(r.url);
           if (cleanUrl && !validUrls.includes(cleanUrl)) {
@@ -591,9 +550,9 @@ QUESTION: ${question}`;
       }
     }
 
-    // Si toujours pas assez de sources, compléter avec plus de résultats Brave
-    if (sources.length < 5 && allBraveResults.length > 0) {
-      for (const r of allBraveResults.slice(5)) {
+    // Si toujours pas assez de sources, compléter avec plus de résultats web
+    if (sources.length < 5 && allWebResults.length > 0) {
+      for (const r of allWebResults.slice(5)) {
         if (r.url && sources.length < 10) {
           const cleanUrl = validateAndCleanUrl(r.url);
           if (cleanUrl && !validUrls.includes(cleanUrl)) {

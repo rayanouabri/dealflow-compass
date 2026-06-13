@@ -136,7 +136,7 @@ export function buildFrenchBiasedQueries(
 
   // 10. Global outliers (si géographie non exclusivement FR)
   // Note : ProductHunt/YC/HN sont couverts par les connecteurs structurés
-  // (hn-algolia, github) — inutile de les requêter via Serper ici.
+  // (hn-algolia, github) — inutile de les requêter via le web ici.
   if (isGlobalGeo || !geography || !/fr|france/i.test(geography)) {
     groups.push({
       category: "global_outliers",

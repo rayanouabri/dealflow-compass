@@ -12,7 +12,6 @@ import Index from "./pages/Index";
 // Routes secondaires chargées à la demande : la landing n'embarque pas le
 // rapport DD (le plus gros composant du site) ni les pages d'analyse.
 const Analyser = lazy(() => import("./pages/Analyser"));
-const Analyse = lazy(() => import("./pages/Analyse"));
 const DueDiligence = lazy(() => import("./pages/DueDiligence"));
 const DueDiligenceResult = lazy(() => import("./pages/DueDiligenceResult"));
 const PipelineProgress = lazy(() => import("./pages/PipelineProgress"));
@@ -40,7 +39,6 @@ const App = () => (
               <Routes>
                 <Route path="/" element={<Index />} />
                 <Route path="/analyser" element={<Analyser />} />
-                <Route path="/analyse" element={<Analyse />} />
                 <Route path="/due-diligence" element={<DueDiligence />} />
                 <Route path="/due-diligence/result" element={<DueDiligenceResult />} />
                 <Route path="/pipeline" element={<PipelineProgress />} />

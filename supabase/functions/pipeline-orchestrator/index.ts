@@ -162,33 +162,12 @@ async function handleThesisAnalysis(
 ): Promise<void> {
   logger.info("handleThesisAnalysis", { pipelineId: job.id });
 
-  // Recherche web de la thèse RÉELLE du fonds (anti-générique) : on ne se fie
-  // pas à ce que le LLM croit savoir du fonds, on lui donne les faits.
-  let fundContext = "";
-  if (job.fund_name) {
-    try {
-      const fundQueries = [
-        `${job.fund_name} fonds VC thèse investissement secteurs stade ticket`,
-        `${job.fund_name} portfolio startups participations`,
-        `${job.fund_name} investment thesis focus sectors`,
-      ];
-      const fundResults = (
-        await Promise.all(fundQueries.map((q) => searchAll(q, 4)))
-      ).flat();
-      fundContext = fundResults
-        .slice(0, 10)
-        .map((r) => `- ${r.title}: ${r.description}`)
-        .join("\n");
-    } catch (err) {
-      logger.warn("Recherche thèse fonds échouée", { error: String(err) });
-    }
-  }
-
-  const userPrompt = buildThesisAnalysisPrompt(
-    job.fund_name,
-    job.custom_thesis,
-    fundContext,
-  );
+  // La thèse est fournie EXPLICITEMENT par l'utilisateur (secteurs, stades,
+  // géographie, détails libres). On ne recherche plus la thèse d'un fonds sur
+  // le web : ce budget de recherche est réalloué au sourcing. L'IA se contente
+  // de STRUCTURER les critères de l'utilisateur en stratégie de sourcing (ICP,
+  // exclusions, codes NAF, priorityQueries) — sans inventer.
+  const userPrompt = buildThesisAnalysisPrompt(job.custom_thesis);
 
   // Validation de forme : une réponse tronquée/fragmentaire (ex: juste le
   // tableau sectors) corromprait TOUT le pipeline aval (queries génériques,
@@ -199,11 +178,8 @@ async function handleThesisAnalysis(
       Array.isArray(x.sectors) && !!x.idealCompanyProfile;
   };
 
-  // Cache 7 j : la thèse d'un fonds est stable — re-sourcer le même fonds ne
-  // reconsomme ni quota IA ni crédits de recherche.
-  const cacheKey = job.fund_name
-    ? `thesis|fund|${job.fund_name.toLowerCase().trim()}`
-    : `thesis|custom|${JSON.stringify(job.custom_thesis)}`;
+  // Cache 7 j : mêmes critères → même structuration, 0 quota IA reconsommé.
+  const cacheKey = `thesis|custom|${JSON.stringify(job.custom_thesis)}`;
 
   const thesisAnalysis = await callAI(
     THESIS_ANALYSIS_SYSTEM_PROMPT,
@@ -257,7 +233,7 @@ async function handleSourcingStart(
   ];
   const exclusionTerms: string[] = icp.exclusionKeywords ?? [];
 
-  // Sources structurées GRATUITES (sans coût Serper), lancées en parallèle
+  // Sources structurées GRATUITES (sans coût de recherche), lancées en parallèle
   // de la recherche web → aucune latence ajoutée.
   const isFrench =
     thesis?.geography?.frenchBias === true ||
@@ -356,11 +332,11 @@ async function handleSourcingStart(
     allQueries.push({ category: "ip", query });
   }
 
-  // Cap à 40 requêtes web. Bing/Oxylabs ~3-6s/req (timeout dur 9s), batch 10.
-  // 40/10 = 4 batches × ~9s worst-case ≈ 36s, sous le wall-time edge (~150s)
-  // avec large marge pour sources structurées + résolution IA + écritures DB.
-  // Quota Oxylabs : 40 × 30 runs = 1200/3000/mois.
-  const limited = allQueries.slice(0, 40);
+  // Cap à 50 requêtes web (relevé de 40 : le budget de recherche libéré par la
+  // suppression de la recherche de thèse de fonds est réalloué au sourcing).
+  // Bing/Oxylabs ~3-6s/req (timeout dur 9s), batch 10 → 50/10 = 5 batches × ~9s
+  // worst-case ≈ 45s, sous le budget recherche (60s) et le wall-time edge.
+  const limited = allQueries.slice(0, 50);
   const BATCH_SIZE = 10;
   // Budget temps dur : on arrête de lancer de nouveaux batches au-delà de 60s
   // pour garder du wall-time pour le mining listicle + résolution IA + DB.
@@ -411,7 +387,14 @@ async function handleSourcingStart(
     mined: mined.length,
   });
 
-  const ranked = deduplicateAndRank(allResults);
+  // Classement piloté par les CRITÈRES de l'utilisateur (pertinence thèse),
+  // pas par le seul volume de signal.
+  const ranked = deduplicateAndRank(allResults, {
+    mustHave: precisionTerms,
+    sectors,
+    geography,
+    exclude: exclusionTerms,
+  });
   // Injecte les startups minées (haute qualité, on-thesis) en tête du ranking.
   const rankedWithMined = mergeMinedCandidates(ranked, mined);
   // Filtre strict on-thesis : écarte les acteurs hors-profil, priorise l'ICP
@@ -831,7 +814,7 @@ async function getUserId(
   }
 }
 
-// Plafond de jobs actifs : borne le coût (Serper/Gemini) en cas d'abus de
+// Plafond de jobs actifs : borne le coût (recherche/Gemini) en cas d'abus de
 // l'anon key (publique par design). Un job dure ~2-4 min — un utilisateur
 // légitime n'atteint jamais ces seuils.
 const MAX_ACTIVE_JOBS_PER_USER = 3;
@@ -1201,7 +1184,7 @@ serve(async (req: Request) => {
 
   // "continue" est une action interne (self-invocation fireContinue) : seul le
   // service-role peut la déclencher. Sinon, tout porteur de l'anon key (publique)
-  // pourrait rejouer une étape en boucle (coût Serper/Gemini ×N, races).
+  // pourrait rejouer une étape en boucle (coût recherche/Gemini ×N, races).
   if (action === "continue") {
     const bearer = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
     if (bearer !== Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) {

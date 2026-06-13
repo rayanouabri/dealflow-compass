@@ -19,10 +19,6 @@ export async function oxylabsSearchWrapper(
   return results.map((r) => ({ ...r, source: "oxylabs" as const }));
 }
 
-// Legacy names for backward compatibility
-export const braveSearch = oxylabsSearchWrapper;
-export const serperSearch = oxylabsSearchWrapper;
-
 // Oxylabs unified search with caching
 export async function searchAll(
   query: string,

@@ -321,9 +321,54 @@ function computeCrossSignalBonus(categories: Set<string>): number {
   return 0;
 }
 
-// Regroupe les résultats par startup et calcule les scores
+// Critères de l'utilisateur, transmis au ranking pour que la pertinence (et
+// non le simple volume de signaux) pilote le classement initial.
+export interface RankingCriteria {
+  mustHave?: string[];   // mustHaveKeywords + techKeywords + subSectors
+  sectors?: string[];    // secteurs cochés par l'utilisateur
+  geography?: string;    // géographie principale choisie
+  exclude?: string[];    // exclusionKeywords
+}
+
+// Adéquation 0-100 d'un candidat aux CRITÈRES de l'utilisateur (textuel, gratuit).
+// C'est ce qui doit dominer le pré-classement : on veut remonter les startups
+// on-thesis, pas celles qui sont juste très mentionnées.
+function computeCriteriaFit(c: SourcingCandidate, crit: RankingCriteria): number {
+  const text = `${c.name} ${c.descriptions.join(" ")}`.toLowerCase();
+  const terms = [...(crit.mustHave ?? []), ...(crit.sectors ?? [])]
+    .map((t) => t.toLowerCase().trim())
+    .filter((t) => t.length >= 3);
+
+  const hits = new Set<string>();
+  for (const t of terms) {
+    if (text.includes(t)) hits.add(t);
+  }
+  // 0 terme = 0, 1 = 25, 2 = 45, 3 = 60, 4+ = 70 (rendement décroissant)
+  let fit = Math.min(70, hits.size * (hits.size >= 3 ? 20 : 23));
+
+  // Géographie : bonus si la zone choisie apparaît (ou signal FR équivalent).
+  const g = (crit.geography ?? "").toLowerCase();
+  if (g) {
+    const frBias = /(france|french|paris|fr|europe)/.test(g);
+    if (text.includes(g) || (frBias && /\b(france|french|paris|lyon|fr)\b/.test(text))) {
+      fit += 15;
+    }
+  }
+
+  // Pénalité forte si un terme d'exclusion apparaît (acteur hors-cible).
+  for (const e of (crit.exclude ?? []).map((t) => t.toLowerCase().trim())) {
+    if (e.length >= 4 && text.includes(e)) { fit -= 30; break; }
+  }
+
+  return Math.max(0, Math.min(100, fit));
+}
+
+// Regroupe les résultats par startup et calcule les scores.
+// Si `criteria` est fourni, l'adéquation à la thèse utilisateur PILOTE le score
+// (la force de signal ne fait plus que départager à pertinence égale).
 export function deduplicateAndRank(
   results: (SearchResult & { category?: string })[],
+  criteria?: RankingCriteria,
 ): SourcingCandidate[] {
   const byUrl = new Map<string, SourcingCandidate>();
 
@@ -396,13 +441,28 @@ export function deduplicateAndRank(
       continue;
     }
 
-    // Weighted score: (sum_weights × min(mentions, 15)) + recencyScore + crossSignalBonus
+    // Force de signal structurelle (corroboration multi-sources, types de signaux).
     let weight = 0;
     for (const cat of c.categories) {
       weight += (SIGNAL_WEIGHTS[cat] ?? 1);
     }
-    const cappedMentions = Math.min(c.mentionCount, 15); // Diminishing returns
-    c.score = weight * cappedMentions + c.recencyScore + c.crossSignalBonus;
+    const cappedMentions = Math.min(c.mentionCount, 15); // rendement décroissant
+    const signalStrength = weight * cappedMentions; // ~5 à 75
+
+    if (criteria) {
+      // Score PILOTÉ par la pertinence : adéquation aux critères utilisateur
+      // (0-100) dominante, la force de signal n'apporte qu'un complément borné.
+      const fit = computeCriteriaFit(c, criteria);
+      (c as any).criteriaFit = fit;
+      c.score =
+        fit * 1.4 +                          // pertinence thèse = moteur principal
+        Math.min(35, signalStrength * 0.5) + // corroboration (plafonnée)
+        c.recencyScore +                     // fraîcheur (0-10)
+        c.crossSignalBonus;                  // multi-signaux (0-25)
+    } else {
+      // Repli (sans critères) : ancien classement par volume de signal.
+      c.score = signalStrength + c.recencyScore + c.crossSignalBonus;
+    }
     candidates.push(c);
   }
 

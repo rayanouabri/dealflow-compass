@@ -2,10 +2,7 @@ project_id = "anxyjsgrittdwrizqcgi"
 
 # verify_jwt : exige un JWT Supabase valide (anon key, session ou service-role).
 # Tous les appelants existants en envoient un — l'activer ne casse aucun flux,
-# mais bloque les appels anonymes directs (abus de quota Serper/Gemini).
-[functions.analyze-fund]
-verify_jwt = true
-
+# mais bloque les appels anonymes directs (abus de quota Oxylabs/Gemini).
 [functions.due-diligence]
 verify_jwt = true
 

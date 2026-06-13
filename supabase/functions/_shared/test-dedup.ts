@@ -4,21 +4,21 @@ import { deduplicateAndRank } from "./dedup-ranker.ts";
 const Y = new Date().getFullYear();
 const results = [
   // Produit de grand groupe (host corporate) → exclu malgré 2 mentions
-  { title: "Bijira - API Management", url: "https://wso2.com/bijira", description: `lancé en ${Y}`, source: "brave", category: "press" },
-  { title: "Bijira - API Management", url: "https://wso2.com/bijira", description: "API platform", source: "serper", category: "french_tech" },
+  { title: "Bijira - API Management", url: "https://wso2.com/bijira", description: `lancé en ${Y}`, source: "oxylabs", category: "press" },
+  { title: "Bijira - API Management", url: "https://wso2.com/bijira", description: "API platform", source: "oxylabs", category: "french_tech" },
   // Produit sous-page d'un domaine inconnu, nom ≠ domaine → exclu malgré 2 mentions
-  { title: "Zenflow - workflow engine", url: "https://bigsoftcorp.com/products/zenflow", description: `released ${Y}`, source: "brave", category: "press" },
-  { title: "Zenflow - workflow engine", url: "https://bigsoftcorp.com/products/zenflow", description: "workflow", source: "serper", category: "icp_precision" },
+  { title: "Zenflow - workflow engine", url: "https://bigsoftcorp.com/products/zenflow", description: `released ${Y}`, source: "oxylabs", category: "press" },
+  { title: "Zenflow - workflow engine", url: "https://bigsoftcorp.com/products/zenflow", description: "workflow", source: "oxylabs", category: "icp_precision" },
   // Vraie startup, racine de domaine → gardée
-  { title: "Acme Robotics - Home", url: "https://acmerobotics.io", description: `seed round ${Y}`, source: "brave", category: "press" },
-  { title: "Acme Robotics raises seed", url: "https://acmerobotics.io/news/seed", description: `funding ${Y}`, source: "serper", category: "french_tech" },
+  { title: "Acme Robotics - Home", url: "https://acmerobotics.io", description: `seed round ${Y}`, source: "oxylabs", category: "press" },
+  { title: "Acme Robotics raises seed", url: "https://acmerobotics.io/news/seed", description: `funding ${Y}`, source: "oxylabs", category: "french_tech" },
   // Sous-page de la startup avec son nom dans le titre → gardée (groupée)
-  { title: "Acme Robotics | Team", url: "https://acmerobotics.io/team", description: "founders", source: "brave", category: "talent_signals" },
+  { title: "Acme Robotics | Team", url: "https://acmerobotics.io/team", description: "founders", source: "oxylabs", category: "talent_signals" },
   // GitHub org (agrégateur) → jamais filtré par la règle sous-page
   { title: "quantumleap", url: "https://github.com/quantumleap", description: `GitHub org créé ${Y}`, source: "github", category: "github" },
   // Startup dont le nom matche le domaine, sous-page → gardée
-  { title: "Mistral AI - La Plateforme", url: "https://mistral.ai/products/plateforme", description: `${Y}`, source: "brave", category: "press" },
-  { title: "Mistral AI - Careers", url: "https://mistral.ai/careers", description: "hiring", source: "serper", category: "talent_signals" },
+  { title: "Mistral AI - La Plateforme", url: "https://mistral.ai/products/plateforme", description: `${Y}`, source: "oxylabs", category: "press" },
+  { title: "Mistral AI - Careers", url: "https://mistral.ai/careers", description: "hiring", source: "oxylabs", category: "talent_signals" },
 ];
 
 const ranked = deduplicateAndRank(results as any);

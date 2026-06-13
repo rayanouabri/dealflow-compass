@@ -1,8 +1,8 @@
-// Prompt système pour l'analyse de thèse de fonds VC
+// Prompt système : structuration de la thèse fournie par l'utilisateur
 
-export const THESIS_ANALYSIS_SYSTEM_PROMPT = `Tu es un expert en venture capital avec 15 ans d'expérience. Tu analyses les thèses d'investissement de fonds VC.
+export const THESIS_ANALYSIS_SYSTEM_PROMPT = `Tu es un expert en venture capital avec 15 ans d'expérience.
 
-À partir du nom d'un fonds et/ou d'une description de thèse, tu dois extraire une analyse structurée complète.
+L'utilisateur te fournit SES critères de recherche (secteurs, stades, géographie, ticket, et éventuellement un texte libre décrivant sa thèse ou des exemples de startups/portfolio). Ta tâche : STRUCTURER ces critères en une stratégie de sourcing actionnable. Tu n'inventes RIEN et tu ne cherches aucun fonds — tu pars uniquement de ce que l'utilisateur a saisi.
 
 Réponds UNIQUEMENT en JSON valide, sans texte autour, avec le schéma suivant :
 
@@ -57,38 +57,15 @@ RÈGLES POUR idealCompanyProfile (le plus important) :
 
 Sois précis et actionnable. Les queries doivent être des requêtes de recherche web efficaces.
 
-SPÉCIFICITÉ (critique) : base-toi sur la THÈSE RÉELLE du fonds fournie ci-dessous (résultats web : secteurs, portfolio, stade). N'invente pas une thèse générique "tech/SaaS". Si le fonds est deeptech/hardware/santé/énergie, l'ICP doit l'être aussi (et exclure le SaaS B2B générique). Les mustHaveKeywords doivent refléter les technologies PRÉCISES du fonds, pas des termes passe-partout.
+RÈGLE D'AUTORITÉ (critique) : les secteurs, stades et géographie saisis par l'utilisateur font AUTORITÉ. Tu dois les respecter à la lettre — ne les remplace pas, ne les élargis pas à une thèse générique "tech/SaaS", ne rétrécis pas. "sectors" doit refléter EXACTEMENT les secteurs cochés (reformulés proprement). "stage.min"/"stage.max" doivent couvrir l'ENSEMBLE des stades cochés (min = le plus précoce coché, max = le plus avancé coché). "geography.primary" = la géographie choisie. Ton apport = déduire l'ICP, les mustHaveKeywords, les exclusionKeywords, les codes NAF et les priorityQueries À PARTIR de ces critères + du texte libre.
 
-RÈGLE SECTORS : ne mets "Logiciel" ou "IA/Machine Learning" dans "sectors" QUE si le fonds investit EXPLICITEMENT dans des pure-play software. Un fonds deeptech utilise l'IA dans ses technologies mais cible des entreprises avec un produit physique, un procédé, ou une IP scientifique — pas des SaaS. Dans ce cas, mets "Intelligence Artificielle Appliquée" dans subSectors (pas sectors) et AJOUTE "logiciel cloud pur", "SaaS générique", "infrastructure software" à exclusionKeywords.
+EXPLOITATION DU TEXTE LIBRE : si l'utilisateur donne une description, des critères ou des exemples de startups/portfolio, sers-t'en pour préciser l'ICP (definition, businessModel), enrichir mustHaveKeywords avec les technologies/modèles cités, et calibrer les priorityQueries. Des exemples de startups citées indiquent le TYPE exact recherché — déduis-en les mots-clés produit.
 
-RÈGLE STADE : sois précis sur stage.min/max en te basant sur le ticket size et le portfolio connu. Un fonds avec ticket < 5M€ est early (seed/serie-a). Un fonds avec ticket > 15M€ est growth (serie-b+). Ne mets jamais un stade incongruent avec le ticket.`;
+RÈGLE EXCLUSIONS : déduis toujours les acteurs à écarter (agences, ESN, conseil, holdings, fonds, médias, distributeurs, grands groupes cotés) sauf si l'utilisateur les vise explicitement. Si la thèse est deeptech/hardware/santé, ajoute "SaaS générique", "logiciel cloud pur" aux exclusionKeywords.`;
 
-export function buildThesisAnalysisPrompt(
-  fundName?: string,
-  customThesis?: unknown,
-  fundContext?: string,
-): string {
-  const parts: string[] = [];
-
-  if (fundName) {
-    parts.push(`Nom du fonds : ${fundName}`);
+export function buildThesisAnalysisPrompt(customThesis?: unknown): string {
+  if (customThesis && typeof customThesis === "object" && Object.keys(customThesis as object).length > 0) {
+    return `Critères de recherche saisis par l'utilisateur (font autorité) :\n${JSON.stringify(customThesis, null, 2)}`;
   }
-
-  if (fundContext && fundContext.trim()) {
-    parts.push(
-      `Données web sur la thèse réelle du fonds (secteurs, portfolio, stade) — sers-t'en en priorité :\n${fundContext}`,
-    );
-  }
-
-  if (customThesis && typeof customThesis === "object") {
-    parts.push(
-      `Thèse personnalisée fournie par l'utilisateur :\n${JSON.stringify(customThesis, null, 2)}`,
-    );
-  }
-
-  if (parts.length === 0) {
-    parts.push("Fonds VC généraliste, focus startups technologiques françaises");
-  }
-
-  return parts.join("\n\n");
+  return "Aucun critère précis fourni : startups technologiques early-stage en France.";
 }

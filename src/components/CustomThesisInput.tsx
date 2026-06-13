@@ -1,297 +1,155 @@
-import { useState } from "react";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { 
-  Building2, 
-  MapPin, 
-  DollarSign, 
-  Target, 
-  FileText,
-  X,
-  Plus,
-  Search
-} from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Building2, MapPin, DollarSign, Target, FileText, Check } from "lucide-react";
 
 export interface CustomThesis {
   sectors?: string[];
-  stage?: string;
+  stages?: string[];
   geography?: string;
   ticketSize?: string;
   description?: string;
-  specificCriteria?: string;
-  sourcingInstructions?: string;
 }
 
 interface CustomThesisInputProps {
   thesis: CustomThesis;
   onChange: (thesis: CustomThesis) => void;
-  onClear: () => void;
 }
 
 const SECTORS = [
-  "SaaS / Software",
+  "SaaS / Logiciel B2B",
   "Fintech",
-  "Healthtech",
-  "Edtech",
-  "E-commerce",
-  "AI / ML",
-  "Cleantech",
-  "Biotech",
-  "Hardware",
-  "Consumer",
+  "Healthtech / Biotech",
+  "Deeptech",
+  "IA / Machine Learning",
+  "Cybersécurité",
+  "Climate / Cleantech",
+  "Hardware / Robotique",
   "Marketplace",
-  "Enterprise",
-  "Cybersecurity",
-  "Blockchain / Web3",
+  "E-commerce / Consumer",
+  "Mobilité",
+  "Foodtech / Agritech",
+  "Edtech",
   "PropTech",
-  "FoodTech",
-  "Mobility",
+  "Web3 / Blockchain",
   "Gaming",
+  "Spacetech",
+  "Industrie / Manufacturing",
 ];
 
-const STAGES = [
-  "Pre-seed",
-  "Seed",
-  "Series A",
-  "Series B",
-  "Series C+",
-  "Growth",
-];
+const STAGES = ["Pre-seed", "Seed", "Série A", "Série B", "Série C+", "Growth"];
 
-const GEOGRAPHIES = [
-  "North America",
-  "Europe",
-  "Asia",
-  "Latin America",
-  "MENA",
-  "Africa",
-  "Global",
-];
+const GEOGRAPHIES = ["France", "Europe", "Amérique du Nord", "Asie", "Global"];
 
-const TICKET_SIZES = [
-  "$0 - $500K",
-  "$500K - $1M",
-  "$1M - $5M",
-  "$5M - $15M",
-  "$15M - $50M",
-  "$50M+",
-];
+const TICKET_SIZES = ["< 500 K€", "500 K€ - 1 M€", "1 - 5 M€", "5 - 15 M€", "15 M€+"];
 
-export function CustomThesisInput({ thesis, onChange, onClear }: CustomThesisInputProps) {
-  const [newSector, setNewSector] = useState("");
-
-  const addSector = () => {
-    if (newSector && !thesis.sectors?.includes(newSector)) {
-      onChange({
-        ...thesis,
-        sectors: [...(thesis.sectors || []), newSector],
-      });
-      setNewSector("");
-    }
-  };
-
-  const removeSector = (sector: string) => {
-    onChange({
-      ...thesis,
-      sectors: thesis.sectors?.filter(s => s !== sector) || [],
-    });
-  };
-
-  const hasThesis = thesis.sectors?.length || thesis.stage || thesis.geography || 
-                    thesis.ticketSize || thesis.description || thesis.specificCriteria || thesis.sourcingInstructions;
-
+// Pastille à cocher (toggle). Le coeur de la sélection multi-critères.
+function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
-    <Card className="bg-card border-border">
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Target className="w-5 h-5 text-primary" />
-            Thèse d'Investissement Personnalisée
-          </CardTitle>
-          {hasThesis && (
-            <Button variant="ghost" size="sm" onClick={onClear}>
-              <X className="w-4 h-4" />
-              Effacer
-            </Button>
-          )}
-        </div>
-        <p className="text-sm text-muted-foreground">
-          Définissez votre propre thèse d'investissement au lieu d'analyser un fonds existant
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        {/* Secteurs */}
-        <div className="space-y-2">
-          <Label className="flex items-center gap-2">
-            <Building2 className="w-4 h-4 text-primary" />
-            Secteurs d'intérêt
-          </Label>
-          <div className="flex gap-2">
-            <Select value={newSector} onValueChange={setNewSector}>
-              <SelectTrigger className="flex-1">
-                <SelectValue placeholder="Sélectionner un secteur" />
-              </SelectTrigger>
-              <SelectContent>
-                {SECTORS.map((sector) => (
-                  <SelectItem key={sector} value={sector}>
-                    {sector}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button type="button" onClick={addSector} size="icon">
-              <Plus className="w-4 h-4" />
-            </Button>
-          </div>
-          {thesis.sectors && thesis.sectors.length > 0 && (
-            <div className="flex flex-wrap gap-2 mt-2">
-              {thesis.sectors.map((sector) => (
-                <Badge key={sector} variant="secondary" className="gap-1">
-                  {sector}
-                  <button
-                    onClick={() => removeSector(sector)}
-                    className="ml-1 hover:text-destructive"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </Badge>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Stade */}
-        <div className="space-y-2">
-          <Label className="flex items-center gap-2">
-            <Target className="w-4 h-4 text-primary" />
-            Stade d'investissement préféré
-          </Label>
-          <Select 
-            value={thesis.stage || ""} 
-            onValueChange={(v) => onChange({ ...thesis, stage: v })}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Sélectionner un stade" />
-            </SelectTrigger>
-            <SelectContent>
-              {STAGES.map((stage) => (
-                <SelectItem key={stage} value={stage.toLowerCase().replace(' ', '-')}>
-                  {stage}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Géographie */}
-        <div className="space-y-2">
-          <Label className="flex items-center gap-2">
-            <MapPin className="w-4 h-4 text-primary" />
-            Géographie cible
-          </Label>
-          <Select 
-            value={thesis.geography || ""} 
-            onValueChange={(v) => onChange({ ...thesis, geography: v })}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Sélectionner une région" />
-            </SelectTrigger>
-            <SelectContent>
-              {GEOGRAPHIES.map((geo) => (
-                <SelectItem key={geo} value={geo.toLowerCase().replace(' ', '-')}>
-                  {geo}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Taille de ticket */}
-        <div className="space-y-2">
-          <Label className="flex items-center gap-2">
-            <DollarSign className="w-4 h-4 text-primary" />
-            Taille de ticket
-          </Label>
-          <Select 
-            value={thesis.ticketSize || ""} 
-            onValueChange={(v) => onChange({ ...thesis, ticketSize: v })}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Sélectionner une taille de ticket" />
-            </SelectTrigger>
-            <SelectContent>
-              {TICKET_SIZES.map((ticket) => (
-                <SelectItem key={ticket} value={ticket}>
-                  {ticket}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Description */}
-        <div className="space-y-2">
-          <Label className="flex items-center gap-2">
-            <FileText className="w-4 h-4 text-primary" />
-            Description de la thèse
-          </Label>
-          <Textarea
-            placeholder="Décrivez votre thèse d'investissement, vos valeurs, votre approche..."
-            value={thesis.description || ""}
-            onChange={(e) => onChange({ ...thesis, description: e.target.value })}
-            rows={4}
-            className="resize-none"
-          />
-        </div>
-
-        {/* Critères spécifiques */}
-        <div className="space-y-2">
-          <Label className="flex items-center gap-2">
-            <Target className="w-4 h-4 text-primary" />
-            Critères spécifiques
-          </Label>
-          <Textarea
-            placeholder="Ex: Startups avec ARR > $1M, équipe technique forte, marché en croissance > 20%..."
-            value={thesis.specificCriteria || ""}
-            onChange={(e) => onChange({ ...thesis, specificCriteria: e.target.value })}
-            rows={3}
-            className="resize-none"
-          />
-          <p className="text-xs text-muted-foreground">
-            Spécifiez des critères précis que les startups doivent respecter
-          </p>
-        </div>
-
-        {/* Instructions de sourcing */}
-        <div className="space-y-2">
-          <Label className="flex items-center gap-2">
-            <Search className="w-4 h-4 text-primary" />
-            Instructions de sourcing
-          </Label>
-          <Textarea
-            placeholder="Ex: Chercher des startups avec brevets déposés, signaux de recrutement actif, partenariats récents avec grands comptes, présence sur Product Hunt..."
-            value={thesis.sourcingInstructions || ""}
-            onChange={(e) => onChange({ ...thesis, sourcingInstructions: e.target.value })}
-            rows={4}
-            className="resize-none"
-          />
-          <p className="text-xs text-muted-foreground">
-            Indiquez des instructions spécifiques pour le sourcing : types de signaux à détecter, sources à privilégier, critères de qualité des données
-          </p>
-        </div>
-      </CardContent>
-    </Card>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-all ${
+        active
+          ? "border-primary bg-primary/10 text-foreground"
+          : "border-border text-muted-foreground hover:border-muted-foreground/40 hover:text-foreground"
+      }`}
+    >
+      {active && <Check className="h-3.5 w-3.5 text-primary" />}
+      {label}
+    </button>
   );
 }
 
+function FieldLabel({ icon, children, hint }: { icon: React.ReactNode; children: React.ReactNode; hint?: string }) {
+  return (
+    <div className="mb-2.5 flex items-baseline gap-2">
+      <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+        <span className="text-muted-foreground">{icon}</span>
+        {children}
+      </span>
+      {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
+    </div>
+  );
+}
+
+export function CustomThesisInput({ thesis, onChange }: CustomThesisInputProps) {
+  const toggle = (key: "sectors" | "stages", value: string) => {
+    const cur = thesis[key] ?? [];
+    const next = cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value];
+    onChange({ ...thesis, [key]: next });
+  };
+
+  return (
+    <div className="space-y-7">
+      {/* Secteurs */}
+      <div>
+        <FieldLabel icon={<Building2 className="h-4 w-4" />} hint="un ou plusieurs">
+          Secteurs ciblés
+        </FieldLabel>
+        <div className="flex flex-wrap gap-2">
+          {SECTORS.map((s) => (
+            <Chip key={s} label={s} active={!!thesis.sectors?.includes(s)} onClick={() => toggle("sectors", s)} />
+          ))}
+        </div>
+      </div>
+
+      {/* Stades */}
+      <div>
+        <FieldLabel icon={<Target className="h-4 w-4" />} hint="un ou plusieurs">
+          Stades d'investissement
+        </FieldLabel>
+        <div className="flex flex-wrap gap-2">
+          {STAGES.map((s) => (
+            <Chip key={s} label={s} active={!!thesis.stages?.includes(s)} onClick={() => toggle("stages", s)} />
+          ))}
+        </div>
+      </div>
+
+      {/* Géographie */}
+      <div>
+        <FieldLabel icon={<MapPin className="h-4 w-4" />}>Géographie principale</FieldLabel>
+        <div className="flex flex-wrap gap-2">
+          {GEOGRAPHIES.map((g) => (
+            <Chip
+              key={g}
+              label={g}
+              active={thesis.geography === g}
+              onClick={() => onChange({ ...thesis, geography: thesis.geography === g ? undefined : g })}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Ticket */}
+      <div>
+        <FieldLabel icon={<DollarSign className="h-4 w-4" />} hint="optionnel">
+          Taille de ticket
+        </FieldLabel>
+        <div className="flex flex-wrap gap-2">
+          {TICKET_SIZES.map((t) => (
+            <Chip
+              key={t}
+              label={t}
+              active={thesis.ticketSize === t}
+              onClick={() => onChange({ ...thesis, ticketSize: thesis.ticketSize === t ? undefined : t })}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Détails libres */}
+      <div>
+        <FieldLabel icon={<FileText className="h-4 w-4" />} hint="optionnel">
+          Détails de votre thèse
+        </FieldLabel>
+        <Textarea
+          placeholder="Précisez votre thèse, vos critères, ou donnez des exemples de startups / votre portfolio (ex: « on cherche des startups deeptech avec IP brevetée, façon Alice & Bob ou Pasqal ; éviter les ESN et le conseil »). Plus c'est précis, meilleur est le sourcing."
+          value={thesis.description || ""}
+          onChange={(e) => onChange({ ...thesis, description: e.target.value })}
+          rows={4}
+          className="resize-none bg-card border-border text-foreground placeholder:text-muted-foreground/60 focus-visible:ring-primary/30"
+        />
+      </div>
+    </div>
+  );
+}

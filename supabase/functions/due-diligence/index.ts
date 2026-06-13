@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { getCachedSearch, setCachedSearch } from "../_shared/search-cache.ts";
+import { searchAll } from "../_shared/search-client.ts";
 import { reserveAiCall } from "../_shared/ai-client.ts";
 
 const ALLOWED_ORIGINS = [
@@ -29,7 +30,7 @@ interface DueDiligenceRequest {
   additionalContext?: string;
 }
 
-interface BraveSearchResult {
+interface WebSearchResult {
   title: string;
   url: string;
   description: string;
@@ -73,109 +74,9 @@ function validateAndCleanUrl(url: string): string | null {
   }
 }
 
-// Search using Brave Search API
-// Search using Serper.dev API (Google Search) - 2500 free searches/month
-// Fallback to Brave Search if Serper not configured
-async function braveSearch(query: string, count: number = 20, retries: number = 2): Promise<BraveSearchResult[]> {
-  const cached = await getCachedSearch<BraveSearchResult>(query, count);
-  if (cached) {
-    console.log(`[Search] cache HIT (${cached.length}) for: ${query.substring(0, 50)}`);
-    return cached;
-  }
-  const results = await braveSearchUncached(query, count, retries);
-  if (results.length > 0) await setCachedSearch(query, count, results);
-  return results;
-}
-
-async function braveSearchUncached(query: string, count: number, retries: number): Promise<BraveSearchResult[]> {
-  const SERPER_API_KEY = Deno.env.get("SERPER_API_KEY") || Deno.env.get("serper_api");
-  const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY");
-
-  if (SERPER_API_KEY) {
-    const results = await serperSearch(query, count, SERPER_API_KEY);
-    if (results.length > 0) return results;
-    // Serper failed/empty (e.g. out of credits) — fall through to Brave
-    if (BRAVE_API_KEY) {
-      console.warn("[Search] Serper returned 0 results, falling back to Brave");
-      return braveSearchFallback(query, count, BRAVE_API_KEY, retries);
-    }
-    return results;
-  }
-
-  if (BRAVE_API_KEY) {
-    return braveSearchFallback(query, count, BRAVE_API_KEY, retries);
-  }
-
-  console.warn("Aucune API de recherche configurée");
-  return [];
-}
-
-async function serperSearch(query: string, count: number, apiKey: string): Promise<BraveSearchResult[]> {
-  try {
-    console.log(`[Serper] Recherche: ${query.substring(0, 50)}...`);
-    
-    const response = await fetch("https://google.serper.dev/search", {
-      method: "POST",
-      headers: {
-        "X-API-KEY": apiKey,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ q: query, num: Math.min(count, 30) }),
-    });
-
-    if (!response.ok) {
-      console.error(`[Serper] Erreur ${response.status}`);
-      return [];
-    }
-
-    const data = await response.json();
-    const results = (data.organic || []).slice(0, count).map((r: any) => ({
-      title: r.title || "",
-      url: r.link || "",
-      description: r.snippet || "",
-      extra_snippets: [],
-    }));
-    
-    console.log(`[Serper] ✅ ${results.length} résultats`);
-    return results;
-    
-  } catch (error) {
-    console.error("[Serper] Échec:", error);
-    return [];
-  }
-}
-
-async function braveSearchFallback(query: string, count: number, apiKey: string, retries: number): Promise<BraveSearchResult[]> {
-  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-  for (let attempt = 0; attempt < retries; attempt++) {
-    try {
-      const response = await fetch(
-        `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}`,
-        { headers: { "Accept": "application/json", "X-Subscription-Token": apiKey } }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        return (data.web?.results || []).map((r: any) => ({
-          title: r.title || "",
-          url: r.url || "",
-          description: r.description || "",
-          extra_snippets: r.extra_snippets || [],
-        }));
-      }
-
-      if (response.status === 429 && attempt < retries - 1) {
-        await sleep(2000 * Math.pow(2, attempt));
-        continue;
-      }
-      return [];
-    } catch {
-      if (attempt === retries - 1) return [];
-      await sleep(1000);
-    }
-  }
-  return [];
+// Recherche web via Oxylabs (Bing SERP) — cache géré dans search-client.
+async function webSearch(query: string, count: number = 20): Promise<WebSearchResult[]> {
+  return await searchAll(query, count);
 }
 
 // Robust JSON parsing function
@@ -331,7 +232,6 @@ serve(async (req) => {
     ];
     const GEMINI_API_KEY = GEMINI_KEYS[0];
     const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash";
-    const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY");
     // Sur 2.5-flash, le thinking peut consommer tout le budget de sortie →
     // désactivé. Les modèles 3.x gèrent leur thinking séparément : ne pas forcer.
     const GEMINI_THINKING = /2\.5-flash/.test(GEMINI_MODEL)
@@ -360,10 +260,10 @@ serve(async (req) => {
       });
     }
     
-    const SERPER_API_KEY = Deno.env.get("SERPER_API_KEY") || Deno.env.get("serper_api");
-    if (phase !== "analyze" && !BRAVE_API_KEY && !SERPER_API_KEY) {
-      return new Response(JSON.stringify({ 
-        error: "Aucune API de recherche configurée. Ajoutez BRAVE_API_KEY ou SERPER_API_KEY.",
+    const OXYLABS_USER = Deno.env.get("OXYLABS_USER");
+    if (phase !== "analyze" && !OXYLABS_USER) {
+      return new Response(JSON.stringify({
+        error: "Recherche web non configurée. Ajoutez OXYLABS_USER / OXYLABS_PASS.",
         setupRequired: true
       }), {
         status: 500,
@@ -540,7 +440,7 @@ Réponds UNIQUEMENT avec du JSON valide.`;
       const teamLines: string[] = [];
       const seenTeamUrl = new Set<string>();
       try {
-        const teamResults = await Promise.all(teamQueries.map(q => braveSearch(q, 6).catch(() => [])));
+        const teamResults = await Promise.all(teamQueries.map(q => webSearch(q, 6).catch(() => [])));
         for (const results of teamResults) {
           for (const r of results) {
             if (r?.url && !seenTeamUrl.has(r.url)) {
@@ -601,7 +501,7 @@ Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 3 gap
             // Parallel gap searches (cache makes most a no-op anyway). Was sequential with 1200ms delays.
             const extraLines: string[] = [];
             const seenUrl = new Set<string>();
-            const gapResults = await Promise.all(uniqueQueries.map(q => braveSearch(q, 6).catch(() => [])));
+            const gapResults = await Promise.all(uniqueQueries.map(q => webSearch(q, 6).catch(() => [])));
             for (const results of gapResults) {
               for (const r of results) {
                 if (r?.url && !seenUrl.has(r.url)) {
@@ -921,7 +821,7 @@ Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 3 gap
             const seenUrl2 = new Set<string>();
             for (const q of uniqueQueries2) {
               try {
-                const results = await braveSearch(q, 5);
+                const results = await webSearch(q, 5);
                 for (const r of results) {
                   if (r?.url && !seenUrl2.has(r.url)) {
                     seenUrl2.add(r.url);
@@ -1127,7 +1027,7 @@ Réponds UNIQUEMENT avec le JSON complet.`;
     }
 
     // Phase 1 seule : plus de résultats par requête, délai raisonnable pour rester sous 150s
-    const allSearchResults: BraveSearchResult[] = [];
+    const allSearchResults: WebSearchResult[] = [];
     const RESULTS_PER_QUERY = 20;
     const batchSize = 3;
     const BATCH_DELAY_MS = 650;
@@ -1135,7 +1035,7 @@ Réponds UNIQUEMENT avec le JSON complet.`;
     for (let i = 0; i < searchQueries.length; i += batchSize) {
       const batch = searchQueries.slice(i, i + batchSize);
       const batchResults = await Promise.all(
-        batch.map(query => braveSearch(query, RESULTS_PER_QUERY))
+        batch.map(query => webSearch(query, RESULTS_PER_QUERY))
       );
       batchResults.forEach(results => allSearchResults.push(...results));
       if (i + batchSize < searchQueries.length) {
@@ -1146,7 +1046,7 @@ Réponds UNIQUEMENT avec le JSON complet.`;
     console.log(`Total search results collected: ${allSearchResults.length}`);
 
     // Dédupliquer les résultats par URL
-    const uniqueResults = new Map<string, BraveSearchResult>();
+    const uniqueResults = new Map<string, WebSearchResult>();
     allSearchResults.forEach(result => {
       if (result.url && !uniqueResults.has(result.url)) {
         uniqueResults.set(result.url, result);
@@ -1156,8 +1056,8 @@ Réponds UNIQUEMENT avec le JSON complet.`;
     console.log(`Unique results after deduplication: ${dedupedResults.length}`);
 
     // Organiser les résultats par catégorie pour le prompt
-    const categorizeResults = (results: BraveSearchResult[]) => {
-      const categories: Record<string, BraveSearchResult[]> = {
+    const categorizeResults = (results: WebSearchResult[]) => {
+      const categories: Record<string, WebSearchResult[]> = {
         funding: [],
         metrics: [],
         team: [],
@@ -1205,7 +1105,7 @@ Réponds UNIQUEMENT avec le JSON complet.`;
     const buildSearchContext = () => {
       let context = "";
       
-      const addCategory = (name: string, results: BraveSearchResult[], limit: number = 10) => {
+      const addCategory = (name: string, results: WebSearchResult[], limit: number = 10) => {
         if (results.length === 0) return;
         context += `\n\n=== ${name.toUpperCase()} ===\n`;
         results.slice(0, limit).forEach((r, i) => {
