@@ -462,6 +462,16 @@ Tu dois produire un rapport de due diligence COMPLET et PROFESSIONNEL sur l'entr
    - TRACTION (traction) : customers.count, customers.notable, customers.segments TOUJOURS remplis : soit données trouvées, soit "Estimation d'après contexte : [ex: clients miniers, institutions]" ou "Non identifié dans les recherches (secteur B2B early-stage)". partnerships et awards : listes remplies à partir des recherches ; si rien trouvé : ["Aucun partenariat identifié"] / ["Aucun prix identifié"] plutôt qu'un champ vide.
    - Autres sections (product, competition, financials, risks, opportunities) : même exigence d'exhaustivité ; privilégier estimation + mention "estimation" plutôt que "Non disponible" seul.
 
+3bis. PROFONDEUR & SPÉCIFICITÉ (un mémo de VC, pas un résumé Wikipédia) :
+   - QUANTITÉ MINIMALE par liste : keyHighlights ≥ 4, keyRisks ≥ 4, market.trends ≥ 4, competition.competitors ≥ 3, growthOpportunities ≥ 3, investmentRecommendation.keyQuestions ≥ 4, suggestedNextSteps ≥ 3, product.keyFeatures ≥ 3, et CHAQUE catégorie de risques (market/execution/financial/competitive/regulatory) ≥ 3 points.
+   - SPÉCIFICITÉ : chaque point doit être CONCRET et porter une info actionnable — un chiffre, une date, un nom (investisseur, client, concurrent, technologie, brevet), un % ou une fourchette. Bannis les généralités creuses ("bonne équipe", "marché porteur") : remplace-les par le FAIT précis qui les justifie.
+   - market.analysis : ≥ 150 mots, doit quantifier (taille, CAGR, segments) ET citer 2-3 acteurs/comparables nommés ET expliciter le problème de marché résolu.
+   - competition.competitors : pour chacun, remplir funding (montant/round si connu) + 2-3 strengths + 2-3 weaknesses spécifiques ; competition.moat doit expliquer POURQUOI le moat tient (IP, effets de réseau, coût de switch, avance techno chiffrée).
+   - team : pour chaque fondateur, background détaillé (formation, employeurs passés, réalisations) ; overview = thèse explicite sur la capacité d'exécution.
+   - financials : reconstituer fundingHistory (rounds, montants, dates, investisseurs nommés) même partiellement ; estimer burn/runway et logique de valorisation quand pertinent (marqué "estimation").
+   - investmentRecommendation.rationale : raisonnement de VC structuré (thèse, ce qui doit être vrai pour gagner, ce qui peut tuer le deal) ; strengths/weaknesses chiffrés ; suggestedNextSteps = actions de DD concrètes (qui appeler, quels chiffres demander, quelle clause).
+   - Business model & go-to-market : couvre explicitement le modèle de revenus / pricing dans product.valueProposition, et la stratégie d'acquisition / GTM dans opportunities.
+
 4. FORMAT DU RAPPORT :
    Tu dois retourner un objet JSON avec la structure suivante (tous les champs sont requis):
 
