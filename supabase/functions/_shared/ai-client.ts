@@ -74,7 +74,7 @@ async function callGemini(
   userPrompt: string,
   opts: AIOptions,
 ): Promise<string> {
-  // Rotation de clés : 4 clés distribuent le quota journalier et le RPM.
+  // Rotation de clés : 9 clés distribuent le quota journalier et le RPM.
   // Sélection aléatoire initiale pour équilibrer la charge ; sur 429 (quota
   // épuisé sur une clé) → on bascule sur les suivantes.
   const allKeys = [
@@ -83,13 +83,17 @@ async function callGemini(
     Deno.env.get("GEMINI_KEY_3"),
     Deno.env.get("GEMINI_KEY_4"),
     Deno.env.get("GEMINI_KEY_5"),
+    Deno.env.get("GEMINI_KEY_6"),
+    Deno.env.get("GEMINI_KEY_7"),
+    Deno.env.get("GEMINI_KEY_8"),
+    Deno.env.get("GEMINI_KEY_9"),
   ].filter((k): k is string => !!k);
   const uniqueKeys = [...new Set(allKeys)];
   if (uniqueKeys.length === 0) throw new Error("GEMINI_API_KEY manquant");
-  // Mélanger pour distribuer la charge sur les 4 clés (RPM équilibré)
+  // Mélanger pour distribuer la charge sur les 9 clés (RPM équilibré)
   const shuffled = [...uniqueKeys].sort(() => Math.random() - 0.5);
 
-  const model = opts.model ?? Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash";
+  const model = opts.model ?? Deno.env.get("GEMINI_MODEL") ?? "gemini-3.5-flash";
 
   const baseBudget = opts.maxTokens ?? 4096;
   const isFlash = /flash/.test(model);

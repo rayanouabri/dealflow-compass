@@ -227,14 +227,21 @@ serve(async (req) => {
           Deno.env.get("GEMINI_API_KEY"),
           Deno.env.get("GEMINI_KEY_2"),
           Deno.env.get("GEMINI_KEY_3"),
+          Deno.env.get("GEMINI_KEY_4"),
+          Deno.env.get("GEMINI_KEY_5"),
+          Deno.env.get("GEMINI_KEY_6"),
+          Deno.env.get("GEMINI_KEY_7"),
+          Deno.env.get("GEMINI_KEY_8"),
+          Deno.env.get("GEMINI_KEY_9"),
         ].filter((k): k is string => !!k),
       ),
     ];
     const GEMINI_API_KEY = GEMINI_KEYS[0];
-    const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash";
-    // Sur 2.5-flash, le thinking peut consommer tout le budget de sortie →
-    // désactivé. Les modèles 3.x gèrent leur thinking séparément : ne pas forcer.
-    const GEMINI_THINKING = /2\.5-flash/.test(GEMINI_MODEL)
+    const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-3.5-flash";
+    // Le thinking se décompte de maxOutputTokens → sur un modèle flash il peut
+    // tronquer le gros rapport DD. thinkingBudget:0 est honoré sur 2.5-flash ET
+    // 3.x-flash (vérifié : thoughtsTokenCount=0) → on le désactive sur tout flash.
+    const GEMINI_THINKING = /flash/.test(GEMINI_MODEL)
       ? { thinkingConfig: { thinkingBudget: 0 } }
       : {};
 

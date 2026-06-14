@@ -194,7 +194,7 @@ async function handleThesisAnalysis(
       maxTokens: 8192,
       cacheKey,
       validate: isValidThesis,
-      model: "gemini-2.5-pro",
+      model: "gemini-3.5-flash",
     },
   );
 
