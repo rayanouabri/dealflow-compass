@@ -431,6 +431,17 @@ async function handleSourcingStart(
     justFounded: justFounded.length,
   });
 
+  // Mine AUSSI les pages ramenées par Apify Google (portfolios d'accélérateurs
+  // Station F, lauréats French Tech/Bpifrance, Pappers...) : ce sont des listes
+  // de startups EARLY non célèbres → on en extrait les noms individuels.
+  const apifyMined = apifyResults.length > 0
+    ? await mineListicles(
+        apifyResults.map((r) => ({ ...r, source: "oxylabs" as const })),
+        thesis,
+        { maxPages: 3 },
+      ).catch(() => [])
+    : [];
+
   // Classement piloté par les CRITÈRES de l'utilisateur (pertinence thèse),
   // pas par le seul volume de signal.
   const ranked = deduplicateAndRank(allResults, {
@@ -439,8 +450,8 @@ async function handleSourcingStart(
     geography,
     exclude: exclusionTerms,
   });
-  // Injecte les startups minées (haute qualité, on-thesis) en tête du ranking.
-  const rankedWithMined = mergeMinedCandidates(ranked, mined);
+  // Injecte les startups minées (mining web + mining Apify) en tête du ranking.
+  const rankedWithMined = mergeMinedCandidates(ranked, [...mined, ...apifyMined]);
   // Filtre strict on-thesis : écarte les acteurs hors-profil, priorise l'ICP
   const filtered = filterByICP(rankedWithMined, {
     mustHave: precisionTerms,

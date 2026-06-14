@@ -404,6 +404,18 @@ Tu dois produire un rapport de due diligence COMPLET et PROFESSIONNEL sur l'entr
   "risks": { "marketRisks": [], "executionRisks": [], "financialRisks": [], "competitiveRisks": [], "regulatoryRisks": [], "mitigations": [], "overallRiskLevel": "...", "sources": [] },
   "opportunities": { "growthOpportunities": [], "marketExpansion": "...", "productExpansion": "...", "strategicValue": "...", "sources": [] },
   "investmentRecommendation": { "recommendation": "...", "rationale": "...", "strengths": [], "weaknesses": [], "keyQuestions": [], "suggestedNextSteps": [], "targetReturn": "texte (obligatoire; si inconnu: 'Non disponible' ou 'Estimation: ...')", "investmentHorizon": "texte (obligatoire)", "suggestedTicket": "texte (obligatoire)" },
+  "investmentCommittee": {
+    "thesisFitAnalysis": "Analyse FINE de l'adéquation au mandat du fonds : pourquoi (ou pas) ce deal correspond au stade visé, au secteur, à la géo, au type de moat/retour recherché. Pas un oui/non — un raisonnement d'associé.",
+    "bullCase": "Le scénario haussier ARGUMENTÉ (chemin vers un 10x+) : quelles hypothèses doivent se réaliser (marché, exécution, moat), avec l'ordre de grandeur de l'upside.",
+    "bearCase": "Le scénario baissier ARGUMENTÉ : les 2-3 façons les PLUS PROBABLES dont ce deal perd de l'argent, classées par probabilité.",
+    "keyDebates": ["Les vrais débats d'un comité d'investissement sur ce dossier — chaque point présenté avec les DEUX côtés de l'argument (pour/contre), pas une banalité."],
+    "whatMustBeTrue": ["Les conditions NÉCESSAIRES pour que la thèse d'investissement tienne (hypothèses critiques à valider)."],
+    "killCriteria": ["Les signaux qui INVALIDERAIENT le deal (deal-breakers) — ce qui ferait dire non en DD approfondie."],
+    "valuationView": "Vue sur la valorisation/le point d'entrée : raisonnable au stade ? comparables de tour, dilution attendue, prix d'entrée vs potentiel.",
+    "diligencePriorities": ["Les 3-4 vérifications de DD qui CHANGERAIENT LE PLUS la décision (les plus à fort enjeu, pas une checklist générique)."],
+    "convictionLevel": "high | medium | low",
+    "verdict": "La position finale ARGUMENTÉE en 3-5 phrases, comme un associé qui défend ou rejette le deal en comité : la recommandation, le raisonnement central, et la condition principale."
+  },
   "allSources": [ { "name": "...", "url": "...", "type": "article|crunchbase|linkedin|official|press|other", "relevance": "..." } ],
   "dataQuality": { "overallScore": "...", "dataAvailability": {}, "limitations": [], "sourcesCount": "..." }
 }

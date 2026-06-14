@@ -24,6 +24,18 @@ const MINEABLE_HOSTS = [
   "failory.com",
   "wellfound.com",
   "maddyness.com",
+  // Accélérateurs / incubateurs (portfolios = startups EARLY par construction)
+  "stationf.co",
+  "jobs.stationf.co",
+  "lafrenchtech.gouv.fr",
+  "lafrenchtech.com",
+  "bpifrance.fr",
+  "welcometothejungle.com",
+  "aerospace-valley.com",
+  "frenchtechseed.fr",
+  "ycombinator.com",
+  "antler.co",
+  "hexa.build",
 ];
 
 function mineableHost(url: string): string | null {

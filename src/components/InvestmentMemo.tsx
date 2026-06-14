@@ -257,6 +257,7 @@ export function InvestmentMemo({ data, companyName, onExport }: MemoProps) {
     if (data.risks && Object.keys(data.risks).length) items.push({ id: "risks", label: "Risques" });
     if (data.opportunities && Object.keys(data.opportunities).length) items.push({ id: "opportunities", label: "Opportunités" });
     if (data.investmentRecommendation && Object.keys(data.investmentRecommendation).length) items.push({ id: "reco", label: "Recommandation" });
+    if (data.investmentCommittee && Object.keys(data.investmentCommittee).length) items.push({ id: "committee", label: "Comité d'investissement" });
     if (allSources.length) items.push({ id: "sources", label: "Sources" });
     items.push({ id: "assistant", label: "Assistant IA" });
     return items;
@@ -753,6 +754,68 @@ export function InvestmentMemo({ data, companyName, onExport }: MemoProps) {
             )}
           </Section>
         )}
+
+        {/* Comité d'investissement — analyse fine */}
+        {data.investmentCommittee && Object.keys(data.investmentCommittee).length > 0 && (() => {
+          const ic = data.investmentCommittee;
+          const conv = String(ic.convictionLevel ?? "").toLowerCase();
+          const convLabel = conv.includes("high") ? "Conviction forte" : conv.includes("low") ? "Conviction faible" : conv ? "Conviction modérée" : null;
+          return (
+            <Section id="committee">
+              <div className="mb-5 flex items-center justify-between gap-3">
+                <SectionTitle id="committee" icon={<Sparkles className="h-5 w-5" />}>Comité d'investissement</SectionTitle>
+                {convLabel && (
+                  <span className={`shrink-0 rounded-md border px-2.5 py-1 text-xs font-medium ${conv.includes("high") ? "border-success/40 text-success bg-success/5" : conv.includes("low") ? "border-destructive/40 text-destructive bg-destructive/5" : "border-primary/40 text-primary bg-primary/5"}`}>{convLabel}</span>
+                )}
+              </div>
+              {ic.verdict && (
+                <div className="mb-5 rounded-lg border-l-2 border-primary bg-muted/20 p-5">
+                  <Label>Verdict</Label>
+                  <Prose value={ic.verdict} className="text-foreground" />
+                </div>
+              )}
+              {ic.thesisFitAnalysis && <div className="mb-5"><Label>Adéquation au mandat</Label><Prose value={ic.thesisFitAnalysis} /></div>}
+              <div className="grid gap-4 md:grid-cols-2">
+                {ic.bullCase && (
+                  <div className="min-w-0 rounded-lg border border-border bg-muted/20 p-5">
+                    <Label><span className="text-success">Scénario haussier</span></Label>
+                    <Prose value={ic.bullCase} className="text-sm" />
+                  </div>
+                )}
+                {ic.bearCase && (
+                  <div className="min-w-0 rounded-lg border border-border bg-muted/20 p-5">
+                    <Label><span className="text-destructive">Scénario baissier</span></Label>
+                    <Prose value={ic.bearCase} className="text-sm" />
+                  </div>
+                )}
+              </div>
+              {toArray(ic.keyDebates).length > 0 && (
+                <div className="mt-4"><Label>Débats clés du comité</Label><BulletList items={toArray(ic.keyDebates)} /></div>
+              )}
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                {toArray(ic.whatMustBeTrue).length > 0 && (
+                  <div className="min-w-0 rounded-lg border border-border bg-muted/20 p-5">
+                    <Label>Ce qui doit être vrai</Label>
+                    <BulletList items={toArray(ic.whatMustBeTrue)} tone="positive" />
+                  </div>
+                )}
+                {toArray(ic.killCriteria).length > 0 && (
+                  <div className="min-w-0 rounded-lg border border-border bg-muted/20 p-5">
+                    <Label><span className="text-destructive">Critères rédhibitoires</span></Label>
+                    <BulletList items={toArray(ic.killCriteria)} tone="negative" />
+                  </div>
+                )}
+              </div>
+              {ic.valuationView && <div className="mt-4"><Label>Vue valorisation / entrée</Label><Prose value={ic.valuationView} /></div>}
+              {toArray(ic.diligencePriorities).length > 0 && (
+                <div className="mt-4 rounded-lg border border-border bg-muted/20 p-5">
+                  <Label>Priorités de due diligence</Label>
+                  <BulletList items={toArray(ic.diligencePriorities)} />
+                </div>
+              )}
+            </Section>
+          );
+        })()}
 
         {/* Sources */}
         {allSources.length > 0 && (
