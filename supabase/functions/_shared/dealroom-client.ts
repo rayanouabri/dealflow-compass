@@ -3,6 +3,7 @@
 // live-signals), (2) ENRICHISSEMENT structuré d'un candidat (lookup-slug +
 // entity-news → stade/levée vérifiés) pour un filtre déterministe.
 import { logger } from "./logger.ts";
+import { getCachedSearch, setCachedSearch } from "./search-cache.ts";
 
 const BASE = "https://dealroom.co";
 const TIMEOUT = 12000;
@@ -236,6 +237,12 @@ function slugify(name: string): string {
 }
 
 export async function dealroomEnrich(name: string): Promise<DealroomEnrichment> {
+  // Cache 5 j par société : l'enrichissement (stade réel) ne bouge pas d'un run à
+  // l'autre → évite de retaper lookup-slug + entity-news à chaque pipeline.
+  const cacheKey = `dealroom|enrich|${name.toLowerCase().trim()}`;
+  const cached = await getCachedSearch<DealroomEnrichment>(cacheKey, 1);
+  if (cached && cached.length > 0) return cached[0];
+
   // lookup-slug a une couverture partielle ; entity-news marche directement
   // avec un slug = nom slugifié. On tente le lookup, sinon fallback slugify.
   const lookup = await getJson(`/api/lookup-slug?name=${encodeURIComponent(name)}&type=company&limit=1`);
@@ -252,11 +259,13 @@ export async function dealroomEnrich(name: string): Promise<DealroomEnrichment> 
     .join("\n")
     .slice(0, 4000);
 
-  return {
+  const result: DealroomEnrichment = {
     matched: items.length > 0 || !!match,
     slug,
     profileUrl: match?.profileUrl ?? `https://app.dealroom.co/companies/${slug}`,
     newsText,
     latestStageHint: detectLatestStage(newsText),
   };
+  await setCachedSearch(cacheKey, 1, [result], 5);
+  return result;
 }
