@@ -706,6 +706,7 @@ async function handlePicking(
     "series d": 5, "series e": 6, growth: 7, ipo: 8, public: 8,
   };
   const maxRank = STAGE_RANK[stageMax] ?? 3;
+  const currentYear = new Date().getFullYear();
   const looksTooLate = (s: any): boolean => {
     // 1) Vérité terrain Dealroom : stade réel > stade max visé → hors-cible.
     const dr = s.dealroomStage as string | undefined;
@@ -713,9 +714,18 @@ async function handlePicking(
     // 2) Signalé par l'IA.
     const flags = (s.redFlags ?? []).join(" ").toLowerCase();
     if (/hors-stade|trop avanc|trop financ/.test(flags)) return true;
-    // 3) Heuristique sur la description (fallback si pas de donnée Dealroom).
+    // 3) Heuristique sur la description (SERP/INSEE) : stade/valo/notoriété trop avancés.
     const text = String((s.descriptions ?? []).join(" ")).toLowerCase();
-    return /\bseries\s+[c-z]\b|\bs[ée]rie\s+[c-z]\b|s[ée]rie\s*c\+|\bunicorn\b|\blicorne\b|\bipo\b|cot[ée]e?\s+en\s+bourse|nasdaq|euronext|valuation\s*\$?\s*\d+(\.\d+)?\s*(b|bn|billion|milliard)|\b\d{3,}\s*(m€|m\$|\s*million)/.test(text);
+    if (/\bseries\s+[c-z]\b|\bs[ée]rie\s+[c-z]\b|s[ée]rie\s*c\+|\bunicorn\b|\blicorne\b|\bipo\b|cot[ée]e?\s+en\s+bourse|nasdaq|euronext|valuation\s*\$?\s*\d+(\.\d+)?\s*(b|bn|billion|milliard)|\b\d{3,}\s*(m€|m\$|\s*million)/.test(text)) return true;
+    // 4) Marqueurs "trop avancé" indépendants de Dealroom : rachat, filiale, cotation.
+    //    ("acquise PAR"/"by" : la société elle-même est rachetée, pas du marketing d'acquisition.)
+    if (/\bacquired\s+by\b|\bacquise?\s+par\b|\brachet[ée]e?s?\s+par\b|\bsubsidiary\s+of\b|\bfiliale\s+(?:du|de|d')\b|\bowned\s+by\b|\bgoing\s+public\b|\bpre-?ipo\b/.test(text)) return true;
+    // 5) Levée/valo à l'échelle du milliard (décimales incluses) → jamais early.
+    if (/\b\d+(?:[.,]\d+)?\s*(?:milliards?|billions?|bn)\b/.test(text)) return true;
+    // 6) Âge (texte INSEE/SERP) : fondée il y a > 15 ans → trop mature pour une thèse early.
+    const ym = text.match(/\b(?:fond[ée]e?|cr[ée][ée]e?|founded|established|incorporated)\s+(?:en\s+|in\s+)?(19[5-9]\d|20[0-2]\d)\b/);
+    if (ym && currentYear - Number(ym[1]) > 15) return true;
+    return false;
   };
   const stageFiltered = earlyThesis ? realCompanies.filter((s) => !looksTooLate(s)) : realCompanies;
   const stageBase = stageFiltered.length > 0 ? stageFiltered : realCompanies;
