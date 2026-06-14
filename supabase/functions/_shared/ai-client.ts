@@ -25,6 +25,17 @@ async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Lit les clés Gemini depuis l'env (jusqu'à 9), dédupliquées. Source unique de
+// vérité partagée par ai-client, due-diligence et ai-qa (évite les tableaux de
+// clés divergents d'une fonction à l'autre).
+export function getGeminiKeys(): string[] {
+  const keys = [
+    "GEMINI_API_KEY", "GEMINI_KEY_2", "GEMINI_KEY_3", "GEMINI_KEY_4", "GEMINI_KEY_5",
+    "GEMINI_KEY_6", "GEMINI_KEY_7", "GEMINI_KEY_8", "GEMINI_KEY_9",
+  ].map((n) => Deno.env.get(n)).filter((k): k is string => !!k);
+  return [...new Set(keys)];
+}
+
 // --- Garde-fou free tier ---------------------------------------------------
 // Réserve un appel IA dans le compteur journalier (RPC service-role). Au-delà
 // du plafond (AI_DAILY_LIMIT, défaut 240 — free tier 2.5-flash = 250/jour),
@@ -74,23 +85,11 @@ async function callGemini(
   userPrompt: string,
   opts: AIOptions,
 ): Promise<string> {
-  // Rotation de clés : 9 clés distribuent le quota journalier et le RPM.
-  // Sélection aléatoire initiale pour équilibrer la charge ; sur 429 (quota
-  // épuisé sur une clé) → on bascule sur les suivantes.
-  const allKeys = [
-    Deno.env.get("GEMINI_API_KEY"),
-    Deno.env.get("GEMINI_KEY_2"),
-    Deno.env.get("GEMINI_KEY_3"),
-    Deno.env.get("GEMINI_KEY_4"),
-    Deno.env.get("GEMINI_KEY_5"),
-    Deno.env.get("GEMINI_KEY_6"),
-    Deno.env.get("GEMINI_KEY_7"),
-    Deno.env.get("GEMINI_KEY_8"),
-    Deno.env.get("GEMINI_KEY_9"),
-  ].filter((k): k is string => !!k);
-  const uniqueKeys = [...new Set(allKeys)];
+  // Rotation de clés : jusqu'à 9 clés (getGeminiKeys) distribuent le quota
+  // journalier et le RPM. Sur 429 (quota épuisé sur une clé) → clé suivante.
+  const uniqueKeys = getGeminiKeys();
   if (uniqueKeys.length === 0) throw new Error("GEMINI_API_KEY manquant");
-  // Mélanger pour distribuer la charge sur les 9 clés (RPM équilibré)
+  // Mélanger pour distribuer la charge (RPM équilibré).
   const shuffled = [...uniqueKeys].sort(() => Math.random() - 0.5);
 
   const model = opts.model ?? Deno.env.get("GEMINI_MODEL") ?? "gemini-3.5-flash";

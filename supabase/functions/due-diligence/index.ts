@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { getCachedSearch, setCachedSearch } from "../_shared/search-cache.ts";
 import { searchAll } from "../_shared/search-client.ts";
-import { reserveAiCall } from "../_shared/ai-client.ts";
+import { reserveAiCall, getGeminiKeys } from "../_shared/ai-client.ts";
 
 const ALLOWED_ORIGINS = [
   "https://ai-vc-sourcing.vercel.app",
@@ -221,21 +221,7 @@ serve(async (req) => {
     // Configuration AI — Gemini uniquement (le code Vertex, jamais actif, a été retiré).
     // Rotation de clés (même logique qu'ai-client.ts) : sur 429 on bascule sur
     // la clé suivante pour cumuler les quotas journaliers.
-    const GEMINI_KEYS = [
-      ...new Set(
-        [
-          Deno.env.get("GEMINI_API_KEY"),
-          Deno.env.get("GEMINI_KEY_2"),
-          Deno.env.get("GEMINI_KEY_3"),
-          Deno.env.get("GEMINI_KEY_4"),
-          Deno.env.get("GEMINI_KEY_5"),
-          Deno.env.get("GEMINI_KEY_6"),
-          Deno.env.get("GEMINI_KEY_7"),
-          Deno.env.get("GEMINI_KEY_8"),
-          Deno.env.get("GEMINI_KEY_9"),
-        ].filter((k): k is string => !!k),
-      ),
-    ];
+    const GEMINI_KEYS = getGeminiKeys();
     const GEMINI_API_KEY = GEMINI_KEYS[0];
     const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-3.5-flash";
     // Le thinking se décompte de maxOutputTokens → sur un modèle flash il peut

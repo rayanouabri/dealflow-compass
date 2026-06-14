@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { searchAll } from "../_shared/search-client.ts";
+import { reserveAiCall, getGeminiKeys } from "../_shared/ai-client.ts";
 
 const ALLOWED_ORIGINS = [
   "https://ai-vc-sourcing.vercel.app",
@@ -143,21 +144,7 @@ serve(async (req) => {
 
     // Configuration AI : Gemini ou Vertex AI
     const AI_PROVIDER = (Deno.env.get("AI_PROVIDER") || "gemini").toLowerCase();
-    const GEMINI_KEYS = [
-      ...new Set(
-        [
-          Deno.env.get("GEMINI_API_KEY"),
-          Deno.env.get("GEMINI_KEY_2"),
-          Deno.env.get("GEMINI_KEY_3"),
-          Deno.env.get("GEMINI_KEY_4"),
-          Deno.env.get("GEMINI_KEY_5"),
-          Deno.env.get("GEMINI_KEY_6"),
-          Deno.env.get("GEMINI_KEY_7"),
-          Deno.env.get("GEMINI_KEY_8"),
-          Deno.env.get("GEMINI_KEY_9"),
-        ].filter((k): k is string => !!k),
-      ),
-    ];
+    const GEMINI_KEYS = getGeminiKeys();
     const GEMINI_API_KEY = GEMINI_KEYS[0];
     const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-3.5-flash";
     const VERTEX_AI_PROJECT = Deno.env.get("VERTEX_AI_PROJECT_ID");
@@ -489,6 +476,9 @@ QUESTION: ${question}`;
             thinkingConfig: { thinkingBudget: 0 },
           },
         };
+
+    // Compte cet appel dans le garde-fou journalier (free tier) comme les autres.
+    await reserveAiCall();
 
     // Rotation de clés sur 429 (quota épuisé sur une clé → clé suivante).
     // Vertex (jamais actif) garde un seul appel via les headers Bearer existants.
