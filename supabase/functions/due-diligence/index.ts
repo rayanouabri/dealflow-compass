@@ -371,6 +371,7 @@ Tu dois produire un rapport de due diligence COMPLET et PROFESSIONNEL sur l'entr
    - financials : reconstituer fundingHistory (rounds, montants, dates, investisseurs nommés) même partiellement ; estimer burn/runway et logique de valorisation quand pertinent (marqué "estimation").
    - investmentRecommendation.rationale : raisonnement de VC structuré (thèse, ce qui doit être vrai pour gagner, ce qui peut tuer le deal) ; strengths/weaknesses chiffrés ; suggestedNextSteps = actions de DD concrètes (qui appeler, quels chiffres demander, quelle clause).
    - Business model & go-to-market : couvre explicitement le modèle de revenus / pricing dans product.valueProposition, et la stratégie d'acquisition / GTM dans opportunities.
+   - COMITÉ D'INVESTISSEMENT (investmentCommittee) — OBLIGATOIRE et le plus important : c'est l'analyse FINE attendue d'un associé de VC. PAS une redite des forces/faiblesses. Argumente : bull case et bear case chiffrés et probabilisés, les vrais débats du comité (les DEUX côtés), ce qui doit être vrai, les critères rédhibitoires, une vue valorisation, les priorités de DD à fort enjeu, un niveau de conviction et un verdict défendu. Si tu manques de place, RACCOURCIS les autres sections mais ne supprime JAMAIS investmentCommittee.
 
 4. FORMAT DU RAPPORT :
    Tu dois retourner un objet JSON avec la structure suivante (tous les champs sont requis):
@@ -564,7 +565,7 @@ Réponds UNIQUEMENT avec du JSON valide.`;
       // 16384 max output: enough for a complete DD report, fast enough to fit Supabase's 150s budget
       const aiBody = {
         contents: [{ parts: [{ text: `${systemPromptAnalyze}\n\n${userPromptAnalyze}` }] }],
-        generationConfig: { temperature: 0.1, topP: 0.9, topK: 40, maxOutputTokens: 16384, responseMimeType: "application/json" as const, ...GEMINI_THINKING },
+        generationConfig: { temperature: 0.1, topP: 0.9, topK: 40, maxOutputTokens: 28000, responseMimeType: "application/json" as const, ...GEMINI_THINKING },
       };
 
       // Retry on transient Gemini errors (503 overload, 500/502/504) + rotation
