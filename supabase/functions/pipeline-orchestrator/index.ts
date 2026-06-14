@@ -14,6 +14,7 @@ import { mineListicles, mergeMinedCandidates } from "../_shared/listicle-miner.t
 import { apifyGoogleSearch } from "../_shared/apify-client.ts";
 import {
   dealroomJustFounded,
+  dealroomMarketmaps,
   dealroomEnrich,
 } from "../_shared/dealroom-client.ts";
 import { searchNewCompanies, inseeToSearchResults } from "../_shared/insee-sirene.ts";
@@ -308,6 +309,9 @@ async function handleSourcingStart(
     timeoutMs: 45000,
   }).catch(() => []);
   const justFoundedPromise = dealroomJustFounded().catch(() => []);
+  // Market maps Dealroom par tag (secteur/géo) : vivier early non célèbre, bien
+  // plus large que just-founded sur une thèse étroite.
+  const marketmapsPromise = dealroomMarketmaps(sectors, geography).catch(() => []);
 
   // Génère les queries FR biaisées, ciblées sur le type d'entreprise visé
   const queryGroups = buildFrenchBiasedQueries(sectors, stage, geography, {
@@ -397,7 +401,7 @@ async function handleSourcingStart(
   );
 
   // Fusionne les candidats des sources structurées (noms fiables) avec le web
-  const [inseeCompanies, hnStartups, githubOrgs, mined, apifyResults, justFounded] =
+  const [inseeCompanies, hnStartups, githubOrgs, mined, apifyResults, justFounded, marketmaps] =
     await Promise.all([
       inseePromise,
       hnPromise,
@@ -405,6 +409,7 @@ async function handleSourcingStart(
       minePromise,
       apifyPromise,
       justFoundedPromise,
+      marketmapsPromise,
     ]);
   allResults.push(...inseeToSearchResults(inseeCompanies));
   allResults.push(...hnToSearchResults(hnStartups));
@@ -422,6 +427,14 @@ async function handleSourcingStart(
       allResults.push({ title: c.name, url: c.url, description: c.description, source: "oxylabs", category: "dealroom" } as any);
     }
   }
+  // Dealroom market maps (listes curées par tag) → candidats early non célèbres.
+  for (const c of marketmaps) {
+    const hay = `${c.name} ${c.description}`.toLowerCase();
+    const onThesis = sectorTokens.length === 0 || sectorTokens.some((t) => t.length >= 3 && hay.includes(t));
+    if (onThesis && c.url) {
+      allResults.push({ title: c.name, url: c.url, description: c.description, source: "oxylabs", category: "dealroom" } as any);
+    }
+  }
   logger.info("Sources structurées + fraîches", {
     insee: inseeCompanies.length,
     hn: hnStartups.length,
@@ -429,6 +442,7 @@ async function handleSourcingStart(
     mined: mined.length,
     apify: apifyResults.length,
     justFounded: justFounded.length,
+    marketmaps: marketmaps.length,
   });
 
   // Mine AUSSI les pages ramenées par Apify Google (portfolios d'accélérateurs

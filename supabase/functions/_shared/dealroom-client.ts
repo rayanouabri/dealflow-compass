@@ -9,7 +9,11 @@ const TIMEOUT = 12000;
 
 async function getJson(path: string): Promise<any | null> {
   try {
-    const r = await fetch(`${BASE}${path}`, { signal: AbortSignal.timeout(TIMEOUT) });
+    // UA explicite : l'edge Dealroom renvoie du vide aux clients sans User-Agent.
+    const r = await fetch(`${BASE}${path}`, {
+      signal: AbortSignal.timeout(TIMEOUT),
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; AI-VC/1.0)", "Accept": "application/json" },
+    });
     if (!r.ok) return null;
     return await r.json();
   } catch (err) {
@@ -26,7 +30,7 @@ export interface DealroomCompany {
   funding?: string;     // ex "$5M"
   founders?: string[];
   hq?: string;
-  source: "dealroom_just_founded" | "dealroom_signal";
+  source: "dealroom_just_founded" | "dealroom_signal" | "dealroom_marketmap";
 }
 
 // Startups tout juste fondées (rafraîchi tous les 2 jours) — pépites early,
@@ -67,6 +71,136 @@ export async function dealroomLiveSignals(limit = 40): Promise<DealroomCompany[]
       };
     })
     .filter((c) => c.name.length >= 2);
+}
+
+// --- Sourcing via MARKET MAPS (listes curées par tag) ---
+// Bien plus large que just-founded sur une thèse étroite : c'est là que sont les
+// viviers early non célèbres. /api/marketmaps?tag=X liste les maps ; chaque map
+// donne jusqu'à ~500 sociétés (website, industries, launchYear, totalFunding).
+// On filtre les trop-financées À LA SOURCE (anti-trop-avancé / anti-notoriété).
+
+// Tags réellement disponibles sur /api/marketmaps (cf. availableTags).
+const MARKETMAP_TAGS = [
+  "AI", "Biotech", "Climate", "Consumer", "Crypto", "Deep Tech", "Defence",
+  "Energy", "Europe", "Fintech", "Food & Agri", "France", "Gaming", "Health",
+  "HR", "Marketing", "Mobility", "Real Estate", "Robotics", "Space", "UK", "USA",
+];
+
+// Synonymes (secteurs/géo saisis par l'utilisateur, souvent en FR) → tag Dealroom.
+const TAG_SYNONYMS: Record<string, string> = {
+  ia: "AI", ai: "AI", "intelligence artificielle": "AI", llm: "AI", "gen ai": "AI",
+  deeptech: "Deep Tech", "deep tech": "Deep Tech", hardtech: "Deep Tech",
+  fintech: "Fintech", finance: "Fintech", "assurtech": "Fintech", paiement: "Fintech",
+  biotech: "Biotech", pharma: "Biotech",
+  sante: "Health", "santé": "Health", health: "Health", healthtech: "Health", medtech: "Health", "e-sante": "Health",
+  climat: "Climate", climate: "Climate", cleantech: "Climate", greentech: "Climate",
+  energie: "Energy", "énergie": "Energy", energy: "Energy",
+  crypto: "Crypto", web3: "Crypto", blockchain: "Crypto",
+  defense: "Defence", "défense": "Defence", defence: "Defence",
+  mobilite: "Mobility", "mobilité": "Mobility", mobility: "Mobility", transport: "Mobility", automobile: "Mobility",
+  robotique: "Robotics", robotics: "Robotics",
+  spatial: "Space", space: "Space", aerospace: "Space",
+  gaming: "Gaming", jeux: "Gaming", jeu: "Gaming",
+  food: "Food & Agri", foodtech: "Food & Agri", agri: "Food & Agri", agritech: "Food & Agri", agtech: "Food & Agri",
+  rh: "HR", hr: "HR",
+  immobilier: "Real Estate", proptech: "Real Estate", "real estate": "Real Estate",
+  marketing: "Marketing", adtech: "Marketing", consumer: "Consumer", retail: "Consumer", b2c: "Consumer",
+  france: "France", fr: "France",
+  europe: "Europe", eu: "Europe", "ue": "Europe",
+  uk: "UK", "royaume-uni": "UK", "royaume uni": "UK",
+  usa: "USA", us: "USA", "etats-unis": "USA", "états-unis": "USA",
+};
+
+function toDealroomTags(sectors: string[], geography?: string): string[] {
+  const raw = [...sectors, ...(geography ? [geography] : [])]
+    .flatMap((s) => String(s).toLowerCase().split(/[,/|]+/))
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const tags = new Set<string>();
+  for (const term of raw) {
+    if (TAG_SYNONYMS[term]) { tags.add(TAG_SYNONYMS[term]); continue; }
+    // match partiel (ex "intelligence artificielle B2B" contient "intelligence artificielle")
+    for (const [k, v] of Object.entries(TAG_SYNONYMS)) {
+      if (k.length >= 4 && term.includes(k)) { tags.add(v); break; }
+    }
+    const direct = MARKETMAP_TAGS.find((t) => t.toLowerCase() === term);
+    if (direct) tags.add(direct);
+  }
+  return [...tags];
+}
+
+export async function dealroomMarketmaps(
+  sectors: string[],
+  geography?: string,
+  opts: { maxMaps?: number; maxCompanies?: number; maxFundingUsdM?: number } = {},
+): Promise<DealroomCompany[]> {
+  const maxMaps = opts.maxMaps ?? 4;
+  const maxCompanies = opts.maxCompanies ?? 160;
+  const fundingCapUsd = (opts.maxFundingUsdM ?? 300) * 1_000_000;
+  const wanted = toDealroomTags(sectors, geography);
+  if (wanted.length === 0) return [];
+
+  // 1) Liste des maps, filtrée serveur sur un tag secteur prioritaire si reconnu.
+  const sectorTag = wanted.find((t) => t !== "France" && t !== "Europe" && t !== "UK" && t !== "USA");
+  const listUrl = sectorTag
+    ? `/api/marketmaps?tag=${encodeURIComponent(sectorTag)}&limit=80`
+    : `/api/marketmaps?limit=120`;
+  const list = await getJson(listUrl);
+  const maps: any[] = list?.results ?? [];
+  if (maps.length === 0) return [];
+
+  // 2) Score par recouvrement de tags ; on écarte les maps géantes génériques
+  //    (>1200 sociétés = trop large, bruité) et on préfère les plus ciblées.
+  const wantedLc = wanted.map((w) => w.toLowerCase());
+  const scored = maps
+    .map((m) => {
+      const mtags = (m.tags ?? []).map((t: string) => String(t).toLowerCase());
+      const overlap = wantedLc.filter((w) => mtags.some((mt: string) => mt.includes(w) || w.includes(mt))).length;
+      const count = m.companyCount ?? m.company_count ?? 0;
+      return { m, overlap, count };
+    })
+    .filter((x) => x.overlap > 0 && x.count > 0 && x.count <= 1200)
+    .sort((a, b) => b.overlap - a.overlap || a.count - b.count)
+    .slice(0, maxMaps);
+  if (scored.length === 0) return [];
+
+  // 3) Sociétés de chaque map retenue (fetch parallèle → wall-time ~12s),
+  //    filtre des trop-financées à la source.
+  const mapData = await Promise.all(scored.map(({ m }) => {
+    const cu = m.companiesUrl || m.companies_url || `/api/marketmap?id=${m.id}`;
+    const path = String(cu).startsWith("http") ? String(cu).replace(BASE, "") : String(cu);
+    return getJson(path);
+  }));
+
+  const out: DealroomCompany[] = [];
+  const seen = new Set<string>();
+  for (const data of mapData) {
+    for (const co of (data?.companies ?? [])) {
+      if (out.length >= maxCompanies) break;
+      const name = String(co?.name ?? "").trim();
+      if (name.length < 2) continue;
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      const funding = Number(co?.totalFunding?.amount ?? 0);
+      if (funding > fundingCapUsd) continue; // trop avancé → écarté à la source
+      seen.add(key);
+      // hq peut être une string, null, ou un objet {city,country} selon la map.
+      const hqStr = typeof co.hq === "string" ? co.hq
+        : (co.hq?.city || co.hq?.country || co.hq?.name || "");
+      out.push({
+        name,
+        url: co.website || co.dealroomUrl || "",
+        description: [
+          co.tagline, co.segment, (co.industries ?? []).join(", "),
+          hqStr, co.launchYear ? `founded ${co.launchYear}` : "",
+        ].filter(Boolean).join(" · ").slice(0, 250),
+        funding: funding ? `$${Math.round(funding / 1e6)}M` : undefined,
+        hq: hqStr || undefined,
+        source: "dealroom_marketmap" as const,
+      });
+    }
+  }
+  return out;
 }
 
 // --- Enrichissement structuré d'un candidat nommé ---
