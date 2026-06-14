@@ -2,42 +2,49 @@
 
 ## What It Does
 
-SaaS for VCs/angel investors to analyze startups against their thesis. Features:
-- **Fund thesis** → startup fit analysis (via Gemini AI)
-- **Due diligence** → company validation (founding, location, founders)
-- **Sourcing** → web search to find relevant startups
-- **Pipeline tracking** → deal progress visualization
+SaaS for VCs/angel investors. The user enters **their own investment criteria**
+(multi-select sectors + stages, geography, optional free-text thesis/portfolio),
+and the tool sources a genuinely on-thesis startup and writes a VC-grade due
+diligence memo.
+
+**Mission anti-biais (cœur du produit)** : ne PAS remonter les noms célèbres
+(licornes, Mistral, etc.) ni les coquilles de registre. On veut des **pépites
+discrètes, early-stage, réellement alignées** avec les critères. Tout est jugé
+sur la pertinence à la thèse et le bon stade, jamais sur la notoriété.
+
+Features: criteria → structured thesis → multi-source sourcing → criteria-aware
+scoring + stage gate → due diligence (avec analyse comité d'investissement) →
+historique réouvrable.
 
 ## Stack Essentials
 
 - **Frontend**: React 18 (Vite) + TypeScript + TailwindCSS + shadcn/ui
-- **Backend**: Supabase (PostgreSQL, Auth, Edge Functions)
-- **AI**: Google Gemini 2.5-pro (Gemini API or Vertex AI — configured via Supabase secrets)
-- **Search**: Oxylabs Real-time API (Bing SERP) for web sourcing
-- **Hosting**: Vercel (auto-deploy on main)
+- **Backend**: Supabase (PostgreSQL, Auth, Edge Functions Deno)
+- **AI**: Google Gemini 2.5 (flash + pro), 5 clés en rotation (`ai-client.ts`)
+- **Web search**: Oxylabs Real-time (Bing SERP) + Apify Google Search (couverture Google)
+- **Données startups**: Dealroom.co (API publique sans auth) + INSEE SIRENE + Hacker News + GitHub
+- **Hosting**: Vercel — ⚠️ l'auto-deploy GitHub est CASSÉ : déployer via `npx vercel deploy --prod --yes` PUIS `npx vercel alias set <url> ai-vc-sourcing.vercel.app` (voir mémoire vercel-deploy)
 
 ## Key Files
 
 **Pages** (src/pages/):
-- `Analyser.tsx` — Fund + startup input, calls analyze-fund function
-- `DueDiligence.tsx` — Company DD form, validation
-- `DueDiligenceResult.tsx` — DD results display
-- `Index.tsx` — Landing page with pricing/auth
+- `Analyser.tsx` — Formulaire de critères (cases secteurs/stades + texte libre) → pipeline-orchestrator
+- `PipelineProgress.tsx` — Suivi du pipeline + ouverture du rapport DD stocké
+- `DueDiligenceResult.tsx` — Charge le rapport, délègue le rendu à `InvestmentMemo`
+- `Index.tsx` — Landing (signup, "analyses illimitées")
 
 **Components**:
-- `AnalysisParameters.tsx` — Fund thesis customization
-- `InvestmentCriteria.tsx` — Thesis form with presets
-- `AnalysisHistory.tsx` — Past analyses list
-- `AuthProvider.tsx`, `LoginForm.tsx` — Auth logic
-- `AIQAChat.tsx` — Chat interface for AI questions
-- `PaywallModal.tsx` — Trial/pricing gates
+- `CustomThesisInput.tsx` — Les cases à cocher multi (secteurs/stades) + texte libre
+- `InvestmentMemo.tsx` — Rendu du rapport DD (mémo continu, dont section "Comité d'investissement")
+- `AuthProvider.tsx`, `LoginForm.tsx`, `SignupForm.tsx` — Auth
+- `AIQAChat.tsx` — Chat sur le rapport
 
 **Edge Functions** (supabase/functions/):
-- `analyze-fund/index.ts` — Main analysis (thesis vs startup)
-- `ninja-sourcing/index.ts` — Web search + ranking
-- `due-diligence/index.ts` — Company validation
+- `pipeline-orchestrator/index.ts` — LE moteur : thèse → sourcing → picking → DD (self-invocation)
+- `due-diligence/index.ts` — Recherche + analyse DD (appelée par le pipeline)
 - `ai-qa/index.ts` — Chat endpoint
-- `_shared/` — Shared utilities (AI client, search, scoring, logging)
+- `_shared/` — `oxylabs-client`, `apify-client`, `dealroom-client`, `listicle-miner`,
+  `dedup-ranker`, `scoring-engine`, `entity-cleanup`, `ai-client`, `insee-sirene`, `hn-algolia`, `github-search`
 
 **Database**:
 - `analysis_history` — Stores fund name, startup name, thesis, pitch deck, created_at
@@ -47,8 +54,9 @@ SaaS for VCs/angel investors to analyze startups against their thesis. Features:
 
 1. **Local dev**: `npm run dev` (Vite on port 5173)
 2. **Functions**: Deploy via Supabase CLI or dashboard; test with `supabase functions serve` locally
-3. **Secrets**: Set in Supabase Edge Functions dashboard (GEMINI_API_KEY, BRAVE_API_KEY, etc)
-4. **Deploy**: Push to main → Vercel auto-deploys
+3. **Secrets** (Supabase): `GEMINI_API_KEY`..`GEMINI_KEY_5`, `OXYLABS_USER/PASS`, `APIFY_TOKEN`, `INSEE_API_KEY`, `AI_DAILY_LIMIT`
+4. **Deploy backend**: `supabase functions deploy <fn> --project-ref anxyjsgrittdwrizqcgi`
+5. **Deploy frontend**: `npx vercel deploy --prod --yes` PUIS `npx vercel alias set <url> ai-vc-sourcing.vercel.app` (auto-deploy GitHub cassé)
 
 ## Common Tasks
 
