@@ -82,6 +82,7 @@ async function callGemini(
     Deno.env.get("GEMINI_KEY_2"),
     Deno.env.get("GEMINI_KEY_3"),
     Deno.env.get("GEMINI_KEY_4"),
+    Deno.env.get("GEMINI_KEY_5"),
   ].filter((k): k is string => !!k);
   const uniqueKeys = [...new Set(allKeys)];
   if (uniqueKeys.length === 0) throw new Error("GEMINI_API_KEY manquant");

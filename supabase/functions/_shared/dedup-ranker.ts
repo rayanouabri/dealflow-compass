@@ -34,6 +34,8 @@ const SIGNAL_WEIGHTS: Record<string, number> = {
   job_board: 2,
   conference: 2,
   web_curated: 5, // extrait d'une base/listicle curée de startups réelles
+  dealroom: 5,    // base structurée Dealroom (just-founded) — early vérifié
+  fresh: 4,       // signal frais (accélérateur, lauréat, levée récente, greffe)
 };
 
 export function normalizeUrl(url: string): string {

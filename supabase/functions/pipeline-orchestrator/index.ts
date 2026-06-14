@@ -11,6 +11,11 @@ import { searchAll } from "../_shared/search-client.ts";
 import { buildFrenchBiasedQueries } from "../_shared/sourcing-queries-fr.ts";
 import { deduplicateAndRank, filterByICP } from "../_shared/dedup-ranker.ts";
 import { mineListicles, mergeMinedCandidates } from "../_shared/listicle-miner.ts";
+import { apifyGoogleSearch } from "../_shared/apify-client.ts";
+import {
+  dealroomJustFounded,
+  dealroomEnrich,
+} from "../_shared/dealroom-client.ts";
 import { searchNewCompanies, inseeToSearchResults } from "../_shared/insee-sirene.ts";
 import { searchHackerNews, hnToSearchResults } from "../_shared/hn-algolia.ts";
 import { searchGitHub, githubToSearchResults } from "../_shared/github-search.ts";
@@ -283,6 +288,27 @@ async function handleSourcingStart(
       })
     : Promise.resolve([]);
 
+  // Sources FRAÎCHES & EARLY (anti-notoriété) via Apify Google Search — donne
+  // des résultats Google (qu'Oxylabs ne scrape pas) sur des sources où les
+  // pépites discrètes apparaissent AVANT d'être connues : portfolios
+  // d'accélérateurs, lauréats French Tech/Bpifrance, augmentations de capital
+  // au greffe (Pappers), pages société LinkedIn récentes. Lancé EN PARALLÈLE de
+  // la boucle de recherche pour ne pas allonger le wall-time.
+  const sigYear = new Date().getFullYear();
+  const geoTerm = /europe/i.test(geography) ? "Europe" : (geography || "France");
+  const freshQueries = [
+    `site:stationf.co ${sectors[0] || "tech"} startup`,
+    `("French Tech Seed" OR "i-Lab" OR Bpifrance OR "Aerospace Valley") lauréat ${sectors[0] || "tech"} ${geoTerm} ${sigYear}`,
+    `${sectors[0] || "tech"} startup ("pre-seed" OR "seed") ("levée" OR "amorçage") ${geoTerm} ${sigYear}`,
+    `site:pappers.fr ${sectors[0] || "tech"} "augmentation de capital"`,
+    `site:linkedin.com/company ${sectors[0] || "tech"} startup ${geoTerm} ${sigYear}`,
+  ];
+  const apifyPromise = apifyGoogleSearch(freshQueries, {
+    resultsPerQuery: 8,
+    timeoutMs: 45000,
+  }).catch(() => []);
+  const justFoundedPromise = dealroomJustFounded().catch(() => []);
+
   // Génère les queries FR biaisées, ciblées sur le type d'entreprise visé
   const queryGroups = buildFrenchBiasedQueries(sectors, stage, geography, {
     precisionTerms,
@@ -362,8 +388,8 @@ async function handleSourcingStart(
     allResults.push(...batchResults.flat());
   }
 
-  // Mine les pages agrégateurs (F6S, Seedtable...) capturées par le web pour en
-  // extraire de vraies startups nommées — en parallèle des sources structurées.
+  // Mine les pages agrégateurs (F6S, Seedtable, portfolios d'accélérateurs...)
+  // — en parallèle des sources structurées.
   const minePromise = mineListicles(
     allResults.filter((r) => r.source === "oxylabs"),
     thesis,
@@ -371,20 +397,38 @@ async function handleSourcingStart(
   );
 
   // Fusionne les candidats des sources structurées (noms fiables) avec le web
-  const [inseeCompanies, hnStartups, githubOrgs, mined] = await Promise.all([
-    inseePromise,
-    hnPromise,
-    githubPromise,
-    minePromise,
-  ]);
+  const [inseeCompanies, hnStartups, githubOrgs, mined, apifyResults, justFounded] =
+    await Promise.all([
+      inseePromise,
+      hnPromise,
+      githubPromise,
+      minePromise,
+      apifyPromise,
+      justFoundedPromise,
+    ]);
   allResults.push(...inseeToSearchResults(inseeCompanies));
   allResults.push(...hnToSearchResults(hnStartups));
   allResults.push(...githubToSearchResults(githubOrgs));
-  logger.info("Sources structurées", {
+  // Résultats Apify Google → candidats web frais (catégorie "fresh").
+  for (const r of apifyResults) {
+    allResults.push({ title: r.title, url: r.url, description: r.description, source: "oxylabs", category: "fresh" } as any);
+  }
+  // Dealroom just-founded filtré à la thèse → candidats (catégorie "dealroom").
+  const sectorTokens = [...sectors, ...precisionTerms].map((s) => String(s).toLowerCase());
+  for (const c of justFounded) {
+    const hay = `${c.name} ${c.description}`.toLowerCase();
+    const onThesis = sectorTokens.length === 0 || sectorTokens.some((t) => t.length >= 3 && hay.includes(t));
+    if (onThesis && c.url) {
+      allResults.push({ title: c.name, url: c.url, description: c.description, source: "oxylabs", category: "dealroom" } as any);
+    }
+  }
+  logger.info("Sources structurées + fraîches", {
     insee: inseeCompanies.length,
     hn: hnStartups.length,
     github: githubOrgs.length,
     mined: mined.length,
+    apify: apifyResults.length,
+    justFounded: justFounded.length,
   });
 
   // Classement piloté par les CRITÈRES de l'utilisateur (pertinence thèse),
@@ -527,6 +571,26 @@ async function handlePicking(
       }),
   );
 
+  // ENRICHISSEMENT STRUCTURÉ (Dealroom) sur TOUS les top candidats : récupère
+  // le stade/levée réels via l'actualité Dealroom → vérité terrain pour le
+  // scoring ET pour le gate stade déterministe (fini les heuristiques sur la
+  // description). Tolérant : si Dealroom ne connaît pas la société, on continue.
+  await Promise.all(
+    top10.map(async (c) => {
+      try {
+        const enr = await dealroomEnrich(c.name);
+        if (enr.matched) {
+          (c as any).dealroomStage = enr.latestStageHint ?? null;
+          (c as any).dealroomProfile = enr.profileUrl;
+          if (enr.newsText) {
+            (c as any).dealroomNews = enr.newsText.slice(0, 1200);
+            c.descriptions.push(`[Dealroom] ${enr.newsText.slice(0, 220)}`);
+          }
+        }
+      } catch { /* Dealroom optionnel */ }
+    }),
+  );
+
   // Poids contextuels : hors thèse FR, le bonus écosystème français est
   // redistribué vers thesisFit et teamQuality.
   const weights = buildContextualWeights(
@@ -624,9 +688,21 @@ async function handlePicking(
   // C+, méga-levée, cotation). Évite qu'une Mistral/licorne gagne par hasard.
   const stageMax = String(thesis?.stage?.max ?? "serie-b").toLowerCase();
   const earlyThesis = !/serie-c|série-c|serie-d|growth|late/.test(stageMax);
+  // Rang du stade max visé (pour comparer au stade réel Dealroom).
+  const STAGE_RANK: Record<string, number> = {
+    "pre-seed": 0, "seed": 1, "series a": 2, "serie-a": 2, "série a": 2,
+    "series b": 3, "serie-b": 3, "série b": 3, "series c": 4, "serie-c": 4,
+    "series d": 5, "series e": 6, growth: 7, ipo: 8, public: 8,
+  };
+  const maxRank = STAGE_RANK[stageMax] ?? 3;
   const looksTooLate = (s: any): boolean => {
+    // 1) Vérité terrain Dealroom : stade réel > stade max visé → hors-cible.
+    const dr = s.dealroomStage as string | undefined;
+    if (dr && STAGE_RANK[dr] !== undefined && STAGE_RANK[dr] > maxRank + 1) return true;
+    // 2) Signalé par l'IA.
     const flags = (s.redFlags ?? []).join(" ").toLowerCase();
     if (/hors-stade|trop avanc|trop financ/.test(flags)) return true;
+    // 3) Heuristique sur la description (fallback si pas de donnée Dealroom).
     const text = String((s.descriptions ?? []).join(" ")).toLowerCase();
     return /\bseries\s+[c-z]\b|\bs[ée]rie\s+[c-z]\b|s[ée]rie\s*c\+|\bunicorn\b|\blicorne\b|\bipo\b|cot[ée]e?\s+en\s+bourse|nasdaq|euronext|valuation\s*\$?\s*\d+(\.\d+)?\s*(b|bn|billion|milliard)|\b\d{3,}\s*(m€|m\$|\s*million)/.test(text);
   };
