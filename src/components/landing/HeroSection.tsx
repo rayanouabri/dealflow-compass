@@ -10,8 +10,22 @@ interface HeroSectionProps {
 
 export function HeroSection({ onStartTrial, onWatchDemo }: HeroSectionProps) {
   return (
-    <section className="pt-20 pb-24 md:pt-28 md:pb-32 border-b border-border/70">
-      <div className="max-w-6xl mx-auto px-5 sm:px-8">
+    <section className="relative overflow-hidden pt-20 pb-24 md:pt-28 md:pb-32 border-b border-border/70">
+      {/* Fond décoratif : grille masquée + halo (subtil, éditorial) */}
+      <div aria-hidden className="pointer-events-none absolute inset-0">
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage:
+              "linear-gradient(to right, hsl(var(--border) / 0.35) 1px, transparent 1px), linear-gradient(to bottom, hsl(var(--border) / 0.35) 1px, transparent 1px)",
+            backgroundSize: "56px 56px",
+            maskImage: "radial-gradient(115% 85% at 72% -5%, black 28%, transparent 72%)",
+            WebkitMaskImage: "radial-gradient(115% 85% at 72% -5%, black 28%, transparent 72%)",
+          }}
+        />
+        <div className="absolute -top-28 right-[-8%] h-[440px] w-[540px] rounded-full bg-primary/10 blur-[130px]" />
+      </div>
+      <div className="relative max-w-6xl mx-auto px-5 sm:px-8">
         <div className="grid lg:grid-cols-12 gap-12 lg:gap-10 items-center">
           {/* Copy */}
           <div className="lg:col-span-6 max-w-xl">

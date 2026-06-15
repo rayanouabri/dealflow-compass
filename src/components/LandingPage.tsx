@@ -8,6 +8,7 @@ import { FeaturesSection } from "@/components/landing/FeaturesSection";
 import { PricingSection } from "@/components/landing/PricingSection";
 import { CTASection } from "@/components/landing/CTASection";
 import { Footer } from "@/components/landing/Footer";
+import { Reveal } from "@/components/landing/Reveal";
 
 interface LandingPageProps {
   onStartTrial: () => void;
@@ -31,15 +32,15 @@ export function LandingPage({ onStartTrial, onSignup, onLogin, trialRemaining }:
         onWatchDemo={handleWatchDemo}
         trialRemaining={trialRemaining} 
       />
-      <SocialProofBar />
-      <StatsSection />
-      <HowItWorksSection />
-      <DashboardPreview onStartTrial={onStartTrial} />
+      <Reveal><SocialProofBar /></Reveal>
+      <Reveal><StatsSection /></Reveal>
+      <Reveal><HowItWorksSection /></Reveal>
+      <Reveal><DashboardPreview onStartTrial={onStartTrial} /></Reveal>
       <section id="features">
-        <FeaturesSection />
+        <Reveal><FeaturesSection /></Reveal>
       </section>
-      <PricingSection onStartTrial={onStartTrial} />
-      <CTASection onStartTrial={onStartTrial} />
+      <Reveal><PricingSection onStartTrial={onStartTrial} /></Reveal>
+      <Reveal><CTASection onStartTrial={onStartTrial} /></Reveal>
       <Footer />
     </div>
   );

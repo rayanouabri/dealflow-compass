@@ -10,19 +10,19 @@ const features = [
       "Mouvements chercheur vers fondateur, hiring bursts, dépôts de brevets, orgs GitHub récentes : les signaux les plus en amont, avant qu'une société ait une page Crunchbase ou PitchBook.",
   },
   {
-    title: "Filtrage thèse et portfolio",
+    title: "Filtrage thèse et anti-doublon",
     description:
-      "La thèse est extraite de votre portfolio réel, puis les sociétés déjà investies sont exclues du sourcing. Aucun doublon avec votre deck.",
+      "Vous saisissez vos critères (secteurs, stades, géo, thèse libre) ; l'IA les structure en stratégie de sourcing. Les sociétés déjà proposées et celles que vous avez écartées (pouce bas) sont exclues des runs suivants.",
   },
   {
-    title: "Scoring avec corroboration",
+    title: "Scoring qualité d'investissement",
     description:
-      "Chaque candidat est noté : poids du signal, nombre de mentions, récence, bonus de convergence entre canaux. Le classement est explicable, critère par critère.",
+      "Chaque candidat est noté sur l'adéquation à la thèse, l'équipe complémentaire, le moat réel et le marché porteur — jamais sur sa notoriété. Une pépite discrète bien alignée passe devant une référence déjà trop avancée. Classement explicable, critère par critère.",
   },
   {
-    title: "Due diligence traçable",
+    title: "Due diligence niveau comité",
     description:
-      "Rapport structuré en huit sections, généré en deux minutes environ. Chaque affirmation est reliée à sa source ; les limites des données sont indiquées explicitement.",
+      "Rapport structuré + avis de comité d'investissement (thèse falsifiable, bull / bear, modèle de retour). Chaque affirmation est chiffrée et reliée à sa source ; les manques sont signalés. Export PDF ou Markdown.",
   },
   {
     title: "Couverture France et international",
@@ -50,8 +50,13 @@ export function FeaturesSection() {
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-10 gap-y-12">
           {features.map((feature) => (
-            <div key={feature.title} className="border-t border-border pt-5">
-              <h3 className="text-[15px] font-medium text-foreground mb-2">{feature.title}</h3>
+            <div
+              key={feature.title}
+              className="group border-t border-border pt-5 transition-colors duration-300 hover:border-primary/50"
+            >
+              <h3 className="text-[15px] font-medium text-foreground mb-2 transition-colors group-hover:text-primary">
+                {feature.title}
+              </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
                 {feature.description}
               </p>
