@@ -315,7 +315,9 @@ serve(async (req) => {
 
       // Cache rapport (3 j) : re-générer la DD de la même société brûlerait
       // 3-4 appels IA free-tier pour un résultat quasi identique.
-      const reportCacheKey = `ddreport|${companyName.toLowerCase().trim()}`;
+      // Version dans la clé : un changement de prompt/version invalide
+      // automatiquement les anciens rapports cachés (sinon servis 3 j).
+      const reportCacheKey = `ddreport|v2|${companyName.toLowerCase().trim()}`;
       const cachedReport = await getCachedSearch<any>(`ai|${reportCacheKey}`, 1);
       if (cachedReport && cachedReport.length > 0 && cachedReport[0]?.company) {
         console.log(`[DD] Rapport servi depuis le cache pour: ${companyName}`);
@@ -436,7 +438,7 @@ FRAMEWORKS À UTILISER (cite-les quand pertinent) :
    - QUANTITÉ MINIMALE par liste : keyHighlights ≥ 4, keyRisks ≥ 4, market.trends ≥ 4, competition.competitors ≥ 3, growthOpportunities ≥ 3, investmentRecommendation.keyQuestions ≥ 4, suggestedNextSteps ≥ 3, product.keyFeatures ≥ 3, et CHAQUE catégorie de risques (market/execution/financial/competitive/regulatory) ≥ 3 points.
    - SPÉCIFICITÉ : chaque point doit être CONCRET et porter une info actionnable — un chiffre, une date, un nom (investisseur, client, concurrent, technologie, brevet), un % ou une fourchette. Bannis les généralités creuses ("bonne équipe", "marché porteur") : remplace-les par le FAIT précis qui les justifie.
    - market.analysis : ≥ 150 mots, doit quantifier (taille, CAGR, segments) ET citer 2-3 acteurs/comparables nommés ET expliciter le problème de marché résolu.
-   - competition.competitors : 3 à 5 concurrents MAXIMUM, mais CHACUN doit OBLIGATOIREMENT avoir funding (montant/round si connu, sinon "Estimation : ...") + 2-3 strengths + 2-3 weaknesses spécifiques et non vides. Mieux vaut 3 concurrents détaillés que 7 noms aux forces/faiblesses vides — ne liste JAMAIS un concurrent sans remplir ses strengths ET weaknesses. competition.moat doit expliquer POURQUOI le moat tient (IP, effets de réseau, coût de switch, avance techno chiffrée).
+   - competition.competitors : 3 à 5 concurrents, en INCLUANT les acteurs MAJEURS/incumbents pertinents comme menace (nommés — ex pour le quantique : IBM, Google, IonQ, PsiQuantum, Quandela — pas seulement de petits acteurs), CHACUN avec funding (montant/round si connu, sinon "Estimation : ...") + 2-3 strengths + 2-3 weaknesses spécifiques et non vides. Mieux vaut 3 concurrents détaillés que 7 noms aux forces/faiblesses vides — ne liste JAMAIS un concurrent sans remplir ses strengths ET weaknesses. competition.moat doit expliquer POURQUOI le moat tient (IP, effets de réseau, coût de switch, avance techno chiffrée).
    - team : pour chaque fondateur, background détaillé (formation, employeurs passés, réalisations) ; overview = thèse explicite sur la capacité d'exécution.
    - financials : reconstituer fundingHistory (rounds, montants, dates, investisseurs nommés) même partiellement ; estimer burn/runway et logique de valorisation quand pertinent (marqué "estimation").
    - investmentRecommendation.rationale : raisonnement de VC structuré (thèse, ce qui doit être vrai pour gagner, ce qui peut tuer le deal) ; strengths/weaknesses chiffrés ; suggestedNextSteps = actions de DD concrètes (qui appeler, quels chiffres demander, quelle clause).
@@ -481,7 +483,7 @@ FRAMEWORKS À UTILISER (cite-les quand pertinent) :
     "bullCase": "Scénario haussier ARGUMENTÉ (chemin vers 10x+) : hypothèses à réaliser (marché, exécution, moat) + ordre de grandeur de l'upside.",
     "bearCase": "Scénario baissier SPÉCIFIQUE à CETTE boîte (steelman le non) : les 2-3 façons les plus probables de perdre, classées. Inclure au moins UNE critique technique/marché falsifiable propre au dossier — PAS du risque générique.",
     "dealMechanics": "Ce qu'on achète : prix d'entrée / valorisation post-money, % obtenu pour le ticket suggéré, qui mène le tour, tour compétitif ?, préférences de liquidation, board, pro-rata. Si ces données manquent, dis-le explicitement et classe-les en priorité de DD (ne pas inventer).",
-    "returnModel": "Back-of-envelope du retour : valo de sortie visée, voie (M&A par qui / IPO), dilution sur les tours futurs, est-ce un fund-returner ? CITE 2-3 COMPARABLES DE SORTIE NOMMÉS et leur issue réelle (multiples / SPAC / effondrement). Un chiffre de retour SANS calcul ni comparables est interdit.",
+    "returnModel": "Back-of-envelope du retour : valo de sortie visée, voie (M&A par qui / IPO), dilution sur les tours futurs, % d'ownership → multiple. CITE 2-3 COMPARABLES DE SORTIE NOMMÉS avec leur issue RÉELLE, dont OBLIGATOIREMENT au moins un comparable CAUTIONNAIRE du secteur (ex deep tech quantique : IonQ, Rigetti, D-Wave entrés en bourse par SPAC puis largement effondrés — pertinent pour le risque de sortie) en plus d'un éventuel comparable haussier. Un chiffre de retour SANS calcul ni comparables est interdit.",
     "keyDebates": ["Les vrais débats du comité — chaque point avec les DEUX côtés (pour/contre), pas une banalité."],
     "whatMustBeTrue": ["Conditions NÉCESSAIRES pour que la thèse tienne (hypothèses critiques à valider)."],
     "killCriteria": ["Signaux qui INVALIDERAIENT le deal (deal-breakers)."],
