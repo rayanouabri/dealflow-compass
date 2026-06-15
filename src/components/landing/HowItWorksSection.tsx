@@ -13,15 +13,15 @@ const steps = [
   },
   {
     number: "03",
-    title: "Scoring contre la thèse",
+    title: "Scoring qualité VC",
     description:
-      "Chaque candidat est noté sur 100 : alignement sectoriel, stade, signaux convergents, récence. Les startups présentes sur plusieurs canaux remontent.",
+      "Chaque candidat est noté sur la qualité d'investissement : adéquation à la thèse, équipe complémentaire, moat réel, marché porteur. La notoriété n'est jamais un critère — une pépite discrète bien alignée passe devant une référence déjà trop avancée.",
   },
   {
     number: "04",
     title: "Due diligence sourcée",
     description:
-      "Équipe, marché, financements, concurrence, risques : un mémo structuré où chaque affirmation renvoie vers sa source, exportable en Markdown.",
+      "Équipe, marché, moat, financements, concurrence, risques + un avis de comité d'investissement (thèse falsifiable, bull/bear, modèle de retour). Chaque affirmation est chiffrée et renvoie vers sa source. Export PDF ou Markdown.",
   },
 ];
 
