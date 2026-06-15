@@ -242,6 +242,29 @@ serve(async (req) => {
       };
     };
 
+    // Appel Gemini auxiliaire (gap / critique / approfondissement) AVEC rotation
+    // des clés : ordre aléatoire + bascule sur 429, pour ne pas marteler une seule
+    // clé (l'appel principal du draft a déjà sa propre boucle de rotation).
+    const geminiDD = async (promptText: string, maxTokens: number): Promise<string> => {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+      const body = JSON.stringify({ contents: [{ parts: [{ text: promptText }] }], generationConfig: { temperature: 0.15, maxOutputTokens: maxTokens, responseMimeType: "application/json", ...GEMINI_THINKING } });
+      const keys = (GEMINI_KEYS.length ? [...GEMINI_KEYS] : [GEMINI_API_KEY]).sort(() => Math.random() - 0.5);
+      await reserveAiCall();
+      for (const k of keys) {
+        try {
+          const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": k as string }, body });
+          if (r.ok) {
+            const d = await r.json();
+            const parts = d.candidates?.[0]?.content?.parts ?? [];
+            return parts.filter((p: any) => typeof p?.text === "string" && !p?.thought).map((p: any) => p.text).join("") || "";
+          }
+          await r.text();
+          if (r.status !== 429) break; // erreur permanente → inutile de changer de clé
+        } catch (_) { /* clé suivante */ }
+      }
+      return "";
+    };
+
     // Vérification configuration
     if (!GEMINI_API_KEY) {
       return new Response(JSON.stringify({
@@ -317,7 +340,7 @@ serve(async (req) => {
       // 3-4 appels IA free-tier pour un résultat quasi identique.
       // Version dans la clé : un changement de prompt/version invalide
       // automatiquement les anciens rapports cachés (sinon servis 3 j).
-      const reportCacheKey = `ddreport|v2|${companyName.toLowerCase().trim()}`;
+      const reportCacheKey = `ddreport|v3|${companyName.toLowerCase().trim()}`;
       const cachedReport = await getCachedSearch<any>(`ai|${reportCacheKey}`, 1);
       if (cachedReport && cachedReport.length > 0 && cachedReport[0]?.company) {
         console.log(`[DD] Rapport servi depuis le cache pour: ${companyName}`);
@@ -411,6 +434,30 @@ FRAMEWORKS À UTILISER (cite-les quand pertinent) :
 - Term sheet : liquidation preference, anti-dilution, pro-rata, board, option pool
   (10-20%), drag/tag-along — mentionne ce qui sera à négocier.
 
+MÉTHODE PAR LEVIER (déduis-la du secteur, applique à CETTE boîte) :
+- LA MÉTRIQUE QUI EST LE PRODUIT : identifie l'UNIQUE métrique dont dépend toute la
+  valeur (ex : taux de survie à 3 ans pour la reforestation ; nb de qubits logiques /
+  fidélité pour le quantique ; NRR/rétention pour le SaaS ; CAC/LTV pour le B2C ; taux
+  de défaut pour le lending). Fais-en le PIVOT de la thèse ET du bear. Si ce chiffre
+  manque, c'est LA priorité de DD n°1 — pas un détail.
+- MOAT = PREUVE CHIFFRÉE, pas une étiquette. "Base de données", "partenariat",
+  "techno avancée" ne sont PAS des moats tant qu'ils ne sont pas quantifiés : IP nommée
+  (brevet + statut + n°/date), données propriétaires accumulées (volume, années
+  d'avance), exclusivités contractuelles, coûts de switch, avance techno mesurée. Si tu
+  ne peux pas le chiffrer, écris que le moat est NON PROUVÉ à ce stade.
+- BUSINESS MODEL → MULTIPLE DE SORTIE : déduis si les revenus sont SaaS/récurrents
+  (multiple élevé) ou services/projets/hardware (multiple BAS, 2-4x revenu). Le
+  returnModel DOIT en tenir compte — appliquer un multiple SaaS à une boîte de services
+  est une erreur grossière. Tranche ce point, ne le laisse pas en question ouverte.
+- SUBSTITUT LE MOINS CHER : nomme l'alternative la moins chère (ex : régénération
+  naturelle assistée vs reforestation active ; build interne vs achat) et affronte-la
+  dans le bear case.
+- COHÉRENCE DES CHIFFRES : si le total levé ≠ somme des tours, si un "CA" dépasse le
+  financement, si les dates/années ne collent pas → SIGNALE l'incohérence (un VC ne
+  gobe pas un chiffre incohérent).
+- CLIENT NOMMÉ : pour un B2B qui revendique de la traction, exige au moins UN client
+  nommé + ordre de grandeur du contrat ; sinon traite l'absence de logo comme un flag.
+
 ⚠️ RÈGLES CRITIQUES :
 
 1. SOURCES OBLIGATOIRES — MAIS PAS DANS LE TEXTE :
@@ -500,7 +547,7 @@ Réponds UNIQUEMENT avec du JSON valide.`;
 
       const sleepAnalyze = (ms: number) => new Promise((r) => setTimeout(r, ms));
       // 4 gap queries (was 8) — keeps gap1 phase under ~10s so main AI has budget
-      const MAX_GAP_QUERIES_DD = 4;
+      const MAX_GAP_QUERIES_DD = 10;
       const GAP_QUERY_MIN_LEN = 8;
       const GAP_QUERY_MAX_LEN = 120;
       const extractJsonObject = (raw: string): string | null => {
@@ -584,22 +631,17 @@ Réponds UNIQUEMENT avec du JSON valide.`;
       }
 
       try {
-        const aiEndpointGap = await getAIEndpoint();
         const contextExtract = typeof enrichedAnalyzeContext === "string" ? enrichedAnalyzeContext.slice(0, 7000) : "";
         const gapPrompt = `Tu es un analyste VC. Contexte de recherche pour une due diligence sur "${companyName}".
 
 CONTEXTE :
 ${contextExtract}
 
-TÂCHE : Identifie 1 à 3 thèmes où les infos sont ENCORE INSUFFISANTES pour remplir le rapport (si l'équipe est complète, mets-la en bas de priorité). Priorité : (1) marché (TAM/SAM, évolution, tendances, acteurs), (2) clients/traction (customers, partenariats, chiffres), (3) financements/métriques. Pour chaque thème, 1 à 2 requêtes web en ANGLAIS, courtes ; inclure "${companyName}".
-Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 3 gaps, 2 queries par gap. Si suffisant : {"gaps":[]}.`;
+TÂCHE : Identifie 4 à 6 thèmes où les infos sont ENCORE INSUFFISANTES ou seulement EFFLEURÉES (objectif : APPROFONDIR pour être précis, pas juste compléter). Cible en priorité : (1) la MÉTRIQUE qui est le produit (ex taux de survie, rétention, fidélité), (2) IP/brevets précis, (3) financements RÉCENTS + valorisation + cap table, (4) clients/traction chiffrés et NOMMÉS, (5) concurrents nommés + financements, (6) marché (TAM/SAM, CAGR, régulation). Pour chaque thème, 1 à 2 requêtes web en ANGLAIS, courtes et précises (avec "${companyName}").
+Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1","query2"]}]}. 4 à 6 gaps, 2 queries chacun.`;
 
-        const gapBody = { contents: [{ parts: [{ text: gapPrompt }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 2048, responseMimeType: "application/json" as const, ...GEMINI_THINKING } };
-        await reserveAiCall();
-        const gapRes = await fetch(aiEndpointGap.url, { method: "POST", headers: aiEndpointGap.headers, body: JSON.stringify(gapBody) });
-        if (gapRes.ok) {
-          const gapData = await gapRes.json();
-          const gapText: string = gapData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        const gapText = await geminiDD(gapPrompt, 2048);
+        {
           let gaps: { queries?: string[] }[] = [];
           if (gapText) {
             const jsonStr = extractJsonObject(gapText);
@@ -611,7 +653,7 @@ Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 3 gap
             }
           }
           const allQueries: string[] = [];
-          for (const g of gaps.slice(0, 4)) {
+          for (const g of gaps.slice(0, 6)) {
             const qs = (Array.isArray(g.queries) ? g.queries : []).map((x: string) => String(x).trim().slice(0, GAP_QUERY_MAX_LEN)).filter((x: string) => x.length >= GAP_QUERY_MIN_LEN);
             allQueries.push(...qs.slice(0, 2));
           }
@@ -881,137 +923,83 @@ Réponds UNIQUEMENT avec du JSON valide.`;
 
       dueDiligenceResult.metadata = { companyName, generatedAt: new Date().toISOString(), searchResultsCount: analyzeSearchCount, aiProvider: "gemini", aiModel: GEMINI_MODEL };
 
-      // ——— 2e itération : lacunes sur le rapport → recherches → enrichissement ———
-      // Conditionnelle : (a) budget wall-time — l'enrichissement refait une
-      // génération 16k (~50s), risque de kill 546 près du plafond 150s ;
-      // (b) complétude — si les sections clés sont déjà remplies, ces 2 appels
-      // IA free-tier n'apportent rien.
-      const ROUND2_BUDGET_MS = 85_000;
-      const elapsedMs = Date.now() - phaseStart;
-      const reportIncomplete = (() => {
-        const r = dueDiligenceResult;
-        const nd = (v: unknown) => !v || /non disponible|non identifié/i.test(String(v));
-        const founders = r?.team?.founders;
-        const foundersWeak = !Array.isArray(founders) || founders.length === 0 ||
-          founders.every((f: any) => nd(f?.name));
-        const tamWeak = nd(r?.market?.tam);
-        const fundingWeak = nd(r?.financials?.totalFunding);
-        const sourcesWeak = !Array.isArray(r?.allSources) || r.allSources.length < 8;
-        // Rigueur : déclenche aussi la passe si les champs VC clés manquent.
-        const ic = r?.investmentCommittee ?? {};
-        const committeeWeak = nd(ic.thesis) || nd(ic.returnModel) || nd(ic.dealMechanics);
-        return foundersWeak || tamWeak || fundingWeak || sourcesWeak || committeeWeak;
-      })();
-      // Contexte additionnel de l'itération 2, conservé pour la vérification
-      // des sources en fin de phase.
+      // ——— APPROFONDISSEMENT OBLIGATOIRE : couche Gemini de CRITIQUE du brouillon
+      // → recherches ciblées (parallèles) → réécriture qui CREUSE les points clés
+      // (chiffres + exemples + sources). Plus de gate de complétude : on creuse
+      // toujours. Rotation des clés via geminiDD. round2Context est conservé pour
+      // la vérification anti-hallucination des sources plus bas.
       let round2Context = "";
-      if (elapsedMs > ROUND2_BUDGET_MS) {
-        console.warn(`[DueDiligence] 2e itération sautée (budget temps: ${Math.round(elapsedMs / 1000)}s écoulées)`);
-      } else if (!reportIncomplete) {
-        console.log("[DueDiligence] 2e itération sautée (rapport déjà complet — économie de 2 appels IA)");
-      } else
+      const ROUND2_BUDGET_MS = 115_000;
       try {
-        const reportSummary = JSON.stringify(dueDiligenceResult).slice(0, 4000);
-        const gapPrompt2 = `Rapport de due diligence (brouillon) sur "${companyName}". Extrait : ${reportSummary}
-Identifie 1 à 3 thèmes où des infos manquent encore (équipe, financements, métriques, concurrence). Pour chaque thème, 1 requête de recherche en anglais, courte ; inclure "${companyName}" si pertinent.
-Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 3 gaps, 1-2 queries chacun. Si rien : {"gaps":[]}.`;
+        const draftSummary = JSON.stringify(dueDiligenceResult).slice(0, 9000);
+        const critiquePrompt = `Tu es un VC senior qui relit ce BROUILLON de due diligence sur "${companyName}" pour le DURCIR.
+BROUILLON (extrait) : ${draftSummary}
 
-        const aiEndpointGap2 = await getAIEndpoint();
-        const gapBody2 = { contents: [{ parts: [{ text: gapPrompt2 }] }], generationConfig: { temperature: 0.15, maxOutputTokens: 1500, responseMimeType: "application/json" as const, ...GEMINI_THINKING } };
-        await reserveAiCall();
-        const gapRes2 = await fetch(aiEndpointGap2.url, { method: "POST", headers: aiEndpointGap2.headers, body: JSON.stringify(gapBody2) });
-        if (gapRes2.ok) {
-          const gapData2 = await gapRes2.json();
-          const gapText2: string = gapData2.candidates?.[0]?.content?.parts?.[0]?.text || "";
-          let gaps2: { queries?: string[] }[] = [];
-          if (gapText2) {
-            const jsonStr2 = extractJsonObject(gapText2);
-            if (jsonStr2) {
-              try {
-                const parsed2 = JSON.parse(jsonStr2);
-                gaps2 = Array.isArray(parsed2?.gaps) ? parsed2.gaps : [];
-              } catch (_) {}
-            }
+Liste 5 à 8 points traités EN SURFACE ou affirmés SANS PREUVE (chiffre/date/nom/source manquant), classés par importance pour la DÉCISION d'investissement. Cible en priorité : la MÉTRIQUE qui est le produit, le MOAT (IP/brevets précis, données propriétaires), la valorisation/cap table/dilution, les CLIENTS nommés + contrats, les CONCURRENTS nommés + financements, le MODÈLE DE RETOUR (multiple réaliste SaaS vs services), le BEAR CASE spécifique. Pour CHAQUE point, 1 à 2 requêtes web en anglais, courtes et précises (avec "${companyName}").
+Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["q1","q2"]}]}. 5 à 8 gaps.`;
+        const critiqueText = await geminiDD(critiquePrompt, 2048);
+        let gaps2: { queries?: string[] }[] = [];
+        const jsonC = extractJsonObject(critiqueText || "");
+        if (jsonC) { try { gaps2 = JSON.parse(jsonC)?.gaps ?? []; } catch (_) {} }
+        const q2: string[] = [];
+        for (const g of gaps2.slice(0, 8)) {
+          const qs = (Array.isArray(g.queries) ? g.queries : []).map((x: string) => String(x).trim().slice(0, 120)).filter((x: string) => x.length >= 8);
+          q2.push(...qs.slice(0, 2));
+        }
+        const seenQ2 = new Set<string>();
+        const uniqueQ2 = q2.filter((x) => { const k = x.toLowerCase().replace(/\s+/g, " "); if (seenQ2.has(k)) return false; seenQ2.add(k); return true; }).slice(0, 12);
+        if (uniqueQ2.length > 0) {
+          const lines2: string[] = [];
+          const seenU2 = new Set<string>();
+          const res2 = await Promise.all(uniqueQ2.map((qq) => webSearch(qq, 6).catch(() => [])));
+          for (const results of res2) for (const r of results) {
+            if (r?.url && !seenU2.has(r.url)) { seenU2.add(r.url); const line = `${r.title || ""}: ${r.description || ""} | ${r.url}`.trim(); if (line.length > 20) lines2.push(line); }
           }
-          const queries2: string[] = [];
-          for (const g of gaps2.slice(0, 3)) {
-            const qs = (Array.isArray(g.queries) ? g.queries : []).map((x: string) => String(x).trim().slice(0, 120)).filter((x: string) => x.length >= 8);
-            queries2.push(...qs.slice(0, 2));
-          }
-          const seenQ2 = new Set<string>();
-          const uniqueQueries2 = queries2.filter((q) => {
-            const k = q.toLowerCase().replace(/\s+/g, " ");
-            if (seenQ2.has(k)) return false;
-            seenQ2.add(k);
-            return true;
-          }).slice(0, 4);
-          if (uniqueQueries2.length > 0) {
-            const extraLines2: string[] = [];
-            const seenUrl2 = new Set<string>();
-            for (const q of uniqueQueries2) {
-              try {
-                const results = await webSearch(q, 5);
-                for (const r of results) {
-                  if (r?.url && !seenUrl2.has(r.url)) {
-                    seenUrl2.add(r.url);
-                    const line = `${r.title || ""}: ${r.description || ""} | ${r.url}`.trim();
-                    if (line.length > 20) extraLines2.push(line);
-                  }
-                }
-                await sleepAnalyze(1200);
-              } catch (_) {}
-            }
-            const extraContext2 = extraLines2.join("\n").slice(0, 3500);
-            round2Context = extraContext2;
-            if (extraContext2) {
-              const enrichPrompt = `Tu es un VC senior. Voici un BROUILLON de rapport de due diligence (JSON) et des données complémentaires. Produis une VERSION AMÉLIORÉE du JSON COMPLET (MÊME structure, ne supprime aucune section, aucune URL dans le texte).
+          round2Context = lines2.join("\n").slice(0, 5000);
+        }
+        if (round2Context && (Date.now() - phaseStart) < ROUND2_BUDGET_MS) {
+          const enrichPrompt = `Tu es un VC senior. Voici un BROUILLON de DD (JSON) et des DONNÉES COMPLÉMENTAIRES issues de recherches ciblées sur ses points faibles. Produis une VERSION APPROFONDIE du JSON COMPLET (MÊME structure, ne supprime aucune section, aucune URL dans le texte).
 
-DOUBLE MISSION :
-1) INTÈGRE les données complémentaires là où elles comblent un vide (financements RÉCENTS, fondateurs, brevets nommés, concurrents, métriques). Si une donnée récente contredit une ancienne (montant/round/date/année de fondation), garde LA PLUS RÉCENTE.
-2) DURCIS LA RIGUEUR (le plus important) :
-   - Remplace CHAQUE formule générique ("acteur majeur", "technologie innovante", "équipe de haut niveau", "bonne traction", "marché porteur") par le FAIT chiffré/daté/nommé qui la prouve ; si tu n'as pas la preuve, retire l'affirmation.
-   - Si tu dis "brevets / récompenses / partenariats / publications", NOMME-les un par un (année + source).
-   - investmentCommittee.thesis = un pari FALSIFIABLE et chiffré ; returnModel = back-of-envelope + comparables de sortie NOMMÉS ; dealMechanics = prix/post-money/%/termes (ou classés en priorité DD) ; bearCase = au moins une critique SPÉCIFIQUE falsifiable (pas du générique) ; verdict = décision CONDITIONNELLE.
-   - Si burn/runway/valo/% manquent, abaisse executiveSummary.confidenceLevel et mets-les dans investmentRecommendation.suggestedNextSteps + investmentCommittee.diligencePriorities.
-   - Chaque section remplit son tableau "sources".
+MISSION :
+1) APPROFONDIS chaque point qui était en surface avec les nouvelles données : chiffres précis, exemples nommés, dates. Intègre les financements/brevets/clients/concurrents trouvés ; en cas de contradiction, garde la donnée LA PLUS RÉCENTE.
+2) DÉMONTRE : remplace toute formule générique par le fait chiffré/daté/nommé qui la prouve, sinon retire-la. Nomme les brevets/récompenses/partenariats un par un.
+3) RIGUEUR VC : moat quantifié (IP/données, sinon "non prouvé") ; returnModel = multiple cohérent (SaaS vs services) + comparables de sortie NOMMÉS dont un cautionnaire ; bearCase spécifique falsifiable incluant le substitut le moins cher ; thesis = pari falsifiable chiffré ; dealMechanics = prix/%/termes ou priorité DD ; signale les incohérences de chiffres.
+4) Chaque section remplit son tableau "sources" (URLs des données utilisées). Si burn/runway/valo/% manquent → confidenceLevel plus bas + diligencePriorities.
 
 BROUILLON ACTUEL :
-${JSON.stringify(dueDiligenceResult).slice(0, 24000)}
+${JSON.stringify(dueDiligenceResult).slice(0, 22000)}
 
 DONNÉES COMPLÉMENTAIRES :
-${extraContext2}
+${round2Context}
 
-Réponds UNIQUEMENT avec le JSON complet amélioré.`;
-              const enrichBody = { contents: [{ parts: [{ text: enrichPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 28000, responseMimeType: "application/json" as const, ...GEMINI_THINKING } };
-              await reserveAiCall();
-              const enrichRes = await fetch(aiEndpointGap2.url, { method: "POST", headers: aiEndpointGap2.headers, body: JSON.stringify(enrichBody) });
-              if (enrichRes.ok) {
-                const enrichData = await enrichRes.json();
-                const enrichText: string = enrichData.candidates?.[0]?.content?.parts?.[0]?.text || "";
-                if (enrichText) {
-                  let enriched = parseJSONResponse(enrichText);
-                  if (enriched && typeof enriched === "object") {
-                    enriched = cleanUrlsAnalyze(stripSrc(enriched));
-                    if (enriched.traction?.keyMilestones) {
-                      enriched.traction.keyMilestones = (enriched.traction.keyMilestones as any[]).map((m: any) => ({ date: typeof m?.date === "string" ? m.date : "", milestone: toStr(m?.milestone ?? m) })).filter((m: any) => m.milestone);
-                    }
-                    if (enriched.investmentRecommendation) {
-                      const ir = enriched.investmentRecommendation;
-                      if (!ir.targetReturn || typeof ir.targetReturn !== "string") ir.targetReturn = "Non disponible";
-                      if (!ir.investmentHorizon || typeof ir.investmentHorizon !== "string") ir.investmentHorizon = "Non disponible";
-                      if (!ir.suggestedTicket || typeof ir.suggestedTicket !== "string") ir.suggestedTicket = "Non disponible";
-                    }
-                    enriched.metadata = dueDiligenceResult.metadata;
-                    dueDiligenceResult = enriched;
-                    console.log("[DueDiligence] Enrichissement 2 (rapport) appliqué");
-                  }
-                }
+Réponds UNIQUEMENT avec le JSON complet approfondi.`;
+          const enrichText = await geminiDD(enrichPrompt, 28000);
+          if (enrichText) {
+            let enriched = parseJSONResponse(enrichText);
+            if (enriched && typeof enriched === "object") {
+              enriched = cleanUrlsAnalyze(stripSrc(enriched));
+              if (enriched.traction?.keyMilestones) {
+                enriched.traction.keyMilestones = (enriched.traction.keyMilestones as any[]).map((m: any) => ({ date: typeof m?.date === "string" ? m.date : "", milestone: toStr(m?.milestone ?? m) })).filter((m: any) => m.milestone);
               }
+              if (enriched.investmentRecommendation) {
+                const ir = enriched.investmentRecommendation;
+                if (!ir.targetReturn || typeof ir.targetReturn !== "string") ir.targetReturn = "Non disponible";
+                if (!ir.investmentHorizon || typeof ir.investmentHorizon !== "string") ir.investmentHorizon = "Non disponible";
+                if (!ir.suggestedTicket || typeof ir.suggestedTicket !== "string") ir.suggestedTicket = "Non disponible";
+              }
+              enriched.metadata = dueDiligenceResult.metadata;
+              aggregateSectionSources(enriched);
+              dueDiligenceResult = enriched;
+              console.log("[DueDiligence] Approfondissement appliqué");
             }
           }
+        } else if (!round2Context) {
+          console.log("[DueDiligence] Approfondissement : aucune requête de creusage générée");
+        } else {
+          console.warn(`[DueDiligence] Réécriture d'approfondissement sautée (budget: ${Math.round((Date.now() - phaseStart) / 1000)}s)`);
         }
       } catch (round2Err) {
-        console.warn("[DueDiligence] 2e itération ignorée:", round2Err);
+        console.warn("[DueDiligence] Approfondissement ignoré:", round2Err);
       }
 
       // ——— Vérification anti-hallucination des sources ———
