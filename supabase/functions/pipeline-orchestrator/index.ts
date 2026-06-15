@@ -405,21 +405,12 @@ async function handleSourcingStart(
     allResults.push(...batchResults.flat());
   }
 
-  // Mine les pages agrégateurs (F6S, Seedtable, portfolios d'accélérateurs...)
-  // — en parallèle des sources structurées.
-  const minePromise = mineListicles(
-    allResults.filter((r) => r.source === "oxylabs"),
-    thesis,
-    { maxPages: 3 },
-  );
-
   // Fusionne les candidats des sources structurées (noms fiables) avec le web
-  const [inseeCompanies, hnStartups, githubOrgs, mined, apifyResults, justFounded, marketmaps] =
+  const [inseeCompanies, hnStartups, githubOrgs, apifyResults, justFounded, marketmaps] =
     await Promise.all([
       inseePromise,
       hnPromise,
       githubPromise,
-      minePromise,
       apifyPromise,
       justFoundedPromise,
       marketmapsPromise,
@@ -448,6 +439,17 @@ async function handleSourcingStart(
       allResults.push({ title: c.name, url: c.url, description: c.description, source: "oxylabs", category: "dealroom" } as any);
     }
   }
+  // Mining MUTUALISÉ : UNE seule passe IA sur les pages agrégateurs ramenées par
+  // Bing ET Apify (les résultats Apify sont déjà dans allResults en source
+  // "oxylabs"). Avant : 2 appels IA distincts. maxPages relevé à 6 pour couvrir
+  // les hôtes des deux sources. Les entrées Dealroom (sites société) ne sont pas
+  // des hôtes minables → ignorées par le miner.
+  const mined = await mineListicles(
+    allResults.filter((r) => r.source === "oxylabs"),
+    thesis,
+    { maxPages: 6 },
+  ).catch(() => []);
+
   logger.info("Sources structurées + fraîches", {
     insee: inseeCompanies.length,
     hn: hnStartups.length,
@@ -458,17 +460,6 @@ async function handleSourcingStart(
     marketmaps: marketmaps.length,
   });
 
-  // Mine AUSSI les pages ramenées par Apify Google (portfolios d'accélérateurs
-  // Station F, lauréats French Tech/Bpifrance, Pappers...) : ce sont des listes
-  // de startups EARLY non célèbres → on en extrait les noms individuels.
-  const apifyMined = apifyResults.length > 0
-    ? await mineListicles(
-        apifyResults.map((r) => ({ ...r, source: "oxylabs" as const })),
-        thesis,
-        { maxPages: 3 },
-      ).catch(() => [])
-    : [];
-
   // Classement piloté par les CRITÈRES de l'utilisateur (pertinence thèse),
   // pas par le seul volume de signal.
   const ranked = deduplicateAndRank(allResults, {
@@ -477,8 +468,8 @@ async function handleSourcingStart(
     geography,
     exclude: exclusionTerms,
   });
-  // Injecte les startups minées (mining web + mining Apify) en tête du ranking.
-  const rankedWithMined = mergeMinedCandidates(ranked, [...mined, ...apifyMined]);
+  // Injecte les startups minées (passe mutualisée Bing+Apify) en tête du ranking.
+  const rankedWithMined = mergeMinedCandidates(ranked, mined);
   // Filtre strict on-thesis : écarte les acteurs hors-profil, priorise l'ICP
   const filtered = filterByICP(rankedWithMined, {
     mustHave: precisionTerms,

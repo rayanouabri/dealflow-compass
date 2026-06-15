@@ -1,6 +1,8 @@
 // Oxylabs Real-time Scraper API client
-// Uses Bing SERP with structured parsing (parse:true) — Google blocks Oxylabs.
-// Returns clean JSON (no HTML regex), ~2-3s per request.
+// Uses Google SERP with structured parsing (parse:true). Le compte actuel
+// débloque Google (l'ancien le bloquait → repli Bing historique). Champs
+// organic identiques (url/title/desc) → couverture FR > Bing, moins dépendant
+// d'Apify. Returns clean JSON (no HTML regex), ~2-3s per request.
 
 import { logger } from "./logger.ts";
 
@@ -52,7 +54,7 @@ export async function oxylabsSearch(
 ): Promise<SearchResult[]> {
   const auth = getOxylabsAuth();
   const body = {
-    source: "bing_search",
+    source: "google_search",
     query,
     parse: true,
   };
