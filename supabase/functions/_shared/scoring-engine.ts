@@ -12,15 +12,20 @@ export interface ScoringWeights {
   recency: number;           // 0.05 — fraîcheur des signaux
 }
 
+// Poids rééquilibrés vers les FONDAMENTAUX VC. Avant, signalDiversity +
+// sourceCorroboration pesaient 0.20 (= proxys de visibilité/notoriété : "à quel
+// point c'est trouvable", pas "à quel point c'est un bon deal"). On les réduit et
+// on muscle équipe / moat-produit / marché. thesisFit reste l'ancre de pertinence
+// (filtre stade/secteur) sans écraser la qualité d'investissement.
 export const DEFAULT_WEIGHTS: ScoringWeights = {
-  thesisFit: 0.45,
-  signalDiversity: 0.12,
-  sourceCorroboration: 0.08,
-  frenchEcosystem: 0.13,
-  timing: 0.08,
-  teamQuality: 0.10,
-  competitivePosition: 0.04,
-  recency: 0.00,
+  thesisFit: 0.32,             // adéquation thèse (stade/secteur/géo/ICP) — pertinence
+  teamQuality: 0.18,           // équipe complémentaire (tech + business) + exécution
+  competitivePosition: 0.16,   // produit innovant + MOAT réel
+  timing: 0.13,                // marché porteur + why now
+  frenchEcosystem: 0.10,       // ancrage géo
+  signalDiversity: 0.05,       // évidence (mineur)
+  sourceCorroboration: 0.03,   // corroboration (mineur)
+  recency: 0.03,               // fraîcheur
 };
 
 export function buildContextualWeights(geography: string): ScoringWeights {
@@ -28,14 +33,14 @@ export function buildContextualWeights(geography: string): ScoringWeights {
   if (isFrench) return DEFAULT_WEIGHTS;
   // For non-French geographies, further boost thesisFit to compensate for weaker geographic signal
   return {
-    thesisFit: 0.50,
-    signalDiversity: 0.12,
-    sourceCorroboration: 0.08,
+    thesisFit: 0.35,
+    teamQuality: 0.20,
+    competitivePosition: 0.18,
+    timing: 0.14,
     frenchEcosystem: 0,
-    timing: 0.08,
-    teamQuality: 0.15,
-    competitivePosition: 0.04,
-    recency: 0.03,
+    signalDiversity: 0.05,
+    sourceCorroboration: 0.03,
+    recency: 0.05,
   };
 }
 
@@ -142,6 +147,13 @@ ${JSON.stringify(thesis, null, 2)}
 ## Candidats (${candidates.length})
 ${list}
 
+## Ce que mesure chaque dimension (juge comme un VC, pas comme un annuaire)
+- thesisFit : adéquation à la thèse (stade, secteur, géo, ICP) = filtre de pertinence.
+- teamQuality : ÉQUIPE COMPLÉMENTAIRE (profil tech + profil business/go-to-market), track record des fondateurs, capacité à exécuter et recruter. Équipe mono-profil ou sans signal d'exécution = bas.
+- competitivePosition : PRODUIT INNOVANT + MOAT RÉEL (IP/brevet, techno différenciante, effets de réseau, coût de switch, données propriétaires). "A un produit" ne suffit pas ; sans avantage défendable identifiable = bas.
+- timing : MARCHÉ PORTEUR (taille, croissance) + why now (catalyseur réglementaire/techno/usage). Marché petit/stagnant ou sans catalyseur = bas.
+- signalDiversity / sourceCorroboration / recency : qualité de la PREUVE disponible (mineur) — NE JAMAIS confondre avec la qualité du deal.
+
 ## Instructions
 Réponds UNIQUEMENT en JSON valide :
 {
@@ -170,5 +182,6 @@ RÈGLE FILIALE/PRODUIT : si l'URL du candidat est une SOUS-PAGE d'un autre site 
 RÈGLE PREUVE INSUFFISANTE (CRUCIAL) : si le SEUL signal d'un candidat est une immatriculation au registre (catégorie "insee" ou "insee_named", URL annuaire-entreprises/pappers/societe.com) SANS aucune description de produit, équipe, traction ou site web — c'est une coquille non vérifiable. On ne connaît que sa raison sociale et son code d'activité. Mets thesisFit <= 45 MÊME si le nom évoque le secteur (un nom n'est pas une preuve d'adéquation), teamQuality <= 20, competitivePosition <= 20, et ajoute redFlag "preuve insuffisante : simple immatriculation". Ne classe JAMAIS une coquille registre au-dessus d'une startup avec produit/traction décrits.
 RÈGLE STADE / MATURITÉ (LA PLUS IMPORTANTE) : la thèse vise les stades "stage.min" à "stage.max" (voir la thèse ci-dessus). Un fonds early-stage cherche des PÉPITES PEU CONNUES correspondant à ce stade, PAS les stars déjà financées. Si un candidat est manifestement PLUS AVANCÉ que stage.max — licorne, entreprise cotée en bourse, valorisation > 1 Md€, levées cumulées très supérieures au ticket du stade visé (ex: > 100 M€ levés pour une thèse seed/serie-a/serie-b), OU nom mondialement connu du grand public (ex pour IA/deeptech FR : Mistral AI, Doctolib, BlaBlaCar, Dataiku, Contentsquare, Back Market) — alors il est HORS-CIBLE. Mets thesisFit <= 15, riskLevel "high", redFlag "hors-stade : trop avancé/trop financé pour ce fonds".
 RÈGLE ANTI-NOTORIÉTÉ : la notoriété n'est JAMAIS un signal positif. Ne donne pas un thesisFit élevé à une entreprise simplement parce qu'elle est célèbre ou souvent citée. Une licorne ultra-connue pour une thèse early = MISMATCH, pas un top pick. Privilégie une startup discrète mais parfaitement au stade et au secteur visés plutôt qu'une référence du secteur déjà trop avancée.
-DIFFÉRENCIE les candidats : les scores doivent refléter les écarts de preuves entre eux (traction publique, équipe identifiée, produit décrit, simple immatriculation...). Ne donne JAMAIS la même grille de scores à plusieurs candidats — départage-les.`;
+DIFFÉRENCIE les candidats : les scores doivent refléter les écarts de preuves entre eux (traction publique, équipe identifiée, produit décrit, simple immatriculation...). Ne donne JAMAIS la même grille de scores à plusieurs candidats — départage-les.
+OBJECTIF : le meilleur candidat est le plus PERTINENT POUR UN VC — équipe complémentaire + produit innovant à moat réel + marché porteur, AU stade/secteur visé. Ni la notoriété ni l'obscurité ne sont un critère : seule compte la qualité d'investissement. Un inconnu excellent (équipe + moat + marché) bat une star tangentielle ; mais un inconnu sans équipe/moat/marché identifiables n'est pas un bon pick pour autant — sois exigeant sur les 3 fondamentaux.`;
 }

@@ -317,9 +317,11 @@ function computeCrossSignalBonus(categories: Set<string>): number {
   const highValueSignals = ["insee", "insee_named", "github", "arxiv_hal", "pappers", "show_hn", "ip", "linkedin", "spinoff", "producthunt", "wellfound", "university", "talent"];
   const highValueCount = Array.from(categories).filter(cat => highValueSignals.includes(cat)).length;
 
-  if (highValueCount >= 4) return 25;
-  if (highValueCount === 3) return 15;
-  if (highValueCount === 2) return 5;
+  // Corroboration "est-ce une vraie entreprise" : utile mais corrélée à la
+  // visibilité → plafonnée bas pour ne pas favoriser le connu.
+  if (highValueCount >= 4) return 12;
+  if (highValueCount === 3) return 8;
+  if (highValueCount === 2) return 3;
   return 0;
 }
 
@@ -435,21 +437,28 @@ export function deduplicateAndRank(
     // Compute cross-signal bonus
     c.crossSignalBonus = computeCrossSignalBonus(c.categories);
 
-    // Filter noise with relaxed rules for high-value signals
+    // Filtre anti-bruit, MAIS on protège les candidats issus de sources curées/
+    // structurées (Dealroom, mining, accélérateurs, subventions, spin-offs) : une
+    // pépite obscure n'apparaît souvent qu'UNE fois — la jeter ici la priverait du
+    // scoring IA. On ajoute donc ces catégories aux signaux "à protéger".
     const hasHighValueSignal = Array.from(c.categories).some(cat =>
-      ["insee", "insee_named", "github", "arxiv_hal", "pappers", "show_hn", "linkedin", "ip"].includes(cat)
+      ["insee", "insee_named", "github", "arxiv_hal", "pappers", "show_hn", "linkedin", "ip",
+       "dealroom", "web_curated", "fresh", "grant", "incubator", "spinoff", "university"].includes(cat)
     );
     if (c.mentionCount < 2 && c.categories.size < 2 && !hasHighValueSignal) {
       continue;
     }
 
-    // Force de signal structurelle (corroboration multi-sources, types de signaux).
+    // Force de signal = QUALITÉ des types de sources, PAS le volume de mentions
+    // (qui est un proxy de notoriété). Les mentions n'ajoutent qu'une corroboration
+    // légère et bornée. Le but n'est ni le moins connu ni le plus connu : c'est de
+    // laisser la PERTINENCE piloter, sans que le volume web fausse le tri.
     let weight = 0;
     for (const cat of c.categories) {
       weight += (SIGNAL_WEIGHTS[cat] ?? 1);
     }
-    const cappedMentions = Math.min(c.mentionCount, 15); // rendement décroissant
-    const signalStrength = weight * cappedMentions; // ~5 à 75
+    const cappedMentions = Math.min(c.mentionCount, 4); // corroboration légère
+    const signalStrength = weight + cappedMentions;
 
     if (criteria) {
       // Score PILOTÉ par la pertinence : adéquation aux critères utilisateur
@@ -457,10 +466,10 @@ export function deduplicateAndRank(
       const fit = computeCriteriaFit(c, criteria);
       (c as any).criteriaFit = fit;
       c.score =
-        fit * 1.4 +                          // pertinence thèse = moteur principal
-        Math.min(35, signalStrength * 0.5) + // corroboration (plafonnée)
+        fit * 1.6 +                          // pertinence thèse = moteur quasi-exclusif
+        Math.min(18, signalStrength) +       // qualité des sources (légère, plafonnée)
         c.recencyScore +                     // fraîcheur (0-10)
-        c.crossSignalBonus;                  // multi-signaux (0-25)
+        c.crossSignalBonus;                  // corroboration multi-signaux (0-12)
     } else {
       // Repli (sans critères) : ancien classement par volume de signal.
       c.score = signalStrength + c.recencyScore + c.crossSignalBonus;
