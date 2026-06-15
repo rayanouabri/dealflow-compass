@@ -378,6 +378,14 @@ que je peux faire x10, et qu'est-ce qui me ferait changer d'avis ? ». Applique 
    chiffres. Vérifie montants/rounds/dates/fondateurs ; si deux sources se
    contredisent, prends la plus récente et signale la contradiction. Ne confonds
    JAMAIS Série A et Série B, ni l'année de fondation.
+   DATE DU JOUR : ${new Date().toLocaleDateString("fr-FR", { dateStyle: "long" })}.
+   Calcule TOUTE estimation temporelle (runway, mois restants, « prochaine levée
+   d'ici… », âge de la société) À PARTIR D'AUJOURD'HUI — jamais à partir de la date
+   du dernier round connu. Si un runway estimé depuis un ancien tour serait DÉJÀ
+   ÉCOULÉ à la date du jour : soit la société a relevé depuis (cherche-le et
+   utilise-le), soit c'est un RISQUE DE TRÉSORERIE à signaler. N'écris JAMAIS une
+   échéance déjà passée (ex : « lever d'ici fin 2025 » alors qu'on est après) comme
+   si elle était future ; recalcule au présent.
 3. NOTORIÉTÉ ≠ ARGUMENT. Ne sois pas flatteur parce que la boîte est connue. La
    notoriété n'est jamais une preuve de qualité d'investissement.
 4. THÈSE FALSIFIABLE. Énonce un PARI mesurable et réfutable, pas du conditionnel
@@ -961,7 +969,7 @@ Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["q1","q2"]}]}. 5 à 8 g
           const enrichPrompt = `Tu es un VC senior. Voici un BROUILLON de DD (JSON) et des DONNÉES COMPLÉMENTAIRES issues de recherches ciblées sur ses points faibles. Produis une VERSION APPROFONDIE du JSON COMPLET (MÊME structure, ne supprime aucune section, aucune URL dans le texte).
 
 MISSION :
-1) APPROFONDIS chaque point qui était en surface avec les nouvelles données : chiffres précis, exemples nommés, dates. Intègre les financements/brevets/clients/concurrents trouvés ; en cas de contradiction, garde la donnée LA PLUS RÉCENTE.
+1) APPROFONDIS chaque point qui était en surface avec les nouvelles données : chiffres précis, exemples nommés, dates. Intègre les financements/brevets/clients/concurrents trouvés ; en cas de contradiction, garde la donnée LA PLUS RÉCENTE. DATE DU JOUR : ${new Date().toLocaleDateString("fr-FR", { dateStyle: "long" })} — recalcule runway/âge/« prochaine levée » à partir d'AUJOURD'HUI ; une échéance déjà passée est soit dépassée (risque trésorerie), soit la preuve d'un tour non encore intégré.
 2) DÉMONTRE : remplace toute formule générique par le fait chiffré/daté/nommé qui la prouve, sinon retire-la. Nomme les brevets/récompenses/partenariats un par un.
 3) RIGUEUR VC : moat quantifié (IP/données, sinon "non prouvé") ; returnModel = multiple cohérent (SaaS vs services) + comparables de sortie NOMMÉS dont un cautionnaire ; bearCase spécifique falsifiable incluant le substitut le moins cher ; thesis = pari falsifiable chiffré ; dealMechanics = prix/%/termes ou priorité DD ; signale les incohérences de chiffres.
 4) Chaque section remplit son tableau "sources" (URLs des données utilisées). Si burn/runway/valo/% manquent → confidenceLevel plus bas + diligencePriorities.
