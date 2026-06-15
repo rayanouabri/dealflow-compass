@@ -1158,6 +1158,13 @@ async function selfHealIfStuck(
   const retry = job.retry_count ?? 0;
   const maxRetries = job.max_retries ?? 3;
   if (retry >= maxRetries) {
+    // ALERTE (log ERROR filtrable dans Supabase) : job abandonné définitivement.
+    logger.error("ALERTE pipeline: job abandonné (retries épuisés)", {
+      pipelineId: job.id,
+      status: job.status,
+      retry,
+      ageMs: Date.now() - updatedAt,
+    });
     await updateJob(supabase, job.id, {
       status: "error",
       error_message: `Job figé au stade ${job.status} (watchdog)`,
@@ -1221,8 +1228,26 @@ async function handleSweep(
     await selfHealIfStuck(supabase, job);
   }
 
-  logger.info("Sweep terminé", { scanned: jobs?.length ?? 0 });
-  return jsonResp({ scanned: candidates }, 200, req);
+  // ALERTE : jobs non terminaux bloqués au-delà d'un plafond dur (10 min), même
+  // si des retries restent → vrai blocage à surveiller (log ERROR + réponse).
+  const HARD_STUCK_MS = 600_000;
+  const now = Date.now();
+  const stuck = (jobs ?? []).filter(
+    (j) => now - new Date(j.updated_at).getTime() > HARD_STUCK_MS,
+  );
+  if (stuck.length > 0) {
+    logger.error("ALERTE pipeline: jobs bloqués > 10min", {
+      count: stuck.length,
+      jobs: stuck.map((j) => ({
+        id: j.id,
+        status: j.status,
+        ageMin: Math.round((now - new Date(j.updated_at).getTime()) / 60000),
+      })),
+    });
+  }
+
+  logger.info("Sweep terminé", { scanned: jobs?.length ?? 0, stuck: stuck.length });
+  return jsonResp({ scanned: candidates, stuckAlert: stuck.length }, 200, req);
 }
 
 // ============================================================
