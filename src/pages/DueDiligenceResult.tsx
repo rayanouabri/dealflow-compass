@@ -710,7 +710,22 @@ export default function DueDiligenceResult() {
     let y = M;
     let page = 1;
 
-    const clean = (t: unknown) => stripInlineSources(String(t ?? "")).replace(/\s+/g, " ").trim();
+    // jsPDF (Helvetica/WinAnsi) ne rend pas les caractères hors Latin-1 (guillemets
+    // courbes, fleches, symboles math, …) -> charabia/pavés. On les convertit en
+    // ASCII puis on retire le reste hors Latin-1 (les accents é/è/à sont conservés).
+    const pdfSafe = (s: string) => s
+      .replace(/[‘’‚′‵]/g, "'")
+      .replace(/[“”„″]/g, '"')
+      .replace(/[–—−]/g, "-")
+      .replace(/…/g, "...")
+      .replace(/→/g, " -> ").replace(/←/g, " <- ").replace(/⇒/g, " => ")
+      .replace(/≠/g, "!=").replace(/≤/g, "<=").replace(/≥/g, ">=").replace(/≈/g, "~")
+      .replace(/[•●▪‣]/g, "-")
+      .replace(/[   ​]/g, " ")
+      .replace(/œ/g, "oe").replace(/Œ/g, "OE")
+      .replace(/[^ -ÿ]/g, "")
+      .replace(/\s{2,}/g, " ");
+    const clean = (t: unknown) => pdfSafe(stripInlineSources(String(t ?? "")).replace(/\s+/g, " ").trim());
     const addFooter = () => {
       doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(...MUTED);
       doc.text(`${clean(companyName)} · Due Diligence`, M, PAGE_H - 24);
