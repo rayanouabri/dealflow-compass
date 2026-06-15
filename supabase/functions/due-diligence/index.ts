@@ -340,7 +340,7 @@ serve(async (req) => {
       // 3-4 appels IA free-tier pour un résultat quasi identique.
       // Version dans la clé : un changement de prompt/version invalide
       // automatiquement les anciens rapports cachés (sinon servis 3 j).
-      const reportCacheKey = `ddreport|v3|${companyName.toLowerCase().trim()}`;
+      const reportCacheKey = `ddreport|v4|${companyName.toLowerCase().trim()}`;
       const cachedReport = await getCachedSearch<any>(`ai|${reportCacheKey}`, 1);
       if (cachedReport && cachedReport.length > 0 && cachedReport[0]?.company) {
         console.log(`[DD] Rapport servi depuis le cache pour: ${companyName}`);
