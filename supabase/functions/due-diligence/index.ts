@@ -519,28 +519,36 @@ Réponds UNIQUEMENT avec du JSON valide.`;
       // (équipe, IP/brevets, financements RÉCENTS, concurrents nommés, traction).
       // Ciblées car ce sont les champs le plus souvent vides ou périmés.
       const ddYear = new Date().getFullYear();
+      // Nom entre guillemets : décisif pour la précision (les noms ambigus comme
+      // "Alice & Bob" renvoient sinon du bruit) et pour faire remonter le round récent.
+      const q = `"${companyName}"`;
       const systematicGroups: { label: string; queries: string[] }[] = [
         { label: "ÉQUIPE & FONDATEURS (noms, parcours, LinkedIn)", queries: [
-          `${companyName} founders CEO CTO background`,
-          `${companyName} founding team linkedin`,
-          `${companyName} fondateurs équipe dirigeante parcours`,
+          `${q} founders CEO CTO background`,
+          `${q} founding team linkedin`,
+          `${q} fondateurs équipe dirigeante parcours`,
         ] },
-        { label: `FINANCEMENTS RÉCENTS (prendre les dates/montants LES PLUS RÉCENTS, ${ddYear}/${ddYear - 1})`, queries: [
-          `${companyName} raises funding round ${ddYear}`,
-          `${companyName} Series A B C ${ddYear} ${ddYear - 1} investors amount`,
-          `${companyName} levée de fonds ${ddYear} montant investisseurs valorisation`,
+        { label: `FINANCEMENTS — PRENDRE LE PLUS RÉCENT (${ddYear}/${ddYear - 1}), il ÉCRASE l'ancien`, queries: [
+          `${q} latest funding round ${ddYear} ${ddYear - 1}`,
+          `${q} Series B C D raised million ${ddYear - 1} ${ddYear} investors`,
+          `${q} levée de fonds ${ddYear - 1} ${ddYear} montant valorisation`,
+          `${q} total funding raised to date`,
+        ] },
+        { label: "ACTUALITÉ RÉCENTE (derniers développements, partenariats, programmes)", queries: [
+          `${q} news ${ddYear} ${ddYear - 1}`,
+          `${q} announcement partnership program ${ddYear}`,
         ] },
         { label: "IP / BREVETS (à NOMMER un par un avec lien)", queries: [
           `site:patents.google.com ${companyName}`,
-          `${companyName} patent brevet INPI espacenet filed granted`,
+          `${q} patent brevet espacenet filed granted`,
         ] },
         { label: "CONCURRENTS (nommés + leurs financements)", queries: [
-          `${companyName} competitors alternatives`,
-          `${companyName} vs competitor funding market share`,
+          `${q} competitors alternatives`,
+          `${q} vs competitor funding market share`,
         ] },
         { label: "TRACTION / RÉCOMPENSES / PARTENARIATS / PUBLICATIONS", queries: [
-          `${companyName} customers partnership award prize ${ddYear}`,
-          `${companyName} revenue traction publication results`,
+          `${q} customers partnership award prize ${ddYear}`,
+          `${q} revenue traction publication results`,
         ] },
       ];
       try {
@@ -563,7 +571,10 @@ Réponds UNIQUEMENT avec du JSON valide.`;
           if (lines.length > 0) blocks.push(`--- ${g.label} ---\n${lines.join("\n")}`);
         }
         if (blocks.length > 0) {
-          enrichedAnalyzeContext = `${analyzeContext}\n\n=== RECHERCHES SYSTÉMATIQUES (PRIORITÉ) ===\n${blocks.join("\n\n").slice(0, 5500)}`;
+          // Bloc systématique EN PREMIER avec autorité de récence : il contient
+          // l'info la plus fraîche (dernier round, etc.) et doit primer sur les
+          // résultats plus anciens et abondants ci-dessous.
+          enrichedAnalyzeContext = `=== RECHERCHES SYSTÉMATIQUES (PRIORITÉ ABSOLUE — info la PLUS RÉCENTE ; tout chiffre/round/date ici ÉCRASE les données plus anciennes des « AUTRES RÉSULTATS ») ===\n${blocks.join("\n\n").slice(0, 6500)}\n\n=== AUTRES RÉSULTATS DE RECHERCHE ===\n${analyzeContext}`;
           console.log(`[DueDiligence] Systématiques: ${seenSysUrl.size} résultats`);
         }
       } catch (sysErr) {
