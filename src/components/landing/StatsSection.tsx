@@ -26,13 +26,14 @@ const stats = [
 // Compteur animé déclenché à l'entrée dans la vue (count-up + easing).
 function Counter({ value }: { value: string }) {
   const m = value.match(/^(\d+)(.*)$/);
+  const isNum = !!m;
   const target = m ? parseInt(m[1], 10) : 0;
   const suffix = m ? m[2] : "";
   const ref = useRef<HTMLParagraphElement>(null);
   const [n, setN] = useState(0);
 
   useEffect(() => {
-    if (!m) return;
+    if (!isNum) return;
     const el = ref.current;
     if (!el) return;
     const reduce =
@@ -64,14 +65,16 @@ function Counter({ value }: { value: string }) {
       io.disconnect();
       cancelAnimationFrame(raf);
     };
-  }, [m, target]);
+    // deps = primitives stables (isNum/target) — surtout PAS l'objet `m` du match,
+    // qui change de référence à chaque render et relançait/gelait l'animation.
+  }, [isNum, target]);
 
   return (
     <p
       ref={ref}
       className="font-display text-3xl md:text-4xl font-medium text-foreground tabular-nums leading-none"
     >
-      {m ? `${n}${suffix}` : value}
+      {isNum ? `${n}${suffix}` : value}
     </p>
   );
 }

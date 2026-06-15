@@ -14,6 +14,12 @@ const RUN: Ev[] = [
   { stage: "Scoring", text: "Helion Materials — équipe 88 · moat 84 · marché 90", score: 91 },
   { stage: "Scoring", text: "Cortex Photonics — équipe 74 · moat 70 · marché 82", score: 79, tone: "dim" },
   { stage: "Filtre", text: "Écartées : trop financées / hors-thèse — la notoriété n'est pas un critère", tone: "note" },
+  { stage: "Due diligence", text: "Thèse : densité énergétique × 3 vs Li-ion d'ici 2027 = le pari falsifiable" },
+  { stage: "Due diligence", text: "Équipe : 2 cofondateurs ex-CEA, 11 ans de R&D matériaux — hal.science", tone: "dim" },
+  { stage: "Due diligence", text: "Moat : 3 brevets EPO 2025 sur l'électrolyte solide — espacenet", tone: "dim" },
+  { stage: "Due diligence", text: "Marché : 12 Md€ stockage industriel UE d'ici 2030, CAGR 18 % — iea.org", tone: "dim" },
+  { stage: "Comité", text: "Bear : coût/kWh encore 2× la cible ; jalon pilote 2026 à surveiller", tone: "note" },
+  { stage: "Comité", text: "Modèle de retour : entrée ~8 M€ post-money, ~12 % visé, sortie M&A 10×+" },
 ];
 
 const METRICS = [
@@ -60,6 +66,7 @@ export function LiveDemo() {
   const running = phase === "run";
   const pct = running ? Math.round((step / RUN.length) * 72) : 100;
   const stage = running ? RUN[Math.min(step, RUN.length - 1)].stage : "Rapport d'investissement";
+  const winStart = Math.max(0, step - 9); // fenêtre glissante : on garde la hauteur fixe
 
   return (
     <div className="rounded-xl border border-border bg-card overflow-hidden shadow-[0_18px_50px_-20px_rgba(0,0,0,0.6)]">
@@ -84,16 +91,16 @@ export function LiveDemo() {
       </div>
 
       {/* Corps : fondu croisé run ↔ rapport, hauteur fixe (zéro saut) */}
-      <div className="relative h-[376px]">
+      <div className="relative h-[408px]">
         {/* RUN */}
         <div
           className={`absolute inset-0 px-5 py-4 space-y-2.5 transition-opacity duration-500 ${
             running ? "opacity-100" : "opacity-0 pointer-events-none"
           }`}
         >
-          {RUN.slice(0, step).map((e, i) => (
+          {RUN.slice(winStart, step).map((e, j) => (
             <div
-              key={i}
+              key={winStart + j}
               className="flex items-start gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300"
             >
               <span className="shrink-0 w-20 pt-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
