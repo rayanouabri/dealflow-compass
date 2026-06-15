@@ -27,6 +27,9 @@ import {
   loadSourcedSet,
   isAlreadySourced,
   saveSourcedCompanies,
+  loadPickFeedback,
+  savePickFeedback,
+  isRejected,
 } from "../_shared/user-memory.ts";
 import {
   buildScoringPrompt,
@@ -173,7 +176,17 @@ async function handleThesisAnalysis(
   // le web : ce budget de recherche est réalloué au sourcing. L'IA se contente
   // de STRUCTURER les critères de l'utilisateur en stratégie de sourcing (ICP,
   // exclusions, codes NAF, priorityQueries) — sans inventer.
-  const userPrompt = buildThesisAnalysisPrompt(job.custom_thesis);
+  let userPrompt = buildThesisAnalysisPrompt(job.custom_thesis);
+  // Personnalisation : injecte les sociétés aimées (👍) comme exemples few-shot.
+  // Le fingerprint entre dans la cacheKey pour ne pas servir une thèse pré-feedback.
+  let likedFingerprint = "";
+  if (job.user_id) {
+    const fb = await loadPickFeedback(supabase, job.user_id);
+    if (fb.up.length > 0) {
+      userPrompt += `\n\nEXEMPLES APPRÉCIÉS PAR L'UTILISATEUR (privilégier des sociétés du même esprit/stade ; ne pas re-proposer celles-ci) : ${fb.up.join(", ")}.`;
+      likedFingerprint = `|liked:${fb.up.map((n) => n.toLowerCase()).sort().join(",")}`;
+    }
+  }
 
   // Validation de forme : une réponse tronquée/fragmentaire (ex: juste le
   // tableau sectors) corromprait TOUT le pipeline aval (queries génériques,
@@ -185,7 +198,7 @@ async function handleThesisAnalysis(
   };
 
   // Cache 7 j : mêmes critères → même structuration, 0 quota IA reconsommé.
-  const cacheKey = `thesis|custom|${JSON.stringify(job.custom_thesis)}`;
+  const cacheKey = `thesis|custom|${JSON.stringify(job.custom_thesis)}${likedFingerprint}`;
 
   const thesisAnalysis = await callAI(
     THESIS_ANALYSIS_SYSTEM_PROMPT,
@@ -482,18 +495,23 @@ async function handleSourcingStart(
   // lors de runs précédents (pour ne pas re-sourcer la même chose).
   let candidates = resolved;
   if (job.user_id) {
+    // Rejets explicites (👎) : exclusion DURE — jamais re-proposés, même si ça
+    // réduit fortement le pool.
+    const feedback = await loadPickFeedback(supabase, job.user_id);
+    let pool = feedback.down.size > 0
+      ? resolved.filter((c) => !isRejected(feedback, c.name))
+      : resolved;
+    // Déjà proposés : exclusion SOUPLE (on garde si ça vide trop le pool).
     const sourcedSet = await loadSourcedSet(supabase, job.user_id);
     if (sourcedSet.names.size > 0 || sourcedSet.domains.size > 0) {
-      const fresh = resolved.filter(
-        (c) => !isAlreadySourced(sourcedSet, c.name, c.url),
-      );
-      // Garde-fou : ne pas tout vider si l'utilisateur a déjà beaucoup sourcé
-      candidates = fresh.length >= 3 ? fresh : resolved;
-      logger.info("Mémoire utilisateur", {
-        connus: resolved.length - fresh.length,
-        gardes: candidates.length,
-      });
+      const fresh = pool.filter((c) => !isAlreadySourced(sourcedSet, c.name, c.url));
+      pool = fresh.length >= 3 ? fresh : pool;
     }
+    candidates = pool;
+    logger.info("Mémoire utilisateur", {
+      rejetes: feedback.down.size,
+      gardes: candidates.length,
+    });
   }
 
   await updateJob(supabase, job.id, {
@@ -1352,6 +1370,24 @@ async function handleHistory(
 }
 
 // ============================================================
+// ACTION: feedback — avis 👍/👎 de l'utilisateur sur un pick
+// ============================================================
+async function handleFeedback(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  body: any,
+  req: Request,
+): Promise<Response> {
+  const userId = await getUserId(supabase, req);
+  if (!userId) return jsonResp({ error: "Connexion requise" }, 401, req);
+  const { pipelineId, company, verdict } = body;
+  if (!company || (verdict !== "up" && verdict !== "down")) {
+    return jsonResp({ error: "company et verdict ('up'|'down') requis" }, 400, req);
+  }
+  const ok = await savePickFeedback(supabase, userId, pipelineId ?? null, company, verdict);
+  return jsonResp({ ok }, ok ? 200 : 500, req);
+}
+
+// ============================================================
 // SERVE
 // ============================================================
 serve(async (req: Request) => {
@@ -1396,6 +1432,8 @@ serve(async (req: Request) => {
       return handleHistory(supabase, req);
     case "sweep":
       return handleSweep(supabase, req);
+    case "feedback":
+      return handleFeedback(supabase, body, req);
     default:
       return jsonResp({ error: `Action inconnue: ${action}` }, 400, req);
   }

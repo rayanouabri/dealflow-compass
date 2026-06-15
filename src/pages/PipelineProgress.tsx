@@ -16,6 +16,8 @@ import {
   RefreshCcw,
   ExternalLink,
   TrendingUp,
+  ThumbsUp,
+  ThumbsDown,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -123,6 +125,7 @@ export default function PipelineProgress() {
 
   const [status, setStatus] = useState<PipelineStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [feedbackSent, setFeedbackSent] = useState<"up" | "down" | null>(null);
 
   const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? "";
   const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "";
@@ -177,6 +180,35 @@ export default function PipelineProgress() {
       navigate("/due-diligence/result", { state: payload });
     },
     [navigate, toast],
+  );
+
+  // Feedback 👍/👎 sur le pick → personnalise les prochains runs (exclusion des
+  // rejets, few-shot des favoris). Envoyé avec le JWT user (sinon non rattaché).
+  const sendFeedback = useCallback(
+    async (verdict: "up" | "down") => {
+      const company = status?.pickedStartup?.name;
+      if (!company || !pipelineId) return;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token || SUPABASE_ANON_KEY;
+        const resp = await fetch(`${SUPABASE_URL}/functions/v1/pipeline-orchestrator`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ action: "feedback", pipelineId, company, verdict }),
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        setFeedbackSent(verdict);
+        toast({
+          title: verdict === "up" ? "Merci" : "Noté",
+          description: verdict === "up"
+            ? "On privilégiera ce type de pépite."
+            : `${company} ne sera plus proposée.`,
+        });
+      } catch {
+        toast({ title: "Erreur", description: "Feedback non enregistré.", variant: "destructive" });
+      }
+    },
+    [status, pipelineId, SUPABASE_URL, SUPABASE_ANON_KEY, toast],
   );
 
   if (!pipelineId) {
@@ -372,6 +404,31 @@ export default function PipelineProgress() {
                   ))}
                 </div>
               )}
+
+              {/* Feedback : personnalise les prochains runs (exclusion / few-shot) */}
+              <div className="pt-3 border-t border-border flex items-center gap-2">
+                <span className="text-xs text-muted-foreground mr-auto">
+                  {feedbackSent ? "Merci, c'est pris en compte." : "Ce pick correspond-il à votre thèse ?"}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!!feedbackSent}
+                  className={`h-7 text-xs gap-1.5 ${feedbackSent === "up" ? "border-success/50 text-success" : "border-border"}`}
+                  onClick={() => sendFeedback("up")}
+                >
+                  <ThumbsUp className="w-3.5 h-3.5" /> Pertinent
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!!feedbackSent}
+                  className={`h-7 text-xs gap-1.5 ${feedbackSent === "down" ? "border-destructive/50 text-destructive" : "border-border"}`}
+                  onClick={() => sendFeedback("down")}
+                >
+                  <ThumbsDown className="w-3.5 h-3.5" /> Hors-cible
+                </Button>
+              </div>
             </div>
           </div>
         )}

@@ -103,3 +103,73 @@ export async function saveSourcedCompanies(
     logger.warn("saveSourcedCompanies exception", { error: String(err) });
   }
 }
+
+// --- Feedback explicite sur les picks (👍 / 👎) ---------------------------
+// 👎 : exclusion DURE des runs futurs. 👍 : exemples few-shot pour la thèse.
+export interface PickFeedback {
+  down: Set<string>; // noms normalisés rejetés
+  up: string[];      // noms aimés (bruts, pour le prompt)
+}
+
+export async function loadPickFeedback(
+  supabase: any,
+  userId: string,
+): Promise<PickFeedback> {
+  const down = new Set<string>();
+  const up: string[] = [];
+  try {
+    const { data, error } = await supabase
+      .from("pick_feedback")
+      .select("company_name, verdict")
+      .eq("user_id", userId)
+      .limit(1000);
+    if (error) {
+      logger.warn("loadPickFeedback erreur", { error: error.message });
+      return { down, up };
+    }
+    for (const row of data ?? []) {
+      if (row.verdict === "down") {
+        const n = normalizeName(row.company_name);
+        if (n) down.add(n);
+      } else if (row.verdict === "up" && up.length < 12) {
+        up.push(row.company_name);
+      }
+    }
+  } catch (err) {
+    logger.warn("loadPickFeedback exception", { error: String(err) });
+  }
+  return { down, up };
+}
+
+export function isRejected(fb: PickFeedback, name: string): boolean {
+  const n = normalizeName(name);
+  return !!n && fb.down.has(n);
+}
+
+// Upsert : un seul avis par (utilisateur, société). Renvoie true si OK.
+export async function savePickFeedback(
+  supabase: any,
+  userId: string,
+  pipelineId: string | null,
+  company: string,
+  verdict: "up" | "down",
+): Promise<boolean> {
+  const name = (company || "").trim();
+  if (name.length < 2) return false;
+  try {
+    const { error } = await supabase
+      .from("pick_feedback")
+      .upsert(
+        { user_id: userId, pipeline_id: pipelineId, company_name: name, verdict },
+        { onConflict: "user_id,company_name" },
+      );
+    if (error) {
+      logger.warn("savePickFeedback erreur", { error: error.message });
+      return false;
+    }
+    return true;
+  } catch (err) {
+    logger.warn("savePickFeedback exception", { error: String(err) });
+    return false;
+  }
+}
