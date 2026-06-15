@@ -5,6 +5,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { AuthProvider } from "@/components/AuthProvider";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { queryClient } from "@/lib/query-client";
 import { Loader2 } from "lucide-react";
 import Index from "./pages/Index";
@@ -38,10 +39,10 @@ const App = () => (
             <Suspense fallback={<RouteFallback />}>
               <Routes>
                 <Route path="/" element={<Index />} />
-                <Route path="/analyser" element={<Analyser />} />
-                <Route path="/due-diligence" element={<DueDiligence />} />
-                <Route path="/due-diligence/result" element={<DueDiligenceResult />} />
-                <Route path="/pipeline" element={<PipelineProgress />} />
+                <Route path="/analyser" element={<ProtectedRoute><Analyser /></ProtectedRoute>} />
+                <Route path="/due-diligence" element={<ProtectedRoute><DueDiligence /></ProtectedRoute>} />
+                <Route path="/due-diligence/result" element={<ProtectedRoute><DueDiligenceResult /></ProtectedRoute>} />
+                <Route path="/pipeline" element={<ProtectedRoute><PipelineProgress /></ProtectedRoute>} />
                 <Route path="/contact" element={<Contact />} />
                 <Route path="/a-propos" element={<APropos />} />
                 <Route path="/mentions-legales" element={<MentionsLegales />} />

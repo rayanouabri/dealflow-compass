@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/components/AuthProvider";
 import { AuthDialog } from "@/components/AuthDialog";
 import { LandingPage } from "@/components/LandingPage";
@@ -8,6 +8,7 @@ import { useTrial } from "@/hooks/useTrial";
 
 export default function Index() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, loading: authLoading } = useAuth();
   const { trialRemaining, hasTrialRemaining } = useTrial();
 
@@ -21,8 +22,22 @@ export default function Index() {
     return () => clearTimeout(t);
   }, [user, authLoading, showAuthDialog, navigate]);
 
-  // « Lancer une analyse » : accès direct à l'app (analyses illimitées, sans gate).
+  // Redirigé depuis une route protégée (non connecté) → proposer la connexion.
+  useEffect(() => {
+    if (location.state?.requireAuth && !user && !authLoading) {
+      setAuthView("login");
+      setShowAuthDialog(true);
+    }
+  }, [location.state, user, authLoading]);
+
+  // « Lancer une analyse » : l'app est réservée aux connectés. Non connecté →
+  // on ouvre l'inscription ; connecté → accès direct.
   const handleStartTrial = () => {
+    if (!user) {
+      setAuthView("signup");
+      setShowAuthDialog(true);
+      return;
+    }
     navigate("/analyser");
   };
 
