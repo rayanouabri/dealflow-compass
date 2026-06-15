@@ -1,6 +1,7 @@
 # Pipeline Sourcing + Due Diligence — Documentation
 
-Mise à jour : 2026-06-14. Fonction : `supabase/functions/pipeline-orchestrator/index.ts`.
+Mise à jour : 2026-06-15. Fonction : `supabase/functions/pipeline-orchestrator/index.ts`.
+Explication pas-à-pas pour débutant : [GUIDE_COMPLET.md](./GUIDE_COMPLET.md).
 
 ## Mission
 
@@ -43,15 +44,16 @@ texte libre précise l'ICP et les mots-clés. Cache 7j sur `thesis|custom|<hash>
 
 | Source | Rôle | Fichier | Coût |
 |--------|------|---------|------|
-| **Oxylabs (Bing SERP, parsed)** | recherche web principale (~50 req, batch 10, budget 60s) | `oxylabs-client.ts` | payant |
+| **Oxylabs (Google SERP, parsed)** | recherche web principale (~50 req). Google débloqué sur le compte actuel (avant : repli Bing) | `oxylabs-client.ts` | payant |
 | **Apify (Google Search)** | couverture Google + requêtes FRAÎCHES/EARLY : `site:stationf.co`, lauréats French Tech/Bpifrance/Aerospace Valley, `site:pappers.fr "augmentation de capital"`, `site:linkedin.com/company` | `apify-client.ts` | payant |
 | **Dealroom** | `just-founded.json` (startups tout juste fondées, filtrées thèse) | `dealroom-client.ts` | gratuit |
 | INSEE SIRENE | immatriculations FR par code NAF | `insee-sirene.ts` | gratuit |
 | Hacker News / GitHub | signal produit / tech | `hn-algolia.ts`, `github-search.ts` | gratuit |
 
-> Google est BLOQUÉ par Oxylabs → on passe par **Bing** (parsed) pour le web, et
-> **Apify** donne les résultats Google manquants. Apify tourne EN PARALLÈLE de la
-> boucle de recherche (1 run batché de 5 requêtes, ~16-30s).
+> Oxylabs interroge désormais **Google** (`source:google_search`, débloqué sur le
+> compte actuel) ; **Apify** reste une 2ᵉ source Google. Apify tourne EN PARALLÈLE de
+> la boucle de recherche (1 run batché, ~16-30s). Le mining est **mutualisé** en 1
+> appel IA sur l'union des résultats Oxylabs + Apify.
 
 ### Listicle / accelerator mining (`listicle-miner.ts`)
 
@@ -100,9 +102,14 @@ Sortie : `picked_startup` + `shortlist`. Seuil de viabilité 20/100.
 ## ÉTAPES 4 & 5 — Due Diligence (niveau comité d'investissement)
 
 `due-diligence` en 2 phases :
-- **search** : ~28 requêtes web ciblées (équipe ×5-6, produit, marché, presse,
-  profils, risques) + 5 requêtes équipe systématiques.
-- **analyze** : 1 appel Gemini (`maxOutputTokens` **28000**) → rapport JSON complet.
+- **search** : ~28 requêtes web ciblées (équipe, produit, marché, presse, risques).
+- **analyze** : recherches systématiques (nom **entre guillemets**, récence en
+  priorité, bloc placé en tête du contexte) → boucle lacunes (**4-6 thèmes**) →
+  brouillon Gemini (`maxOutputTokens` **28000**, suivant la "discipline d'analyse VC"
+  + la "méthode par levier") → **approfondissement OBLIGATOIRE** (couche Gemini qui
+  critique le brouillon → recherches parallèles → réécriture qui creuse avec chiffres
+  + sources) → vérification anti-hallucination des URLs. Cache `ddreport|v4` (3 j).
+  Export **PDF** mis en forme (inclut le comité) + Markdown.
 
 Sections : product, market (TAM/SAM/SOM + analyse ≥150 mots + comparables nommés),
 competition (3-5 concurrents CHACUN avec funding + forces/faiblesses), team,
@@ -124,16 +131,18 @@ sommaire sticky, blocs qui ne tronquent jamais le texte).
 ## Économie de tokens (à optimiser au prochain run)
 
 ### Gemini — LE vrai goulot (free tier)
-- 5 clés en rotation (`GEMINI_API_KEY`..`GEMINI_KEY_5`), garde-fou `ai_usage_daily`
-  (`AI_DAILY_LIMIT=1100`, RPC `increment_ai_usage`).
+- **9 clés** en rotation (`GEMINI_API_KEY` + `GEMINI_KEY_2..9`, via `getGeminiKeys()`),
+  modèle **`gemini-3.5-flash`** partout, garde-fou `ai_usage_daily`
+  (`AI_DAILY_LIMIT=2000`, RPC `increment_ai_usage`). Appels DD auxiliaires via
+  `geminiDD()` (rotation aléatoire + bascule 429).
 - Appels par run À FROID : thèse(1) + mining web(1) + mining Apify(1) +
   resolveEntities(1) + scoring batch(1) + DD gap(1) + DD analyze(1) [+ DD gap2/enrich
   parfois] ≈ **6-8 appels Gemini**.
 - Caches : thèse 7j, recherche 14j (préfixe `ai|` / `all|`) → re-run quasi-identique
   ≈ 0-2 appels.
-- Pistes : router davantage vers **Flash** (cheap) et réserver Pro à la thèse +
-  scoring ; mutualiser mining web + mining Apify en 1 appel ; cacher l'enrichissement
-  Dealroom.
+- Fait : tout en `gemini-3.5-flash`, mining web+Apify **mutualisé en 1 appel**,
+  enrichissement Dealroom **caché** (5 j). Piste restante : matching sémantique
+  thèse↔société pour le ranking (au lieu du seul match textuel).
 
 ### Oxylabs — plan Starter (~3000 req/mois)
 - ~50 req sourcing + ~3 pages minées (×2 passes ≈ 6) + ~28 req DD search ≈ **~85 req/run**.
@@ -162,8 +171,14 @@ gate stade écarte les licornes connues.
 
 ## Reste à faire (anti-biais + robustesse)
 
-1. **Élargir Dealroom** : sourcer via `marketmaps` par tag (France/Deep Tech) en plus de `just-founded`.
-2. **File durable** (Supabase Queues/pg_cron) au lieu du fire-and-forget.
-3. **Boucle de feedback** (pouce haut/bas → few-shot dans thèse + scoring).
-4. **Banc d'éval** (precision@5 sur 8-10 thèses fixes) pour mesurer chaque changement.
-5. **Oxylabs `google_search`** parsé à tester (Google sans Apify).
+Fait depuis : marketmaps Dealroom par tag, feedback 👍/👎 (few-shot + exclusion),
+Oxylabs `google_search`, DD niveau VC + approfondissement obligatoire + export PDF,
+gate stade durci, 9 clés Gemini.
+
+Reste :
+1. **File durable** (Supabase Queues/pg_cron) au lieu du fire-and-forget.
+2. **Banc d'éval** (precision@5 sur 8-10 thèses fixes) ; sans gold-list, un "juge VC"
+   automatique qui note chaque rapport.
+3. **Sourcing pépites** : portfolios de VC stade-en-dessous, lauréats de subventions,
+   dépôts d'augmentation de capital (Pappers/BODACC), matching sémantique, ranking
+   anti-notoriété (cf l'analyse sourcing dédiée).

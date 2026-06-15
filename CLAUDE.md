@@ -20,9 +20,10 @@ historique réouvrable.
 
 - **Frontend**: React 18 (Vite) + TypeScript + TailwindCSS + shadcn/ui
 - **Backend**: Supabase (PostgreSQL, Auth, Edge Functions Deno)
-- **AI**: Google Gemini 2.5 (flash + pro), 5 clés en rotation (`ai-client.ts`)
-- **Web search**: Oxylabs Real-time (Bing SERP) + Apify Google Search (couverture Google)
-- **Données startups**: Dealroom.co (API publique sans auth) + INSEE SIRENE + Hacker News + GitHub
+- **AI**: Google **Gemini 3.5 Flash** (secret `GEMINI_MODEL`), **9 clés** en rotation (`getGeminiKeys()` dans `ai-client.ts` ; appels DD aux via `geminiDD()`), garde-fou `AI_DAILY_LIMIT=2000`. ⚠️ vérifier la couverture free-tier de gemini-3.5-flash.
+- **Web search**: Oxylabs Real-time (**Google SERP** `source:google_search`, débloqué sur le compte actuel ; repli Bing historique) + Apify Google Search
+- **Données startups**: Dealroom.co (API publique sans auth : `just-founded` + `marketmaps` par tag) + INSEE SIRENE + Hacker News + GitHub
+- **Doc débutant pas-à-pas** (pipeline, prompts, requêtes, vocabulaire) : `GUIDE_COMPLET.md`
 - **Hosting**: Vercel — ⚠️ l'auto-deploy GitHub est CASSÉ : déployer via `npx vercel deploy --prod --yes` PUIS `npx vercel alias set <url> ai-vc-sourcing.vercel.app` (voir mémoire vercel-deploy)
 
 ## Key Files

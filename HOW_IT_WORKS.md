@@ -1,7 +1,8 @@
 # Comment fonctionne AI-VC
 
-Documentation pratique du pipeline réel. Mise à jour : 2026-06-14.
+Documentation pratique du pipeline réel. Mise à jour : 2026-06-15.
 
+> Explication pas-à-pas pour débutant (vocabulaire compris) : [GUIDE_COMPLET.md](./GUIDE_COMPLET.md).
 > Détail du sourcing/DD : [PIPELINE_SOURCING_DD.md](./PIPELINE_SOURCING_DD.md). Contexte projet : [CLAUDE.md](./CLAUDE.md).
 
 ---
@@ -21,9 +22,9 @@ Frontend React (Vercel, ai-vc-sourcing.vercel.app)
         │ HTTPS + JWT
 Supabase Edge Functions (Deno) : pipeline-orchestrator · due-diligence · ai-qa
         │
-Postgres (pipeline_jobs, search_cache, user_sourced_companies, ai_usage_daily)
+Postgres (pipeline_jobs, search_cache, user_sourced_companies, pick_feedback, ai_usage_daily)
         │
-Sources : Oxylabs(Bing) · Apify(Google) · Dealroom · INSEE · HN · GitHub · Gemini
+Sources : Oxylabs(Google) · Apify(Google) · Dealroom(just-founded + marketmaps) · INSEE · HN · GitHub · Gemini(gemini-3.5-flash, 9 clés)
 ```
 
 Plus de fonction `analyze-fund`, plus de flux "nom de fonds", plus de Brave/Serper,
@@ -67,18 +68,17 @@ plus de Vertex — supprimés. Le SEUL moteur de sourcing est `pipeline-orchestr
 
 | Source | Rôle | Coût |
 |--------|------|------|
-| **Oxylabs (Bing SERP)** | recherche web principale (~50 req, batch 10) | payant |
-| **Apify (Google Search)** | couverture Google + requêtes ciblées (Station F, lauréats French Tech/Bpifrance, Pappers "augmentation de capital", LinkedIn société) — **fraîcheur & early** | payant |
-| **Dealroom** | `just-founded` (startups tout juste fondées) + enrichissement stade/levée | gratuit, no-auth |
+| **Oxylabs (Google SERP, parsé)** | recherche web principale (~50 req). Google n'est plus bloqué sur le compte actuel → couverture Google directe (avant : repli Bing) | payant |
+| **Apify (Google Search)** | 2ᵉ source Google + requêtes ciblées (Station F, lauréats French Tech/Bpifrance, Pappers "augmentation de capital", LinkedIn société) — **fraîcheur & early** | payant |
+| **Dealroom** | `just-founded` (tout juste fondées) + **`marketmaps` par tag** (Deep Tech / Fintech / France…) + enrichissement stade/levée | gratuit, no-auth |
 | INSEE SIRENE | immatriculations FR récentes par code NAF | gratuit |
 | Hacker News / GitHub | signal produit / tech | gratuit |
 
 **Listicle mining** (`listicle-miner.ts`) : les pages d'agrégateurs ET de
 portfolios d'accélérateurs (F6S, Seedtable, **Station F, French Tech, Bpifrance**…)
 sont des LISTES de startups → on récupère leur texte et on en extrait les noms
-individuels via 1 appel IA filtré sur la thèse (catégorie `web_curated`). Apify et
-la boucle web tournent **en parallèle** ; une 2ᵉ passe de mining traite les pages
-ramenées par Apify (sinon dedup les filtre comme annuaires).
+individuels via **1 seul appel IA mutualisé** (catégorie `web_curated`) sur l'union des pages
+ramenées par Oxylabs ET Apify (avant : 2 appels distincts).
 
 **Premier classement criteria-aware** (`dedup-ranker.ts`) : `score = criteriaFit×1.4
 + min(35, signalStrength×0.5) + recency + crossSignalBonus`. La pertinence à la thèse
@@ -97,7 +97,8 @@ PILOTE ; le volume de signal ne fait que départager. Puis `filterByICP` →
   → thesisFit≤15 + redFlag ; la notoriété n'est jamais un signal positif.
 - **Gate stade déterministe** (`looksTooLate`) : exclut avant la shortlist toute
   société dont le stade RÉEL Dealroom > stade max, ou dont la description trahit
-  Série C+/licorne/IPO/méga-levée. Triple défense (miner + scoring + gate).
+  Série C+/licorne/IPO/méga-levée, **un rachat ("acquise par")**, une **levée en
+  milliards**, ou un **âge > 15 ans**. Triple défense (miner + scoring + gate).
 
 Résultat : `picked_startup` + `shortlist`. Exemples validés : Diamfab, Skyld
 (deeptech FR early, pas de noms célèbres).
@@ -106,24 +107,34 @@ Résultat : `picked_startup` + `shortlist`. Exemples validés : Diamfab, Skyld
 
 ## 6. Due Diligence — niveau comité d'investissement
 
-`due-diligence` en 2 phases (search ~28 req web ; analyze 1 gros appel Gemini,
-`maxOutputTokens` 28000). Le rapport JSON couvre product/market/competition/team/
-traction/financials/risks/opportunities + `investmentRecommendation` + un bloc
-**`investmentCommittee`** : adéquation au mandat, bull/bear case probabilisés,
-débats du comité (les deux côtés), ce qui doit être vrai, critères rédhibitoires,
-vue valorisation, priorités de DD, niveau de conviction, verdict argumenté. Rendu
-dans `InvestmentMemo` (mémo continu, sommaire sticky, jamais de texte tronqué).
+`due-diligence` en 2 phases. **search** : ~28 req web. **analyze** : recherches
+systématiques (nom entre guillemets, récence en priorité) → boucle lacunes (4-6
+thèmes) → brouillon (1 gros appel Gemini, 28000 tokens) → **approfondissement
+OBLIGATOIRE** (couche Gemini de critique du brouillon → recherches parallèles →
+réécriture qui creuse avec chiffres + sources) → vérification anti-hallucination.
+Le brouillon suit la **"discipline d'analyse VC"** : démontrer chaque argument
+(chiffre/date/nom/source, jamais d'adjectif seul), thèse falsifiable, corréler les
+sections, mécanique du deal, modèle de retour + comparables de sortie nommés, bear
+case spécifique, décision conditionnelle, + la **"méthode par levier"** (la métrique
+qui EST le produit, moat chiffré sinon non-prouvé, business model → multiple de
+sortie). Le bloc **`investmentCommittee`** (thèse, verdict, bull/bear, mécanique du
+deal, modèle de retour, débats, ce qui doit être vrai, critères rédhibitoires, vue
+valo, priorités DD, conviction) est rendu dans `InvestmentMemo`. Cache `ddreport|v4`
+(3 j ; le numéro de version monte à chaque refonte de prompt pour invalider l'ancien).
+**Export** : PDF mis en forme (inclut le comité) + Markdown.
 
 ---
 
 ## 7. Économie de tokens (à optimiser)
 
-**Gemini (free tier, le vrai goulot)** : 5 clés en rotation (`GEMINI_API_KEY`..`GEMINI_KEY_5`),
-garde-fou `ai_usage_daily` (`AI_DAILY_LIMIT=1100`). Appels par run À FROID :
-thèse(1) + mining web(1) + mining Apify(1) + resolveEntities(1) + scoring batch(1)
-+ DD gap(1) + DD analyze(1) [+ DD gap2/enrich parfois] ≈ **6-8 appels**. Caches :
-thèse 7j, recherche 14j → un re-run quasi-identique ≈ 0-2 appels. Routing modèle :
-`opts.model` par appel (Flash par défaut, Pro pour la thèse).
+**Gemini** : modèle **`gemini-3.5-flash`** partout, **9 clés** en rotation
+(`GEMINI_API_KEY` + `GEMINI_KEY_2..9`, via `getGeminiKeys()` partagé ; appels DD
+auxiliaires via `geminiDD()` qui mélange les clés + bascule sur 429). Garde-fou
+`ai_usage_daily` (`AI_DAILY_LIMIT=2000`). Appels par run À FROID : thèse(1) +
+mining mutualisé(1) + resolveEntities(1) + scoring batch(1) + DD lacunes(1) + DD
+brouillon(1) + DD critique(1) + DD réécriture(1) ≈ **7-9 appels**. Caches : thèse 7j,
+recherche 14j, rapport DD 3j → un re-run quasi-identique ≈ 0-2 appels. ⚠️ Vérifier que
+`gemini-3.5-flash` est couvert par le free tier du compte (sinon facturation).
 
 **Oxylabs** (plan Starter, ~3000 req/mois) : ~50 req sourcing + ~3 pages minées +
 ~28 req DD search = **~80 req/run**.
@@ -143,8 +154,12 @@ thèse 7j, recherche 14j → un re-run quasi-identique ≈ 0-2 appels. Routing m
 
 ## 9. Ce qu'il reste à faire
 
-- **Biais** : élargir le yield Dealroom (marketmaps par tag France/Deep Tech, pas seulement just-founded) ; mieux exploiter les portfolios d'incubateurs.
+Déjà fait depuis : marketmaps Dealroom branchés, feedback 👍/👎 (exclusion +
+few-shot), Oxylabs passé à `google_search`, DD niveau VC + approfondissement
+obligatoire + export PDF, gate stade durci, 9 clés Gemini.
+
+Reste à faire :
 - **Fiabilité** : remplacer le self-invocation fire-and-forget par une file durable (Supabase Queues / pg_cron).
-- **Apprentissage** : boucle de feedback (pouce haut/bas → few-shot dans thèse + scoring).
-- **Mesure** : banc d'éval (8-10 thèses fixes, precision@5) pour objectiver chaque changement.
-- **Couverture** : tester `source:google_search` parsé d'Oxylabs (Google sans dépendre d'Apify).
+- **Mesure** : banc d'éval (8-10 thèses fixes, precision@5) pour objectiver chaque changement. Sans gold-list : un "juge VC" automatique qui note chaque rapport.
+- **Sourcing pépites** : portfolios de VC stade-en-dessous, lauréats de subventions, dépôts d'augmentation de capital (Pappers/BODACC), matching sémantique thèse↔société, ranking anti-notoriété (cf analyse sourcing).
+- **DD** : lecture des sources primaires (papiers/brevets en texte intégral), sources inline numérotées par affirmation.
