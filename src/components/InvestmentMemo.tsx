@@ -224,9 +224,10 @@ interface MemoProps {
   data: any;
   companyName: string;
   onExport: () => void;
+  onExportPdf?: () => void;
 }
 
-export function InvestmentMemo({ data, companyName, onExport }: MemoProps) {
+export function InvestmentMemo({ data, companyName, onExport, onExportPdf }: MemoProps) {
   const company = data.company ?? {};
   const es = data.executiveSummary ?? {};
   const name = company.name || companyName;
@@ -297,8 +298,13 @@ export function InvestmentMemo({ data, companyName, onExport }: MemoProps) {
       <aside className="order-2 lg:order-1 lg:col-span-3">
         <div className="lg:sticky lg:top-20 space-y-4">
           <div className="flex flex-col gap-2">
-            <Button onClick={onExport} size="sm" className="gap-2 bg-foreground text-background hover:bg-foreground/90">
-              <Download className="h-4 w-4" /> Exporter le rapport
+            {onExportPdf && (
+              <Button onClick={onExportPdf} size="sm" className="gap-2 bg-foreground text-background hover:bg-foreground/90">
+                <Download className="h-4 w-4" /> Télécharger le PDF
+              </Button>
+            )}
+            <Button onClick={onExport} variant="outline" size="sm" className="gap-2 border-border">
+              <Download className="h-4 w-4" /> Export Markdown
             </Button>
             <div className="flex flex-wrap gap-2">
               {company.website && (

@@ -5,6 +5,7 @@ import { AppLayout } from "@/components/AppLayout";
 import { useTrial } from "@/hooks/useTrial";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { jsPDF } from "jspdf";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -691,6 +692,233 @@ export default function DueDiligenceResult() {
     toast({ title: "Export effectué", description: "Le rapport complet a été téléchargé (Markdown).", variant: "default" });
   };
 
+  /** Exporte le rapport en PDF mis en forme (inclut le comité d'investissement). */
+  const exportPdf = () => {
+    if (!data) return;
+    const companyName = data.company?.name || requestPayload?.companyName || "Rapport";
+    const safeName = companyName.replace(/[^\w\s-]/g, "").replace(/\s+/g, "-").slice(0, 60);
+    const date = new Date().toISOString().slice(0, 10);
+
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+    const PAGE_W = doc.internal.pageSize.getWidth();
+    const PAGE_H = doc.internal.pageSize.getHeight();
+    const M = 48;
+    const CW = PAGE_W - 2 * M;
+    const INK: [number, number, number] = [17, 24, 39];
+    const MUTED: [number, number, number] = [110, 116, 129];
+    const ACCENT: [number, number, number] = [37, 99, 235];
+    let y = M;
+    let page = 1;
+
+    const clean = (t: unknown) => stripInlineSources(String(t ?? "")).replace(/\s+/g, " ").trim();
+    const addFooter = () => {
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(...MUTED);
+      doc.text(`${clean(companyName)} · Due Diligence`, M, PAGE_H - 24);
+      doc.text(`p. ${page}`, PAGE_W - M, PAGE_H - 24, { align: "right" });
+    };
+    const newPage = () => { addFooter(); doc.addPage(); page++; y = M; };
+    const ensure = (h: number) => { if (y + h > PAGE_H - 48) newPage(); };
+
+    const heading = (t: string) => {
+      ensure(46); y += 12;
+      doc.setDrawColor(...ACCENT); doc.setLineWidth(2); doc.line(M, y, M + 28, y); y += 15;
+      doc.setFont("helvetica", "bold"); doc.setFontSize(13.5); doc.setTextColor(...INK);
+      doc.text(t.toUpperCase(), M, y); y += 10;
+    };
+    const sub = (t: string) => {
+      ensure(24); y += 7;
+      doc.setFont("helvetica", "bold"); doc.setFontSize(10.5); doc.setTextColor(...ACCENT);
+      doc.text(t, M, y); y += 5;
+    };
+    const para = (t: unknown, o: { bold?: boolean; size?: number; color?: [number, number, number] } = {}) => {
+      const txt = clean(t); if (!txt) return;
+      const size = o.size ?? 10;
+      doc.setFont("helvetica", o.bold ? "bold" : "normal"); doc.setFontSize(size); doc.setTextColor(...(o.color ?? INK));
+      const lh = size * 1.42;
+      for (const ln of doc.splitTextToSize(txt, CW)) { ensure(lh); doc.text(ln, M, y); y += lh; }
+      y += 3;
+    };
+    const bullets = (items: unknown[]) => {
+      const size = 10, lh = 10 * 1.42;
+      doc.setFontSize(size);
+      for (const it of items) {
+        const txt = clean(it); if (!txt) continue;
+        const lns = doc.splitTextToSize(txt, CW - 14);
+        ensure(lh);
+        doc.setFont("helvetica", "normal"); doc.setTextColor(...ACCENT); doc.text("•", M, y);
+        doc.setTextColor(...INK); doc.text(lns[0], M + 14, y); y += lh;
+        for (let i = 1; i < lns.length; i++) { ensure(lh); doc.text(lns[i], M + 14, y); y += lh; }
+      }
+      y += 3;
+    };
+    const srcs = (arr?: { name?: string; url?: string }[]) => {
+      const list = (arr || []).filter((s) => s?.url);
+      if (!list.length) return;
+      ensure(16); y += 2;
+      doc.setFont("helvetica", "italic"); doc.setFontSize(8); doc.setTextColor(...MUTED);
+      doc.text("Sources :", M, y); y += 11; doc.setFont("helvetica", "normal");
+      for (const s of list) for (const l of doc.splitTextToSize(`•  ${clean(s.name || s.url)} — ${s.url}`, CW)) { ensure(10); doc.text(l, M, y); y += 10; }
+      y += 4;
+    };
+
+    // Bandeau de couverture
+    doc.setFillColor(...INK); doc.rect(0, 0, PAGE_W, 92, "F");
+    doc.setFont("helvetica", "bold"); doc.setFontSize(19); doc.setTextColor(255, 255, 255);
+    doc.text("Due Diligence", M, 44);
+    doc.setFontSize(14); doc.text(clean(companyName), M, 68);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(205, 214, 235);
+    doc.text(new Date().toLocaleDateString("fr-FR", { dateStyle: "long" }), PAGE_W - M, 40, { align: "right" });
+    const reco = clean(data.executiveSummary?.recommendation || data.investmentRecommendation?.recommendation);
+    if (reco) { doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.text(reco, PAGE_W - M, 64, { align: "right" }); }
+    y = 116;
+
+    para(data.company?.tagline);
+    const facts = [
+      data.company?.founded && `Fondée : ${clean(data.company.founded)}`,
+      data.company?.headquarters && `Siège : ${clean(data.company.headquarters)}`,
+      data.company?.sector && `Secteur : ${clean(data.company.sector)}`,
+      data.company?.stage && `Stage : ${clean(data.company.stage)}`,
+      data.company?.employeeCount && `Effectifs : ${clean(data.company.employeeCount)}`,
+    ].filter(Boolean) as string[];
+    if (facts.length) para(facts.join("   ·   "), { size: 9, color: MUTED });
+
+    heading("Résumé exécutif");
+    para(data.executiveSummary?.overview);
+    if (data.executiveSummary?.confidenceLevel) para(`Niveau de confiance : ${clean(data.executiveSummary.confidenceLevel)}`, { bold: true, size: 9 });
+    if (toArray(data.executiveSummary?.keyHighlights).length) { sub("Points forts"); bullets(toArray(data.executiveSummary.keyHighlights)); }
+    if (toArray(data.executiveSummary?.keyRisks).length) { sub("Risques clés"); bullets(toArray(data.executiveSummary.keyRisks)); }
+
+    const ic = data.investmentCommittee;
+    if (ic && Object.keys(ic).length) {
+      heading("Comité d'investissement");
+      if (ic.thesis) { sub("Thèse — le pari"); para(ic.thesis); }
+      if (ic.verdict) { sub("Verdict"); para(ic.verdict); }
+      if (ic.thesisFitAnalysis) { sub("Adéquation au mandat"); para(ic.thesisFitAnalysis); }
+      if (ic.bullCase) { sub("Scénario haussier"); para(ic.bullCase); }
+      if (ic.bearCase) { sub("Scénario baissier"); para(ic.bearCase); }
+      if (ic.dealMechanics) { sub("Mécanique du deal"); para(ic.dealMechanics); }
+      if (ic.returnModel) { sub("Modèle de retour & comparables"); para(ic.returnModel); }
+      if (ic.valuationView) { sub("Vue valorisation / entrée"); para(ic.valuationView); }
+      if (toArray(ic.keyDebates).length) { sub("Débats clés"); bullets(toArray(ic.keyDebates)); }
+      if (toArray(ic.whatMustBeTrue).length) { sub("Ce qui doit être vrai"); bullets(toArray(ic.whatMustBeTrue)); }
+      if (toArray(ic.killCriteria).length) { sub("Critères rédhibitoires"); bullets(toArray(ic.killCriteria)); }
+      if (toArray(ic.diligencePriorities).length) { sub("Priorités de due diligence"); bullets(toArray(ic.diligencePriorities)); }
+      if (ic.convictionLevel) para(`Conviction : ${clean(ic.convictionLevel)}`, { bold: true, size: 9 });
+    }
+
+    heading("Financements");
+    if (data.financials?.totalFunding) para(`Financement total : ${clean(data.financials.totalFunding)}`, { bold: true });
+    if (data.financials?.latestValuation) para(`Dernière valorisation : ${clean(data.financials.latestValuation)}`);
+    if (toArray(data.financials?.fundingHistory).length) {
+      sub("Historique des levées");
+      bullets(toArray(data.financials.fundingHistory).map((r: any) => {
+        const parts = [r.round, r.amount, r.date].filter(Boolean).map((x: any) => clean(x));
+        if (toArray(r.investors).length) parts.push("Investisseurs : " + toArray(r.investors).map((x: any) => clean(toDisplayString(x))).join(", "));
+        return parts.join(" — ");
+      }));
+    }
+    if (data.financials?.metrics && Object.keys(data.financials.metrics).length) {
+      sub("Métriques"); bullets(Object.entries(data.financials.metrics).map(([k, v]) => `${k} : ${clean(v)}`));
+    }
+    srcs(data.financials?.sources);
+
+    heading("Produit");
+    para(data.product?.description);
+    if (data.product?.valueProposition) { sub("Proposition de valeur"); para(data.product.valueProposition); }
+    if (data.product?.technology) { sub("Technologie"); para(data.product.technology); }
+    if (data.product?.patents) { sub("Brevets / IP"); para(data.product.patents); }
+    if (toArray(data.product?.keyFeatures).length) { sub("Fonctionnalités clés"); bullets(toArray(data.product.keyFeatures)); }
+    srcs(data.product?.sources);
+
+    heading("Marché");
+    const mk = data.market || {};
+    const mkf = [mk.tam && `TAM : ${clean(mk.tam)}`, mk.sam && `SAM : ${clean(mk.sam)}`, mk.som && `SOM : ${clean(mk.som)}`, mk.cagr && `CAGR : ${clean(mk.cagr)}`].filter(Boolean) as string[];
+    if (mkf.length) bullets(mkf);
+    if (toArray(mk.trends).length) { sub("Tendances"); bullets(toArray(mk.trends)); }
+    para(mk.analysis);
+    srcs(mk.sources);
+
+    heading("Équipe");
+    para(data.team?.overview);
+    if (data.team?.teamSize) para(`Taille : ${clean(data.team.teamSize)}`, { bold: true, size: 9 });
+    if (toArray(data.team?.founders).length) {
+      sub("Fondateurs");
+      toArray(data.team.founders).forEach((f: any) => {
+        para(`${clean(f.name)} — ${clean(f.role)}`, { bold: true, size: 10 });
+        if (f.background) para(f.background, { size: 9 });
+        if (f.linkedin) para(f.linkedin, { size: 8, color: ACCENT });
+      });
+    }
+    if (toArray(data.team?.keyExecutives).length) { sub("Dirigeants clés"); bullets(toArray(data.team.keyExecutives).map((e: any) => `${clean(e.name)} — ${clean(e.role)} — ${clean(e.background)}`)); }
+    srcs(data.team?.sources);
+
+    heading("Concurrence");
+    para(data.competition?.landscape);
+    if (data.competition?.competitiveAdvantage) { sub("Avantage concurrentiel"); para(data.competition.competitiveAdvantage); }
+    if (data.competition?.moat) { sub("Moat"); para(data.competition.moat); }
+    if (toArray(data.competition?.competitors).length) {
+      sub("Concurrents");
+      toArray(data.competition.competitors).forEach((c: any) => {
+        para(`${clean(c.name)}${c.funding ? ` — ${clean(c.funding)}` : ""}`, { bold: true, size: 10 });
+        if (c.description) para(c.description, { size: 9 });
+        if (toArray(c.strengths).length) para("Forces : " + toArray(c.strengths).map(clean).join(" ; "), { size: 9, color: MUTED });
+        if (toArray(c.weaknesses).length) para("Faiblesses : " + toArray(c.weaknesses).map(clean).join(" ; "), { size: 9, color: MUTED });
+      });
+    }
+    srcs(data.competition?.sources);
+
+    heading("Traction & Jalons");
+    para(data.traction?.overview);
+    const cu = data.traction?.customers;
+    if (cu) {
+      const cf = [cu.count && `Clients : ${clean(cu.count)}`, toArray(cu.notable).length && `Notables : ${toArray(cu.notable).map((n: any) => clean(toDisplayString(n))).join(", ")}`, cu.segments && `Segments : ${clean(cu.segments)}`].filter(Boolean) as string[];
+      if (cf.length) bullets(cf);
+    }
+    if (toArray(data.traction?.keyMilestones).length) { sub("Jalons clés"); bullets(toArray(data.traction.keyMilestones).map((m: any) => `${clean(m.date)} — ${clean(m.milestone)}`)); }
+    if (toArray(data.traction?.partnerships).length) { sub("Partenariats"); bullets(toArray(data.traction.partnerships)); }
+    if (toArray(data.traction?.awards).length) { sub("Prix / Récompenses"); bullets(toArray(data.traction.awards)); }
+    srcs(data.traction?.sources);
+
+    heading("Risques");
+    (["marketRisks", "executionRisks", "financialRisks", "competitiveRisks", "regulatoryRisks"] as const).forEach((k) => {
+      const arr = data.risks?.[k];
+      if (Array.isArray(arr) && arr.length) { sub(k.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase()).replace(/ Risks/i, "")); bullets(arr); }
+    });
+    if (toArray(data.risks?.mitigations).length) { sub("Mitigations"); bullets(toArray(data.risks.mitigations)); }
+    if (data.risks?.overallRiskLevel) para(`Niveau de risque global : ${clean(data.risks.overallRiskLevel)}`, { bold: true, size: 9 });
+    srcs(data.risks?.sources);
+
+    if (data.opportunities) {
+      heading("Opportunités");
+      if (toArray(data.opportunities.growthOpportunities).length) { sub("Croissance"); bullets(toArray(data.opportunities.growthOpportunities)); }
+      if (data.opportunities.marketExpansion) para(`Expansion marché : ${clean(data.opportunities.marketExpansion)}`);
+      if (data.opportunities.productExpansion) para(`Expansion produit : ${clean(data.opportunities.productExpansion)}`);
+      para(data.opportunities.strategicValue);
+      srcs(data.opportunities.sources);
+    }
+
+    heading("Recommandation d'investissement");
+    const rec = data.investmentRecommendation || {};
+    if (rec.recommendation) para(`Recommandation : ${clean(rec.recommendation)}`, { bold: true });
+    if (rec.rationale) para(rec.rationale);
+    if (toArray(rec.strengths).length) { sub("Points forts"); bullets(toArray(rec.strengths)); }
+    if (toArray(rec.weaknesses).length) { sub("Points faibles"); bullets(toArray(rec.weaknesses)); }
+    if (toArray(rec.keyQuestions).length) { sub("Questions clés"); bullets(toArray(rec.keyQuestions)); }
+    if (toArray(rec.suggestedNextSteps).length) { sub("Prochaines étapes"); bullets(toArray(rec.suggestedNextSteps)); }
+    const rf = [rec.targetReturn && `Rendement cible : ${clean(rec.targetReturn)}`, rec.investmentHorizon && `Horizon : ${clean(rec.investmentHorizon)}`, rec.suggestedTicket && `Ticket suggéré : ${clean(rec.suggestedTicket)}`].filter(Boolean) as string[];
+    if (rf.length) bullets(rf);
+
+    heading("Toutes les sources");
+    const all = allSourcesAggregated.length > 0 ? allSourcesAggregated : (data.allSources || []);
+    para(`${all.length} source(s) utilisée(s).`, { size: 9, color: MUTED });
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8);
+    all.forEach((s: any, i: number) => { if (!s?.url) return; for (const l of doc.splitTextToSize(`${i + 1}.  ${clean(s.name || s.url)} — ${s.url}`, CW)) { ensure(10); doc.setTextColor(...MUTED); doc.text(l, M, y); y += 10; } });
+
+    addFooter();
+    doc.save(`Due-Diligence-${safeName}-${date}.pdf`);
+    toast({ title: "Export PDF effectué", description: "Le rapport a été téléchargé en PDF." });
+  };
+
   if (authLoading) return null;
 
   return (
@@ -787,6 +1015,7 @@ export default function DueDiligenceResult() {
               data={data}
               companyName={data.company?.name || requestPayload?.companyName || ""}
               onExport={exportFullReport}
+              onExportPdf={exportPdf}
             />
           </div>
         )}
