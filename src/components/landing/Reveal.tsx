@@ -33,10 +33,16 @@ export function Reveal({
           }
         }
       },
-      { threshold: 0.12, rootMargin: "0px 0px -8% 0px" },
+      { threshold: 0, rootMargin: "0px 0px -5% 0px" },
     );
     io.observe(el);
-    return () => io.disconnect();
+    // Filet de sécurité : si l'observer ne se déclenche pas (sections très hautes,
+    // navigateurs capricieux), on révèle quand même — JAMAIS de section invisible.
+    const safety = setTimeout(() => setShown(true), 1600);
+    return () => {
+      io.disconnect();
+      clearTimeout(safety);
+    };
   }, []);
 
   return (
