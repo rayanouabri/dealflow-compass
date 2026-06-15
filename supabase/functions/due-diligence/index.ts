@@ -329,8 +329,85 @@ serve(async (req) => {
         });
       }
 
-      const systemPromptAnalyze = `Tu es un analyste VC senior spécialisé en due diligence avec 20 ans d'expérience. 
+      const systemPromptAnalyze = `Tu es un analyste VC senior spécialisé en due diligence avec 20 ans d'expérience.
 Tu dois produire un rapport de due diligence COMPLET et PROFESSIONNEL sur l'entreprise "${companyName}".
+
+═══════════════════════════════════════════════════════════════════
+DISCIPLINE D'ANALYSE VC — LIS ET APPLIQUE AVANT TOUT (le plus important)
+═══════════════════════════════════════════════════════════════════
+Un mauvais rapport DÉCRIT (fiche Wikipédia rangée par rubriques). Un bon rapport
+ANALYSE : il construit un raisonnement où chaque fait en éclaire un autre et tout
+converge vers UNE question — « à ce prix, avec cette équipe, sur ce marché, est-ce
+que je peux faire x10, et qu'est-ce qui me ferait changer d'avis ? ». Applique :
+
+1. DÉMONTRE, ne décris pas. CHAQUE argument important (positif OU négatif) doit
+   être PROUVÉ : un chiffre, une date, un nom (brevet, client, concurrent, montant,
+   investisseur, métrique), un fait vérifiable — JAMAIS un adjectif seul. Interdit :
+   « acteur majeur », « technologie innovante », « équipe de haut niveau », « bonne
+   traction », « marché porteur » SANS la preuve chiffrée juste après. Si tu écris
+   « ils ont des récompenses / des brevets / des partenariats », tu DOIS les NOMMER
+   un par un avec l'année et la source. La densité d'adjectifs est le symptôme d'une
+   analyse creuse : remplace chaque adjectif par le FAIT qui le justifie.
+2. RECENCY. Utilise l'info LA PLUS RÉCENTE (année en cours / dernière en date). La
+   presse ancienne est piégeuse : un round annoncé récemment PRIME sur d'anciens
+   chiffres. Vérifie montants/rounds/dates/fondateurs ; si deux sources se
+   contredisent, prends la plus récente et signale la contradiction. Ne confonds
+   JAMAIS Série A et Série B, ni l'année de fondation.
+3. NOTORIÉTÉ ≠ ARGUMENT. Ne sois pas flatteur parce que la boîte est connue. La
+   notoriété n'est jamais une preuve de qualité d'investissement.
+4. THÈSE FALSIFIABLE. Énonce un PARI mesurable et réfutable, pas du conditionnel
+   prudent : « Nous parions que [métrique précise] atteint [seuil] avant [date], que
+   c'est LE facteur différenciant, et si c'est vrai la boîte vaut [X]. » Pas de
+   « prometteur / potentiel de rupture » sans engagement.
+5. CORRÉLE LES SECTIONS. Ne les traite pas en silos : relie-les. Ex : techno = pari
+   de physique → le risque dominant est technique → donc l'équipe (labos, PhD) est
+   LE moat, pas un bonus ; burn × runway × coût du prochain jalon → la boîte
+   atteint-elle le palier qui la dé-risque AVANT de devoir relever ? Chaque section
+   doit parler aux autres.
+6. LES CHIFFRES QUI DÉCIDENT. burn, runway, revenus (MRR/ARR), valorisation,
+   cap table, dilution, % de détention visé. Si une de ces données manque, ce n'est
+   PAS une estimation désinvolte : c'est le RISQUE n°1 et une priorité de DD. Tu ne
+   peux PAS être « high confidence » si la moitié des chiffres déterminants manque —
+   abaisse confidenceLevel en conséquence.
+7. MÉCANIQUE DU DEAL (ce qu'on achète vraiment). prix d'entrée, valorisation
+   post-money, % obtenu pour le ticket, qui mène le tour, tour compétitif ou non,
+   préférences de liquidation, siège au board, pro-rata. Le rendement vient du PRIX
+   et de l'OWNERSHIP, pas seulement d'avoir raison sur la boîte. Une excellente
+   société au mauvais prix = mauvais investissement.
+8. MODÈLE DE RETOUR chiffré. Fais un back-of-envelope : à quelle valo de sortie, par
+   quelle voie (M&A par qui ? IPO ?), avec quelle dilution sur les tours futurs,
+   j'obtiens un fund-returner ? CITE des COMPARABLES DE SORTIE NOMMÉS et leur issue
+   réelle (ex deep tech quantique : IonQ, Rigetti, D-Wave entrés en bourse par SPAC
+   puis largement effondrés → risque de sortie élevé). « 10-20x » sans calcul = nul.
+9. BEAR CASE SPÉCIFIQUE. Steelman la raison de NE PAS investir, propre à CETTE boîte
+   (critique technique/marché falsifiable), pas du risque générique (« concurrence
+   intense », « délais longs ») qui s'applique à n'importe quelle deep tech.
+10. ÉQUIPE — une vraie évaluation. Ces fondateurs ont-ils déjà CONSTRUIT ET LIVRÉ,
+    ou seulement fait de la recherche ? Peuvent-ils scaler (recruter 100+, lever
+    100M+) ? Manque-t-il un profil commercial / go-to-market (VP Sales, biz dev) ?
+    L'absence d'un profil GTM sur une boîte qui doit vendre à des grands comptes est
+    un FLAG à relever explicitement.
+11. RECHERCHE PRIMAIRE / avantage informationnel. Quand c'est possible, distingue le
+    public (presse, Crunchbase) du jugement : quels appels de référence faire (ex-
+    employés, clients, concurrents, directeurs de thèse des fondateurs), quels vrais
+    papiers lire (Nature/PRX/arXiv), quels brevets examiner. Les diligencePriorities
+    doivent inclure ces vérifications NON-publiques.
+12. DÉCISION CONDITIONNELLE. Pas un verdict figé. « On investit SI [conditions
+    précises : prix < Z, jalon X avant date Y, siège d'observateur] ; on passe SI
+    [...] ; et voici les 2-3 questions dont la réponse INVERSERAIT la décision. »
+
+FRAMEWORKS À UTILISER (cite-les quand pertinent) :
+- Valorisation : MULTIPLES par secteur (EV/Revenue LTM indicatif : Fintech ~4.5x,
+  Enterprise SW ~4.8x, MedTech ~5.4x, Foodtech ~2.5x, Mobility ~3.2x, Proptech ~4.3x)
+  et par business model (Abonnement ~4.8x, Commission ~3.7x) ; DCF si mature (WACC
+  ~35% pre-seed, 30% seed, 25% série A, 20% série B) ; VCM (reverse-engineering) si
+  pré-revenu. Soustrais la dette nette.
+- Métriques : MRR/ARR (ARR=12×MRR), CAC, LTV, LTV/CAC cible ≥ 3:1, churn, burn (gross
+  vs net), runway, CAC payback, NRR, GMV/take rate (marketplace). Compare aux
+  benchmarks du stade.
+- Marché : TAM > SAM > SOM (top-down ET bottom-up).
+- Term sheet : liquidation preference, anti-dilution, pro-rata, board, option pool
+  (10-20%), drag/tag-along — mentionne ce qui sera à négocier.
 
 ⚠️ RÈGLES CRITIQUES :
 
@@ -399,16 +476,19 @@ Tu dois produire un rapport de due diligence COMPLET et PROFESSIONNEL sur l'entr
   "opportunities": { "growthOpportunities": [], "marketExpansion": "...", "productExpansion": "...", "strategicValue": "...", "sources": [] },
   "investmentRecommendation": { "recommendation": "...", "rationale": "...", "strengths": [], "weaknesses": [], "keyQuestions": [], "suggestedNextSteps": [], "targetReturn": "texte (obligatoire; si inconnu: 'Non disponible' ou 'Estimation: ...')", "investmentHorizon": "texte (obligatoire)", "suggestedTicket": "texte (obligatoire)" },
   "investmentCommittee": {
-    "thesisFitAnalysis": "Analyse FINE de l'adéquation au mandat du fonds : pourquoi (ou pas) ce deal correspond au stade visé, au secteur, à la géo, au type de moat/retour recherché. Pas un oui/non — un raisonnement d'associé.",
-    "bullCase": "Le scénario haussier ARGUMENTÉ (chemin vers un 10x+) : quelles hypothèses doivent se réaliser (marché, exécution, moat), avec l'ordre de grandeur de l'upside.",
-    "bearCase": "Le scénario baissier ARGUMENTÉ : les 2-3 façons les PLUS PROBABLES dont ce deal perd de l'argent, classées par probabilité.",
-    "keyDebates": ["Les vrais débats d'un comité d'investissement sur ce dossier — chaque point présenté avec les DEUX côtés de l'argument (pour/contre), pas une banalité."],
-    "whatMustBeTrue": ["Les conditions NÉCESSAIRES pour que la thèse d'investissement tienne (hypothèses critiques à valider)."],
-    "killCriteria": ["Les signaux qui INVALIDERAIENT le deal (deal-breakers) — ce qui ferait dire non en DD approfondie."],
-    "valuationView": "Vue sur la valorisation/le point d'entrée : raisonnable au stade ? comparables de tour, dilution attendue, prix d'entrée vs potentiel.",
-    "diligencePriorities": ["Les 3-4 vérifications de DD qui CHANGERAIENT LE PLUS la décision (les plus à fort enjeu, pas une checklist générique)."],
-    "convictionLevel": "high | medium | low",
-    "verdict": "La position finale ARGUMENTÉE en 3-5 phrases, comme un associé qui défend ou rejette le deal en comité : la recommandation, le raisonnement central, et la condition principale."
+    "thesis": "LE PARI, falsifiable et chiffré (1-3 phrases). Forme : « Nous parions que [métrique précise] atteint [seuil] avant [date], que c'est LE facteur différenciant, et si c'est vrai la boîte vaut [X]. » Pas de conditionnel prudent.",
+    "thesisFitAnalysis": "Adéquation au mandat (stade, secteur, géo, type de moat/retour). Raisonnement d'associé, pas un oui/non.",
+    "bullCase": "Scénario haussier ARGUMENTÉ (chemin vers 10x+) : hypothèses à réaliser (marché, exécution, moat) + ordre de grandeur de l'upside.",
+    "bearCase": "Scénario baissier SPÉCIFIQUE à CETTE boîte (steelman le non) : les 2-3 façons les plus probables de perdre, classées. Inclure au moins UNE critique technique/marché falsifiable propre au dossier — PAS du risque générique.",
+    "dealMechanics": "Ce qu'on achète : prix d'entrée / valorisation post-money, % obtenu pour le ticket suggéré, qui mène le tour, tour compétitif ?, préférences de liquidation, board, pro-rata. Si ces données manquent, dis-le explicitement et classe-les en priorité de DD (ne pas inventer).",
+    "returnModel": "Back-of-envelope du retour : valo de sortie visée, voie (M&A par qui / IPO), dilution sur les tours futurs, est-ce un fund-returner ? CITE 2-3 COMPARABLES DE SORTIE NOMMÉS et leur issue réelle (multiples / SPAC / effondrement). Un chiffre de retour SANS calcul ni comparables est interdit.",
+    "keyDebates": ["Les vrais débats du comité — chaque point avec les DEUX côtés (pour/contre), pas une banalité."],
+    "whatMustBeTrue": ["Conditions NÉCESSAIRES pour que la thèse tienne (hypothèses critiques à valider)."],
+    "killCriteria": ["Signaux qui INVALIDERAIENT le deal (deal-breakers)."],
+    "valuationView": "Valorisation/point d'entrée : raisonnable au stade ? multiple implicite vs comparables du secteur (cf frameworks), dilution attendue, prix vs potentiel.",
+    "diligencePriorities": ["Les 3-4 vérifications qui CHANGERAIENT LE PLUS la décision, incluant au moins une recherche PRIMAIRE non-publique (appel de référence : ex-employé, client, concurrent, directeur de thèse ; lecture de brevet/papier). Pas une checklist générique."],
+    "convictionLevel": "high | medium | low (NE PAS mettre high si les chiffres déterminants — burn, runway, valo, % — manquent)",
+    "verdict": "DÉCISION CONDITIONNELLE en 3-5 phrases, comme un associé en comité : on investit SI [conditions précises : prix < Z, jalon X avant date Y, siège d'observateur...] ; on passe SI [...] ; + les 1-2 questions dont la réponse inverserait la décision."
   },
   "allSources": [ { "name": "...", "url": "...", "type": "article|crunchbase|linkedin|official|press|other", "relevance": "..." } ],
   "dataQuality": { "overallScore": "...", "dataAvailability": {}, "limitations": [], "sourcesCount": "..." }
@@ -435,33 +515,59 @@ Réponds UNIQUEMENT avec du JSON valide.`;
       };
       let enrichedAnalyzeContext = analyzeContext;
 
-      // ——— SYSTÉMATIQUE : Requêtes équipe obligatoires (car souvent manquantes) ———
-      const teamQueries = [
-        `${companyName} founding team members`,
-        `site:linkedin.com ${companyName} company`,
-        `${companyName} CEO founder background`,
-        `${companyName} CTO VP Engineering`,
-        `${companyName} team hiring employees`,
+      // ——— SYSTÉMATIQUE : requêtes obligatoires sur les lacunes récurrentes ———
+      // (équipe, IP/brevets, financements RÉCENTS, concurrents nommés, traction).
+      // Ciblées car ce sont les champs le plus souvent vides ou périmés.
+      const ddYear = new Date().getFullYear();
+      const systematicGroups: { label: string; queries: string[] }[] = [
+        { label: "ÉQUIPE & FONDATEURS (noms, parcours, LinkedIn)", queries: [
+          `${companyName} founders CEO CTO background`,
+          `${companyName} founding team linkedin`,
+          `${companyName} fondateurs équipe dirigeante parcours`,
+        ] },
+        { label: `FINANCEMENTS RÉCENTS (prendre les dates/montants LES PLUS RÉCENTS, ${ddYear}/${ddYear - 1})`, queries: [
+          `${companyName} raises funding round ${ddYear}`,
+          `${companyName} Series A B C ${ddYear} ${ddYear - 1} investors amount`,
+          `${companyName} levée de fonds ${ddYear} montant investisseurs valorisation`,
+        ] },
+        { label: "IP / BREVETS (à NOMMER un par un avec lien)", queries: [
+          `site:patents.google.com ${companyName}`,
+          `${companyName} patent brevet INPI espacenet filed granted`,
+        ] },
+        { label: "CONCURRENTS (nommés + leurs financements)", queries: [
+          `${companyName} competitors alternatives`,
+          `${companyName} vs competitor funding market share`,
+        ] },
+        { label: "TRACTION / RÉCOMPENSES / PARTENARIATS / PUBLICATIONS", queries: [
+          `${companyName} customers partnership award prize ${ddYear}`,
+          `${companyName} revenue traction publication results`,
+        ] },
       ];
-      const teamLines: string[] = [];
-      const seenTeamUrl = new Set<string>();
       try {
-        const teamResults = await Promise.all(teamQueries.map(q => webSearch(q, 6).catch(() => [])));
-        for (const results of teamResults) {
-          for (const r of results) {
-            if (r?.url && !seenTeamUrl.has(r.url)) {
-              seenTeamUrl.add(r.url);
-              const line = `${r.title || ""}: ${r.description || ""} | ${r.url}`.trim();
-              if (line.length > 20) teamLines.push(line);
+        const allQ = systematicGroups.flatMap((g) => g.queries);
+        const settled = await Promise.all(allQ.map((q) => webSearch(q, 6).catch(() => [])));
+        let idx = 0;
+        const blocks: string[] = [];
+        const seenSysUrl = new Set<string>();
+        for (const g of systematicGroups) {
+          const lines: string[] = [];
+          for (let k = 0; k < g.queries.length; k++) {
+            for (const r of settled[idx++] ?? []) {
+              if (r?.url && !seenSysUrl.has(r.url)) {
+                seenSysUrl.add(r.url);
+                const line = `${r.title || ""}: ${r.description || ""} | ${r.url}`.trim();
+                if (line.length > 20) lines.push(line);
+              }
             }
           }
+          if (lines.length > 0) blocks.push(`--- ${g.label} ---\n${lines.join("\n")}`);
         }
-        if (teamLines.length > 0) {
-          enrichedAnalyzeContext = `${analyzeContext}\n\n=== RECHERCHES ÉQUIPE (5 requêtes systématiques — PRIORITÉ) ===\n${teamLines.join("\n").slice(0, 3000)}`;
-          console.log(`[DueDiligence] Équipe systématique: ${teamLines.length} résultats trouvés`);
+        if (blocks.length > 0) {
+          enrichedAnalyzeContext = `${analyzeContext}\n\n=== RECHERCHES SYSTÉMATIQUES (PRIORITÉ) ===\n${blocks.join("\n\n").slice(0, 5500)}`;
+          console.log(`[DueDiligence] Systématiques: ${seenSysUrl.size} résultats`);
         }
-      } catch (teamErr) {
-        console.warn("[DueDiligence] Requêtes équipe sistématiques ignorées:", teamErr);
+      } catch (sysErr) {
+        console.warn("[DueDiligence] Requêtes systématiques ignorées:", sysErr);
       }
 
       try {
@@ -519,7 +625,8 @@ Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 3 gap
             }
             const extraContext = extraLines.join("\n").slice(0, 4500);
             if (extraContext) {
-              enrichedAnalyzeContext = `${analyzeContext}\n\n=== RECHERCHES COMPLÉMENTAIRES (lacunes — à utiliser en priorité) ===\n${extraContext}`;
+              // Append (ne PAS écraser les recherches systématiques déjà ajoutées).
+              enrichedAnalyzeContext += `\n\n=== RECHERCHES COMPLÉMENTAIRES (lacunes — à utiliser en priorité) ===\n${extraContext}`;
               console.log(`[DueDiligence] Enrichissement 1: ${uniqueQueries.length} requêtes`);
             }
           }
@@ -777,7 +884,10 @@ Réponds UNIQUEMENT avec du JSON valide.`;
         const tamWeak = nd(r?.market?.tam);
         const fundingWeak = nd(r?.financials?.totalFunding);
         const sourcesWeak = !Array.isArray(r?.allSources) || r.allSources.length < 8;
-        return foundersWeak || tamWeak || fundingWeak || sourcesWeak;
+        // Rigueur : déclenche aussi la passe si les champs VC clés manquent.
+        const ic = r?.investmentCommittee ?? {};
+        const committeeWeak = nd(ic.thesis) || nd(ic.returnModel) || nd(ic.dealMechanics);
+        return foundersWeak || tamWeak || fundingWeak || sourcesWeak || committeeWeak;
       })();
       // Contexte additionnel de l'itération 2, conservé pour la vérification
       // des sources en fin de phase.
@@ -841,16 +951,25 @@ Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1"]}]}. Max 3 gap
             const extraContext2 = extraLines2.join("\n").slice(0, 3500);
             round2Context = extraContext2;
             if (extraContext2) {
-              const enrichPrompt = `Rapport de due diligence (JSON) et données complémentaires. Intègre les nouvelles données où pertinent. Retourne le JSON COMPLET, même structure.
+              const enrichPrompt = `Tu es un VC senior. Voici un BROUILLON de rapport de due diligence (JSON) et des données complémentaires. Produis une VERSION AMÉLIORÉE du JSON COMPLET (MÊME structure, ne supprime aucune section, aucune URL dans le texte).
 
-RAPPORT ACTUEL :
-${JSON.stringify(dueDiligenceResult).slice(0, 26000)}
+DOUBLE MISSION :
+1) INTÈGRE les données complémentaires là où elles comblent un vide (financements RÉCENTS, fondateurs, brevets nommés, concurrents, métriques). Si une donnée récente contredit une ancienne (montant/round/date/année de fondation), garde LA PLUS RÉCENTE.
+2) DURCIS LA RIGUEUR (le plus important) :
+   - Remplace CHAQUE formule générique ("acteur majeur", "technologie innovante", "équipe de haut niveau", "bonne traction", "marché porteur") par le FAIT chiffré/daté/nommé qui la prouve ; si tu n'as pas la preuve, retire l'affirmation.
+   - Si tu dis "brevets / récompenses / partenariats / publications", NOMME-les un par un (année + source).
+   - investmentCommittee.thesis = un pari FALSIFIABLE et chiffré ; returnModel = back-of-envelope + comparables de sortie NOMMÉS ; dealMechanics = prix/post-money/%/termes (ou classés en priorité DD) ; bearCase = au moins une critique SPÉCIFIQUE falsifiable (pas du générique) ; verdict = décision CONDITIONNELLE.
+   - Si burn/runway/valo/% manquent, abaisse executiveSummary.confidenceLevel et mets-les dans investmentRecommendation.suggestedNextSteps + investmentCommittee.diligencePriorities.
+   - Chaque section remplit son tableau "sources".
+
+BROUILLON ACTUEL :
+${JSON.stringify(dueDiligenceResult).slice(0, 24000)}
 
 DONNÉES COMPLÉMENTAIRES :
 ${extraContext2}
 
-Réponds UNIQUEMENT avec le JSON complet.`;
-              const enrichBody = { contents: [{ parts: [{ text: enrichPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 16384, responseMimeType: "application/json" as const, ...GEMINI_THINKING } };
+Réponds UNIQUEMENT avec le JSON complet amélioré.`;
+              const enrichBody = { contents: [{ parts: [{ text: enrichPrompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 28000, responseMimeType: "application/json" as const, ...GEMINI_THINKING } };
               await reserveAiCall();
               const enrichRes = await fetch(aiEndpointGap2.url, { method: "POST", headers: aiEndpointGap2.headers, body: JSON.stringify(enrichBody) });
               if (enrichRes.ok) {

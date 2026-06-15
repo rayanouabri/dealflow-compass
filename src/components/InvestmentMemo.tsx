@@ -768,6 +768,12 @@ export function InvestmentMemo({ data, companyName, onExport }: MemoProps) {
                   <span className={`shrink-0 rounded-md border px-2.5 py-1 text-xs font-medium ${conv.includes("high") ? "border-success/40 text-success bg-success/5" : conv.includes("low") ? "border-destructive/40 text-destructive bg-destructive/5" : "border-primary/40 text-primary bg-primary/5"}`}>{convLabel}</span>
                 )}
               </div>
+              {ic.thesis && (
+                <div className="mb-5 rounded-lg border-l-2 border-primary bg-primary/5 p-5">
+                  <Label>Thèse — le pari</Label>
+                  <Prose value={ic.thesis} className="text-foreground" />
+                </div>
+              )}
               {ic.verdict && (
                 <div className="mb-5 rounded-lg border-l-2 border-primary bg-muted/20 p-5">
                   <Label>Verdict</Label>
@@ -807,6 +813,8 @@ export function InvestmentMemo({ data, companyName, onExport }: MemoProps) {
                 )}
               </div>
               {ic.valuationView && <div className="mt-4"><Label>Vue valorisation / entrée</Label><Prose value={ic.valuationView} /></div>}
+              {ic.dealMechanics && <div className="mt-4"><Label>Mécanique du deal</Label><Prose value={ic.dealMechanics} /></div>}
+              {ic.returnModel && <div className="mt-4"><Label>Modèle de retour &amp; comparables de sortie</Label><Prose value={ic.returnModel} /></div>}
               {toArray(ic.diligencePriorities).length > 0 && (
                 <div className="mt-4 rounded-lg border border-border bg-muted/20 p-5">
                   <Label>Priorités de due diligence</Label>
