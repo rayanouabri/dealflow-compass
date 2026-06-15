@@ -65,9 +65,9 @@ historique réouvrable.
 - Update `FUNDING_CRITERIA_PRESETS` if it's a preset option
 - Update `thesis-analysis` prompt in Edge Function
 
-**Change AI provider** (Gemini ↔ Vertex AI):
-- See CONFIGURATION_AI.md, update Supabase secrets (`AI_PROVIDER`, `GEMINI_API_KEY` or `VERTEX_AI_*`)
-- Redeploy Edge Functions (no code change needed if provider routing already in `ai-client.ts`)
+**Change Gemini model** (provider = Gemini only; Vertex/Groq retirés):
+- Set the `GEMINI_MODEL` secret (source unique du modèle, défaut `gemini-3.5-flash`)
+- Redeploy the Edge Functions (no code change needed; clés via `getGeminiKeys()`)
 
 **Add a new page/route**:
 - Create file in `src/pages/`
@@ -88,7 +88,7 @@ historique réouvrable.
 ⚠️ CORS restrited on Edge Functions (whitelist preview URLs if needed)  
 ⚠️ Rate-limit AI calls if you scale (currently free quota)
 
-See SECURITY_AUDIT.md for full audit.
+Secrets in Supabase (never in code); RLS on user tables; anon key only client-side.
 
 ## Config Files Reference
 
@@ -108,7 +108,7 @@ See SECURITY_AUDIT.md for full audit.
 
 ## Token Optimization for Claude
 
-- This README replaces 13 scattered MD files. Reference it instead of rereading old docs.
-- Keep CONFIGURATION_AI.md and SECURITY_AUDIT.md only if actively updating them.
+- This README replaces scattered MD files. Reference it instead of rereading old docs.
+- Outdated docs removed (2026-06-15); CLAUDE.md + HOW_IT_WORKS.md + PIPELINE_SOURCING_DD.md are the maintained set.
 - Use `/loop` or scheduled agents for recurring checks (don't re-read code every session).
 - Tag important decisions in git commit messages so you can `git log --grep=` later.
