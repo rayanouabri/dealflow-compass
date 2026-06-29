@@ -122,55 +122,65 @@ async function callGemini(
   await reserveAiCall();
 
   let lastTxt = "";
-  // Clé en header (pas en query string) : les URLs finissent dans les logs
-  // d'erreurs fetch et les proxies, pas les headers.
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-  for (const key of shuffled) {
-    let rateWaits = 0;
-    // Retry sur 5xx (transitoire) et 429 de rythme (RPM, avec retryDelay) ;
-    // sur 429 de quota journalier → clé suivante.
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const resp = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-        body: JSON.stringify(body),
-      });
+  let lastStatus = 0;
+  // Fallback de modèle : si le modèle principal est saturé (503) ou en quota sur
+  // TOUTES les clés, on bascule sur un modèle de repli stable et à forte capacité
+  // (gemini-2.5-flash). Même qualité de prompt — seul le moteur change. Évite les
+  // 503 "modèle surchargé" qui cassaient le pipeline / la due diligence.
+  const models = [...new Set([model, "gemini-2.5-flash"])];
+  for (const mdl of models) {
+    // Clé en header (pas en query string) : les URLs finissent dans les logs.
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${mdl}:generateContent`;
+    keysLoop:
+    for (const key of shuffled) {
+      let rateWaits = 0;
+      // Retry sur 5xx (transitoire) et 429 de rythme (RPM, avec retryDelay).
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+          body: JSON.stringify(body),
+        });
 
-      if (resp.ok) {
-        const data = await resp.json();
-        const candidate = data.candidates?.[0];
-        if (candidate?.finishReason === "MAX_TOKENS") {
-          logger.warn("Gemini : sortie tronquée (MAX_TOKENS)", { model });
+        if (resp.ok) {
+          const data = await resp.json();
+          const candidate = data.candidates?.[0];
+          if (candidate?.finishReason === "MAX_TOKENS") {
+            logger.warn("Gemini : sortie tronquée (MAX_TOKENS)", { model: mdl });
+          }
+          // Les modèles "thinking" peuvent renvoyer plusieurs parts ; on ne
+          // garde que les parts texte non-thought.
+          const parts = candidate?.content?.parts ?? [];
+          const textParts = parts
+            .filter((p: any) => typeof p?.text === "string" && !p?.thought)
+            .map((p: any) => p.text);
+          return textParts.join("") || "";
         }
-        // Les modèles "thinking" peuvent renvoyer plusieurs parts ; on ne
-        // garde que les parts texte non-thought.
-        const parts = candidate?.content?.parts ?? [];
-        const textParts = parts
-          .filter((p: any) => typeof p?.text === "string" && !p?.thought)
-          .map((p: any) => p.text);
-        return textParts.join("") || "";
-      }
 
-      lastTxt = await resp.text();
-      if ((resp.status === 503 || resp.status >= 500) && attempt < 3) {
-        await sleep(800 * Math.pow(2, attempt)); // 0.8s, 1.6s, 3.2s
-        continue;
-      }
-      if (resp.status === 429) {
-        // 429 de rythme (free tier RPM) : Google indique quand réessayer.
-        const delaySec = parseRetryDelaySec(lastTxt);
-        if (delaySec !== null && delaySec <= 40 && rateWaits < 2) {
-          rateWaits++;
-          logger.info("Gemini 429 RPM — attente retryDelay", { delaySec });
-          await sleep((delaySec + 1) * 1000);
+        lastStatus = resp.status;
+        lastTxt = await resp.text();
+        if (resp.status >= 500 && attempt < 3) {
+          await sleep(700 * Math.pow(2, attempt)); // 0.7s, 1.4s, 2.8s
           continue;
         }
-        break; // quota journalier/facturation sur cette clé → clé suivante
+        if (resp.status >= 500) break keysLoop; // surcharge persistante → modèle de repli
+        if (resp.status === 429) {
+          // 429 de rythme (free tier RPM) : Google indique quand réessayer.
+          const delaySec = parseRetryDelaySec(lastTxt);
+          if (delaySec !== null && delaySec <= 40 && rateWaits < 2) {
+            rateWaits++;
+            logger.info("Gemini 429 RPM — attente retryDelay", { delaySec });
+            await sleep((delaySec + 1) * 1000);
+            continue;
+          }
+          break; // quota sur cette clé → clé suivante
+        }
+        break keysLoop; // erreur permanente (4xx) → modèle de repli puis throw
       }
-      throw new Error(`Gemini ${resp.status}: ${lastTxt.slice(0, 400)}`);
     }
+    if (models.length > 1) logger.warn("Gemini : bascule sur modèle de repli", { from: mdl });
   }
-  throw new Error(`Gemini: toutes les clés en quota (429) — ${lastTxt.slice(0, 400)}`);
+  throw new Error(`Gemini indisponible (clés + modèles épuisés, ${lastStatus}) — ${lastTxt.slice(0, 400)}`);
 }
 
 // Répare un JSON tronqué : ferme les chaînes/objets/tableaux restés ouverts.

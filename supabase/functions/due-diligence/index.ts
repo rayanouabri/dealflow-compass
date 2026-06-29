@@ -246,21 +246,28 @@ serve(async (req) => {
     // des clés : ordre aléatoire + bascule sur 429, pour ne pas marteler une seule
     // clé (l'appel principal du draft a déjà sa propre boucle de rotation).
     const geminiDD = async (promptText: string, maxTokens: number): Promise<string> => {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
       const body = JSON.stringify({ contents: [{ parts: [{ text: promptText }] }], generationConfig: { temperature: 0.15, maxOutputTokens: maxTokens, responseMimeType: "application/json", ...GEMINI_THINKING } });
       const keys = (GEMINI_KEYS.length ? [...GEMINI_KEYS] : [GEMINI_API_KEY]).sort(() => Math.random() - 0.5);
+      // Fallback de modèle : si le principal sature (503) sur toutes les clés, on
+      // bascule sur gemini-2.5-flash (stable, forte capacité).
+      const models = [...new Set([GEMINI_MODEL, "gemini-2.5-flash"])];
       await reserveAiCall();
-      for (const k of keys) {
-        try {
-          const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": k as string }, body });
-          if (r.ok) {
-            const d = await r.json();
-            const parts = d.candidates?.[0]?.content?.parts ?? [];
-            return parts.filter((p: any) => typeof p?.text === "string" && !p?.thought).map((p: any) => p.text).join("") || "";
-          }
-          await r.text();
-          if (r.status !== 429) break; // erreur permanente → inutile de changer de clé
-        } catch (_) { /* clé suivante */ }
+      for (const mdl of models) {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${mdl}:generateContent`;
+        for (const k of keys) {
+          try {
+            const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": k as string }, body });
+            if (r.ok) {
+              const d = await r.json();
+              const parts = d.candidates?.[0]?.content?.parts ?? [];
+              return parts.filter((p: any) => typeof p?.text === "string" && !p?.thought).map((p: any) => p.text).join("") || "";
+            }
+            const status = r.status;
+            await r.text();
+            if (status === 429) continue; // quota sur cette clé → clé suivante
+            break; // 5xx/4xx → modèle de repli
+          } catch (_) { /* clé suivante */ }
+        }
       }
       return "";
     };
@@ -743,21 +750,32 @@ Réponds UNIQUEMENT avec du JSON valide.`;
       let transientWaits = 0;
       const maxAttempts = 3 + GEMINI_KEYS.length;
       await reserveAiCall();
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const headers = { ...aiEndpoint.headers, "x-goog-api-key": GEMINI_KEYS[keyIdx] };
-        const r = await fetch(aiEndpoint.url, { method: "POST", headers, body: JSON.stringify(aiBody) });
-        if (r.ok) { response = r; break; }
-        lastStatus = r.status;
-        lastErrText = await r.text();
-        console.warn(`[DD analyze] Gemini HTTP ${r.status} key#${keyIdx} attempt ${attempt + 1}/${maxAttempts}: ${lastErrText.slice(0, 150)}`);
-        if (r.status === 429) {
-          if (keyIdx < GEMINI_KEYS.length - 1) { keyIdx++; continue; } // quota → clé suivante
-          break; // toutes les clés en quota
+      // Fallback de modèle : si gemini-3.5-flash est saturé (503) sur toutes les
+      // clés, on bascule sur gemini-2.5-flash (stable, forte capacité). Même
+      // prompt → même qualité ; ça évite l'erreur "modèle surchargé" en prod.
+      const ddModels = [...new Set([GEMINI_MODEL, "gemini-2.5-flash"])];
+      modelLoop:
+      for (const mdl of ddModels) {
+        const mdlUrl = `https://generativelanguage.googleapis.com/v1beta/models/${mdl}:generateContent`;
+        keyIdx = 0;
+        transientWaits = 0;
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          const headers = { "Content-Type": "application/json", "x-goog-api-key": GEMINI_KEYS[keyIdx] };
+          const r = await fetch(mdlUrl, { method: "POST", headers, body: JSON.stringify(aiBody) });
+          if (r.ok) { response = r; break modelLoop; }
+          lastStatus = r.status;
+          lastErrText = await r.text();
+          console.warn(`[DD analyze] Gemini HTTP ${r.status} model=${mdl} key#${keyIdx} attempt ${attempt + 1}: ${lastErrText.slice(0, 120)}`);
+          if (r.status === 429) {
+            if (keyIdx < GEMINI_KEYS.length - 1) { keyIdx++; continue; } // quota → clé suivante
+            break; // toutes les clés en quota → modèle de repli
+          }
+          if (!TRANSIENT_STATUSES.has(r.status)) break;        // erreur permanente → modèle de repli
+          if (transientWaits >= 2) break;                       // 5xx persistant → modèle de repli
+          await sleepMs(transientWaits === 0 ? 1500 : 3500);
+          transientWaits++;
         }
-        if (!TRANSIENT_STATUSES.has(r.status)) break;                  // permanent error → don't retry
-        if (transientWaits >= 2) break;
-        await sleepMs(transientWaits === 0 ? 2000 : 5000);             // 2s, then 5s
-        transientWaits++;
+        if (ddModels.length > 1) console.warn(`[DD analyze] bascule modèle de repli (après ${mdl})`);
       }
       if (!response) {
         const hint = lastStatus === 503
