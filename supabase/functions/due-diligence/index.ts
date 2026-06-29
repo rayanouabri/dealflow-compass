@@ -562,7 +562,7 @@ Réponds UNIQUEMENT avec du JSON valide.`;
 
       const sleepAnalyze = (ms: number) => new Promise((r) => setTimeout(r, ms));
       // 4 gap queries (was 8) — keeps gap1 phase under ~10s so main AI has budget
-      const MAX_GAP_QUERIES_DD = 10;
+      const MAX_GAP_QUERIES_DD = 6;
       const GAP_QUERY_MIN_LEN = 8;
       const GAP_QUERY_MAX_LEN = 120;
       const extractJsonObject = (raw: string): string | null => {
@@ -668,7 +668,7 @@ Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["query1","query2"]}]}. 
             }
           }
           const allQueries: string[] = [];
-          for (const g of gaps.slice(0, 6)) {
+          for (const g of gaps.slice(0, 4)) {
             const qs = (Array.isArray(g.queries) ? g.queries : []).map((x: string) => String(x).trim().slice(0, GAP_QUERY_MAX_LEN)).filter((x: string) => x.length >= GAP_QUERY_MIN_LEN);
             allQueries.push(...qs.slice(0, 2));
           }
@@ -735,7 +735,7 @@ Réponds UNIQUEMENT avec du JSON valide.`;
       // 16384 max output: enough for a complete DD report, fast enough to fit Supabase's 150s budget
       const aiBody = {
         contents: [{ parts: [{ text: `${systemPromptAnalyze}\n\n${userPromptAnalyze}` }] }],
-        generationConfig: { temperature: 0.1, topP: 0.9, topK: 40, maxOutputTokens: 28000, responseMimeType: "application/json" as const, ...GEMINI_THINKING },
+        generationConfig: { temperature: 0.1, topP: 0.9, topK: 40, maxOutputTokens: 22000, responseMimeType: "application/json" as const, ...GEMINI_THINKING },
       };
 
       // Retry on transient Gemini errors (503 overload, 500/502/504) + rotation
@@ -771,8 +771,8 @@ Réponds UNIQUEMENT avec du JSON valide.`;
             break; // toutes les clés en quota → modèle de repli
           }
           if (!TRANSIENT_STATUSES.has(r.status)) break;        // erreur permanente → modèle de repli
-          if (transientWaits >= 2) break;                       // 5xx persistant → modèle de repli
-          await sleepMs(transientWaits === 0 ? 1500 : 3500);
+          if (transientWaits >= 1) break;                       // 5xx persistant → bascule rapide vers le repli
+          await sleepMs(1200);
           transientWaits++;
         }
         if (ddModels.length > 1) console.warn(`[DD analyze] bascule modèle de repli (après ${mdl})`);
@@ -955,8 +955,15 @@ Réponds UNIQUEMENT avec du JSON valide.`;
       // toujours. Rotation des clés via geminiDD. round2Context est conservé pour
       // la vérification anti-hallucination des sources plus bas.
       let round2Context = "";
-      const ROUND2_BUDGET_MS = 115_000;
+      const ROUND2_BUDGET_MS = 92_000;
       try {
+        // Garde anti-546 (ressources/wall-time) : si le brouillon a déjà mangé le
+        // budget (ex : fallbacks 503 répétés), on saute l'approfondissement et on
+        // renvoie le brouillon — déjà complet — plutôt que de risquer un crash.
+        if (Date.now() - phaseStart > 72_000) {
+          console.warn("[DueDiligence] Approfondissement sauté (budget compute serré)");
+          throw new Error("skip-deepdive");
+        }
         const draftSummary = JSON.stringify(dueDiligenceResult).slice(0, 9000);
         const critiquePrompt = `Tu es un VC senior qui relit ce BROUILLON de due diligence sur "${companyName}" pour le DURCIR.
 BROUILLON (extrait) : ${draftSummary}
@@ -973,7 +980,7 @@ Réponds UNIQUEMENT : {"gaps":[{"label":"...","queries":["q1","q2"]}]}. 5 à 8 g
           q2.push(...qs.slice(0, 2));
         }
         const seenQ2 = new Set<string>();
-        const uniqueQ2 = q2.filter((x) => { const k = x.toLowerCase().replace(/\s+/g, " "); if (seenQ2.has(k)) return false; seenQ2.add(k); return true; }).slice(0, 12);
+        const uniqueQ2 = q2.filter((x) => { const k = x.toLowerCase().replace(/\s+/g, " "); if (seenQ2.has(k)) return false; seenQ2.add(k); return true; }).slice(0, 6);
         if (uniqueQ2.length > 0) {
           const lines2: string[] = [];
           const seenU2 = new Set<string>();
@@ -999,7 +1006,7 @@ DONNÉES COMPLÉMENTAIRES :
 ${round2Context}
 
 Réponds UNIQUEMENT avec le JSON complet approfondi.`;
-          const enrichText = await geminiDD(enrichPrompt, 28000);
+          const enrichText = await geminiDD(enrichPrompt, 18000);
           if (enrichText) {
             let enriched = parseJSONResponse(enrichText);
             if (enriched && typeof enriched === "object") {
